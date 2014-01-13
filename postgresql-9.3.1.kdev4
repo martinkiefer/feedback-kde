@@ -1,0 +1,3 @@
+[Project]
+Manager=KDevCustomMakeManager
+Name=postgresql-9.3.1
