@@ -57,7 +57,6 @@
 #include "utils/memutils.h"
 #include "utils/snapmgr.h"
 #include "utils/tqual.h"
-#include "executor/kde_execute.h"
 
 
 /* Hooks for plugins to get control in ExecutorStart/Run/Finish/End */
@@ -1364,7 +1363,6 @@ ExecEndPlan(PlanState *planstate, EState *estate)
 	int			i;
 	ListCell   *l;
 
-	kde_evaluate_instrumentation(estate->es_range_table,planstate);
 	/*
 	 * shut down the node-type-specific query processing
 	 */

@@ -14,7 +14,7 @@
 #define INSTRUMENT_H
 
 #include "portability/instr_time.h"
-#include "executor/kde_execute.h"
+#include "kde_feedback/kde_feedback.h"
 
 
 typedef struct BufferUsage
@@ -65,6 +65,7 @@ typedef struct Instrumentation
 	
 	//KDE
 	RQClause *kde_rq;
+	List 	 *kde_rtable;
 } Instrumentation;
 
 extern PGDLLIMPORT BufferUsage pgBufferUsage;

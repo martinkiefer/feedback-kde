@@ -113,312 +113,7 @@
 #include "executor/nodeWorktablescan.h"
 #include "miscadmin.h"
 
-//KDE
-#include "executor/kde_execute.h"
-#include <executor/instrument.h>
-#include "utils/builtins.h"
-#include "parser/parsetree.h"
-#include "optimizer/clauses.h"
-#include "catalog/pg_type.h"
-#include "utils/lsyscache.h"
-#include "utils/fmgroids.h"
-
-
-
-int kde_evaluate_instrumentation(List* rtable, PlanState *node){
-	//fprintf(stderr, "Start: Is null?%i --\n", node);
-  	RangeTblEntry *rte;
-	if(node == NULL)
-		return 0;
-	//
-	//fprintf(stderr, "Is seq scan?.\n");
-   	if(nodeTag(node) == T_SeqScanState || nodeTag(node) == T_AggState){
-	  fprintf(stderr, "Is.\n");
-	  if(node->instrument != NULL){
-	    rte = rt_fetch(((Scan *) node->plan)->scanrelid, rtable);
-	    fprintf(stderr, "%s,", get_rel_name(rte->relid));
-	    kde_print_rqlist(rtable, node,node->instrument->kde_rq);
-	    fprintf(stderr, "%f,%f\n", 
-		    (node->instrument->tuplecount + node->instrument->nfiltered2 + node->instrument->nfiltered1 + node->instrument->ntuples)/(node->instrument->nloops+1),
-		    (node->instrument->tuplecount + node->instrument->ntuples)/(node->instrument->nloops+1)  
- 		  );
-	  }
-	  //else
-	    //fprintf(stderr, "But instrument is null.\n");
-	} 
-	else{
-	    //fprintf(stderr, "Is not. %i\n", nodeTag(node));
-	}
-	//fprintf(stderr, "Left plan\n");
-	kde_evaluate_instrumentation(rtable,innerPlan(node));
-	//fprintf(stderr, "Right plan\n");
-	kde_evaluate_instrumentation(rtable,outerPlan(node));
-	
-	return 0;
-}
-
-/* KDE deparse clauses. We look for queries containing
- * - Equality
- * - Ranges
- * This will work very similar to clauselist_selectivity in clausesel.c. 
- */
-typedef struct
-{
-	List	   *rtable;			/* List of RangeTblEntry nodes */
-	List	   *rtable_names;	/* Parallel list of names for RTEs */
-	List	   *rtable_columns; /* Parallel list of deparse_columns structs */
-	List	   *ctes;			/* List of CommonTableExpr nodes */
-	/* Workspace for column alias assignment: */
-	bool		unique_using;	/* Are we making USING names globally unique */
-	List	   *using_names;	/* List of assigned names for USING columns */
-	/* Remaining fields are used only when deparsing a Plan tree: */
-	PlanState  *planstate;		/* immediate parent of current expression */
-	List	   *ancestors;		/* ancestors of planstate */
-	PlanState  *outer_planstate;	/* outer subplan state, or NULL if none */
-	PlanState  *inner_planstate;	/* inner subplan state, or NULL if none */
-	List	   *outer_tlist;	/* referent for OUTER_VAR Vars */
-	List	   *inner_tlist;	/* referent for INNER_VAR Vars */
-	List	   *index_tlist;	/* referent for INDEX_VAR Vars */
-} deparse_namespace;
-
-typedef struct
-{
-	/*
-	 * colnames is an array containing column aliases to use for columns that
-	 * existed when the query was parsed.  Dropped columns have NULL entries.
-	 * This array can be directly indexed by varattno to get a Var's name.
-	 *
-	 * Non-NULL entries are guaranteed unique within the RTE, *except* when
-	 * this is for an unnamed JOIN RTE.  In that case we merely copy up names
-	 * from the two input RTEs.
-	 *
-	 * During the recursive descent in set_using_names(), forcible assignment
-	 * of a child RTE's column name is represented by pre-setting that element
-	 * of the child's colnames array.  So at that stage, NULL entries in this
-	 * array just mean that no name has been preassigned, not necessarily that
-	 * the column is dropped.
-	 */
-	int			num_cols;		/* length of colnames[] array */
-	char	  **colnames;		/* array of C strings and NULLs */
-
-	/*
-	 * new_colnames is an array containing column aliases to use for columns
-	 * that would exist if the query was re-parsed against the current
-	 * definitions of its base tables.	This is what to print as the column
-	 * alias list for the RTE.	This array does not include dropped columns,
-	 * but it will include columns added since original parsing.  Indexes in
-	 * it therefore have little to do with current varattno values.  As above,
-	 * entries are unique unless this is for an unnamed JOIN RTE.  (In such an
-	 * RTE, we never actually print this array, but we must compute it anyway
-	 * for possible use in computing column names of upper joins.) The
-	 * parallel array is_new_col marks which of these columns are new since
-	 * original parsing.  Entries with is_new_col false must match the
-	 * non-NULL colnames entries one-for-one.
-	 */
-	int			num_new_cols;	/* length of new_colnames[] array */
-	char	  **new_colnames;	/* array of C strings */
-	bool	   *is_new_col;		/* array of bool flags */
-
-	/* This flag tells whether we should actually print a column alias list */
-	bool		printaliases;
-
-	/*
-	 * If this struct is for a JOIN RTE, we fill these fields during the
-	 * set_using_names() pass to describe its relationship to its child RTEs.
-	 *
-	 * leftattnos and rightattnos are arrays with one entry per existing
-	 * output column of the join (hence, indexable by join varattno).  For a
-	 * simple reference to a column of the left child, leftattnos[i] is the
-	 * child RTE's attno and rightattnos[i] is zero; and conversely for a
-	 * column of the right child.  But for merged columns produced by JOIN
-	 * USING/NATURAL JOIN, both leftattnos[i] and rightattnos[i] are nonzero.
-	 * Also, if the column has been dropped, both are zero.
-	 *
-	 * If it's a JOIN USING, usingNames holds the alias names selected for the
-	 * merged columns (these might be different from the original USING list,
-	 * if we had to modify names to achieve uniqueness).
-	 */
-	int			leftrti;		/* rangetable index of left child */
-	int			rightrti;		/* rangetable index of right child */
-	int		   *leftattnos;		/* left-child varattnos of join cols, or 0 */
-	int		   *rightattnos;	/* right-child varattnos of join cols, or 0 */
-	List	   *usingNames;		/* names assigned to merged columns */
-} deparse_columns;
-
-typedef enum bound { HIGHBOUND, LOWBOUND, EQUALITY} bound_t;
-
-
-#define deparse_columns_fetch(rangetable_index, dpns) \
-	((deparse_columns *) list_nth((dpns)->rtable_columns, (rangetable_index)-1))
-
-void kde_print_rqlist(List* rtable, PlanState  * ps, RQClause *rqlist){
-	
-	Bitmapset  *rels_used = NULL;
-	RQClause *rqelem = NULL;
-	deparse_namespace *dpns;
-	List *context;
-	deparse_columns *colinfo;
-	List * rtable_names;
-	RangeTblEntry *rte;
-	
-	rels_used = bms_add_member(rels_used, ((Scan *) ps->plan)->scanrelid);
-	rte = rt_fetch(((Scan *) ps->plan)->scanrelid, rtable);
-	rtable_names = select_rtable_names_for_explain(rtable, rels_used);
-	context = deparse_context_for_planstate(ps,NULL,rtable,rtable_names);
-	dpns = (deparse_namespace *) list_nth(context,0);
-	
-	
-    	for (rqelem = rqlist; rqelem; rqelem = rqelem->next)
-	{
-	    colinfo = deparse_columns_fetch(rqelem->var->varno, dpns);
-	    fprintf(stderr,"%s,", colinfo->colnames[ rqelem->var->varattno - 1]);
-	    fprintf(stderr, "%f,",rqelem->lobound);
-	    fprintf(stderr, "%f,",rqelem->hibound);
-	}
-}
-	
-static void kde_add_rqentry(RQClause **rqlist, Var *var,double value, bound_t bound){
-	RQClause *rqelem = NULL;
-  	for (rqelem = *rqlist; rqelem; rqelem = rqelem->next)
-	{
-		/*
-		 * We use full equal() here because the "var" might be a function of
-		 * one or more attributes of the same relation...
-		 */
-		if (!equal(var, rqelem->var))
-			continue;
-		/* Found the right group to put this clause in */
-		if (bound == LOWBOUND)
-		{
-		    if (rqelem->lobound < value)
-					rqelem->lobound = value;
-		}
-		else if(bound == HIGHBOUND)
-		{
-		    if (rqelem->hibound > value)
-			rqelem->hibound = value;
-		}
-		else
-		{
-		    rqelem->hibound= value;
-		    rqelem->lobound= value;
-		}  
-		
-		return;
-	}
-	
-	rqelem = (RQClause *) palloc(sizeof(RQClause));
-	rqelem->var = var;
-	if (bound == LOWBOUND)
-	{
-		//fprintf(stderr, "New element with lowbound %f\n",value);
-		rqelem->lobound = value;
-		rqelem->hibound = get_float8_infinity();
-	}
-	else if (bound == HIGHBOUND)
-	{
-		//fprintf(stderr, "New element with high bound %f\n",value);
-		rqelem->lobound = get_float8_infinity()*-1;
-		rqelem->hibound = value;
-	}
-	else{
-		//fprintf(stderr, "New element with eq bound %f\n",value);
-		rqelem->hibound=value;
-		rqelem->lobound=value;  
-	}
-	rqelem->next = *rqlist;
-	*rqlist = rqelem;
-	//kde_print_rqlist(rqlist);
-}
-
-
-void *kde_deparse_clause(List *clauses){
-    RQClause *rqlist = NULL;
-    RQClause *rqnext = NULL;
-    
-    ListCell   *l;
-    foreach(l, clauses)
-    {
-      	Node	   *clause = (Node *) lfirst(l);
-	RestrictInfo *rinfo;
-	
-	if (IsA(clause, RestrictInfo))
-	{
-		rinfo = (RestrictInfo *) clause;
-		clause = (Node *) rinfo->clause;
-		//fprintf(stderr, "Hello, good sir. I'm a RestrictInfo node.\n");
-	}
-	else 
-	{
-		rinfo = NULL;
-		//fprintf(stderr, "Hello, good sir. I'm a normal clause\n");
-	}
-	//fprintf(stderr, "%i\n",clause->type);
-	if (is_opclause(clause) && list_length(((OpExpr *) clause)->args) == 2)
-	{
-	  	OpExpr	   *expr = (OpExpr *) clause;
-		bool		varonleft = true;
-		bool		ok;
-				
-		ok = (NumRelids(clause) == 1) &&
-			((IsA(lsecond(expr->args), Const) && IsA(linitial(expr->args), Var) ) ||
-			(varonleft = false,
-			(IsA(lsecond(expr->args), Var) && IsA(linitial(expr->args), Const))));
-		if(ok){
-		  if(varonleft)
-		    ok = (((Const *) lsecond(expr->args))->consttype == FLOAT8OID); 
-		  else
-		    ok = (((Const *) linitial(expr->args))->consttype == FLOAT8OID); 
-		}
-		//fprintf(stderr, "Ok?: %i\n",ok);
-		if(ok){
-		  		switch (get_oprrest(expr->opno))
-				{
-					case F_SCALARLTSEL:
-						if(varonleft)
-						    kde_add_rqentry(&rqlist, (Var *) linitial(expr->args), DatumGetFloat8(((Const *) lsecond(expr->args))->constvalue),
-									    HIGHBOUND);
-						else
-						    kde_add_rqentry(&rqlist, (Var *) lsecond(expr->args), DatumGetFloat8(((Const *) linitial(expr->args))->constvalue),
-									    LOWBOUND);
-						break;
-					case F_SCALARGTSEL:
-						if(varonleft)
-						    kde_add_rqentry(&rqlist, (Var *) linitial(expr->args), DatumGetFloat8(((Const *) lsecond(expr->args))->constvalue),
-									    LOWBOUND);
-						else
-						    kde_add_rqentry(&rqlist, (Var *) lsecond(expr->args), DatumGetFloat8(((Const *) linitial(expr->args))->constvalue),
-									    HIGHBOUND);
-						break;
-					case F_EQSEL:
-						if(varonleft)
-						    kde_add_rqentry(&rqlist, (Var *) linitial(expr->args), DatumGetFloat8(((Const *) lsecond(expr->args))->constvalue),
-									    EQUALITY);
-						else
-						    kde_add_rqentry(&rqlist, (Var *) lsecond(expr->args), DatumGetFloat8(((Const *) linitial(expr->args))->constvalue),
-									    EQUALITY);
-						break;
-					default:
-						fprintf(stderr, "Default case.\n");
-						return NULL;
-				}
-				continue;		/* drop to loop bottom */
-		}
-		else goto cleanup;
-	}
-	else goto cleanup;
-    }
-    return rqlist;
-    
-cleanup:
-    //fprintf(stderr, "CLEANUP!\n");
-    while(rqlist != NULL){
-	rqnext = rqlist->next;
-	pfree(rqlist);
-	rqlist=rqnext;
-    }
-    return NULL;
-}  
+#include "kde_feedback/kde_feedback.h"
 
 /* ------------------------------------------------------------------------
  *		ExecInitNode
@@ -649,19 +344,21 @@ ExecInitNode(Plan *node, EState *estate, int eflags)
 	
 	//KDE
 	if (nodeTag(node) == T_SeqScan){
-	    RQClause *rq = kde_deparse_clause((SeqScan *) node->qual); 
+	    RQClause *rq = kde_get_rqlist(node->qual); 
 	    //fprintf(stderr, "SeqScan Found. %i\n", rq);
 	    if(rq != NULL){
+	      //fprintf(stderr, "Providing instrumentation\n");
 	      if(! estate->es_instrument){
 		result->instrument = InstrAlloc(1, INSTRUMENT_ROWS);
 	      }
-	      result->instrument->kde_rq = rq;	
+	      result->instrument->kde_rq = rq;
+	      result->instrument->kde_rtable = estate->es_range_table;
 	   }
 	   
 	}
-	else 
-	  fprintf(stderr, "SeqScan not found.\n");
 	
+	  //fprintf(stderr, "SeqScan not found.%i\n", nodeTag(node));
+	//fprintf(stderr, "Result node tag.%i\n", nodeTag(result));
 	return result;
 }
 
@@ -914,7 +611,9 @@ ExecEndNode(PlanState *node)
 		bms_free(node->chgParam);
 		node->chgParam = NULL;
 	}
-
+	if(nodeTag(node) == T_SeqScanState){
+	      kde_finish(node);
+	}  
 	switch (nodeTag(node))
 	{
 			/*
