@@ -672,6 +672,34 @@ AC_MSG_RESULT([$with_openssl])
 AC_SUBST(with_openssl)
 
 #
+# OpenCL
+#
+AC_MSG_CHECKING([whether to build with OpenCL support])
+PGAC_ARG_BOOL(with, opencl, no, [build with OpenCL support],
+	      [AC_DEFINE([USE_OPENCL], 1, [Define to build with OpenCL support. (--with-opencl)])])
+AC_MSG_RESULT([$with_opencl])
+AC_SUBST(with_opencl)
+
+PGAC_ARG_REQ(with, opencl_dir, [DIRS], [Root directory of the the OpenCL API])
+ac_save_IFS=$IFS
+IFS="${IFS}${PATH_SEPARATOR}"
+# SRCH_INC comes from the template file
+for dir in $with_opencl_dir $SRCH_INC; do
+  if test -d "$dir"; then
+    INCLUDES="$INCLUDES -I$dir/include"
+  fi
+  if test -d "$dir/lib"; then
+    LIBDIRS="$LIBDIRS -L$dir/lib"
+  fi
+  if test -d "$dir/lib64"; then
+    LIBDIRS="$LIBDIRS -L$dir/lib64"
+  fi
+done
+IFS=$ac_save_IFS
+AC_SUBST(INCLUDES)
+AC_SUBST(LIBDIRS)
+
+#
 # SELinux
 #
 AC_MSG_CHECKING([whether to build with SELinux support])
@@ -948,6 +976,10 @@ if test "$with_openssl" = yes ; then
   fi
 fi
 
+if test "$with_opencl" = yes ; then
+  AC_CHECK_LIB(OpenCL, clGetPlatformIDs, [], [AC_MSG_ERROR([No installed OpenCL platform found.])])
+fi
+
 if test "$with_pam" = yes ; then
   AC_CHECK_LIB(pam,    pam_start, [], [AC_MSG_ERROR([library 'pam' is required for PAM])])
 fi
@@ -1064,6 +1096,10 @@ fi
 if test "$with_openssl" = yes ; then
   AC_CHECK_HEADER(openssl/ssl.h, [], [AC_MSG_ERROR([header file <openssl/ssl.h> is required for OpenSSL])])
   AC_CHECK_HEADER(openssl/err.h, [], [AC_MSG_ERROR([header file <openssl/err.h> is required for OpenSSL])])
+fi
+
+if test "$with_opencl" = yes ; then
+  AC_CHECK_HEADER(CL/cl.h, [], [AC_MSG_ERROR([header file <CL/cl.h> is required for OpenCL support])])
 fi
 
 if test "$with_pam" = yes ; then
