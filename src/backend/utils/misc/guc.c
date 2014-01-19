@@ -127,6 +127,18 @@ extern bool synchronize_seqscans;
 extern int	ssl_renegotiation_limit;
 extern char *SSLCipherSuites;
 
+#ifdef USE_OPENCL
+/* Flag to determine whether we should use the OpenCL KDE estimator or not. */
+extern bool enable_kde_estimator;
+extern void assign_enable_kde_estimator(bool newval, void *extra);
+/* Determines how big the sample should be that is used for kde.*/
+extern int kde_samplesize;
+extern void assign_max_kde_samplesize(int newval, void *extra);
+/* Determines whether we use the GPU or the CPU for running KDE. */
+extern bool ocl_use_gpu;
+extern void assign_ocl_use_gpu(bool newval, void *extra);
+#endif
+
 #ifdef TRACE_SORT
 extern bool trace_sort;
 #endif
@@ -195,7 +207,38 @@ static void assign_effective_io_concurrency(int newval, void *extra);
 static void assign_pgstat_temp_directory(const char *newval, void *extra);
 static bool check_application_name(char **newval, void **extra, GucSource source);
 static void assign_application_name(const char *newval, void *extra);
-static const char *show_unix_socket_permissions(void);
+static const char *show_unix_socket_permissions(void);#ifdef USE_OPENCL
+{
+  {"enable_kde_estimator", PGC_USERSET, DEVELOPER_OPTIONS,
+    gettext_noop("Use Kernel Density Estimation for estimating selectivites."),
+    NULL,
+    GUC_NOT_IN_SAMPLE
+  },
+  &enable_kde_estimator,
+  false,
+  NULL, assign_enable_kde_estimator, NULL
+},
+{
+  {"kde_samplesize", PGC_USERSET, DEVELOPER_OPTIONS,
+    gettext_noop("Sample size (in MB) that is used for the Kernel Density Estimator."),
+    NULL,
+    GUC_NOT_IN_SAMPLE
+  },
+  &enable_kde_estimator,
+  5,
+  NULL, assign_max_kde_samplesize, NULL
+},
+{
+  {"ocl_use_gpu", PGC_USERSET, DEVELOPER_OPTIONS,
+    gettext_noop("Use the GPU for OpenCL?."),
+    NULL,
+    GUC_NOT_IN_SAMPLE
+  },
+  &ocl_use_gpu,
+  false,
+  NULL, assign_ocl_use_gpu, NULL
+},
+#endif
 static const char *show_log_file_mode(void);
 
 static char *config_enum_get_options(struct config_enum * record,
@@ -3316,6 +3359,38 @@ static struct config_enum ConfigureNamesEnum[] =
 		NULL, NULL, NULL
 	},
 
+#ifdef USE_OPENCL
+  {
+    {"enable_kde_estimator", PGC_USERSET, DEVELOPER_OPTIONS,
+      gettext_noop("Use Kernel Density Estimation for selectivity estimation."),
+      NULL,
+      GUC_NOT_IN_SAMPLE
+    },
+    &enable_kde_estimator,
+    false,
+    NULL, assign_enable_kde_estimator, NULL
+  },
+  {
+    {"kde_samplesize", PGC_USERSET, DEVELOPER_OPTIONS,
+      gettext_noop("Sample size (in MB) that is used for the Kernel Density Estimator."),
+      NULL,
+      GUC_NOT_IN_SAMPLE
+    },
+    &enable_kde_estimator,
+    5,
+    NULL, assign_max_kde_samplesize, NULL
+  },
+  {
+    {"ocl_use_gpu", PGC_USERSET, DEVELOPER_OPTIONS,
+      gettext_noop("Use the GPU for OpenCL?."),
+      NULL,
+      GUC_NOT_IN_SAMPLE
+    },
+    &ocl_use_gpu,
+    false,
+    NULL, assign_ocl_use_gpu, NULL
+  },
+#endif
 
 	/* End-of-list marker */
 	{
