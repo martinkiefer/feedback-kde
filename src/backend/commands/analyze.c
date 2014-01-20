@@ -486,6 +486,41 @@ do_analyze_rel(Relation onerel, VacuumStmt *vacstmt,
 		}
 	}
 
+	/* Check if we want to generate a KDE estimator */
+#ifdef USE_OPENCL
+  if (ocl_useKDE()) {
+    unsigned int float_columns = 0;
+    /* Count how many float columns this table has. */
+    for (i = 0; i < attr_cnt; i++) {
+      if (vacattrstats[i]->attrtypid == FLOAT4OID || vacattrstats[i]->attrtypid == FLOAT8OID)
+        float_columns++;
+    }
+    if (float_columns > 0 && float_columns <= 6) {
+      /*
+       * We build an estimator! Extract the actual attributes.
+       */
+      unsigned int j = 0;
+      unsigned int sample_size = 0;
+      double total_rows, total_dead_rows;
+      HeapTuple* sample;
+      AttrNumber* attributes = (AttrNumber*)malloc(float_columns * sizeof(AttrNumber));
+      for (i = 0; i < attr_cnt; i++) {
+        if (vacattrstats[i]->attrtypid == FLOAT4OID || vacattrstats[i]->attrtypid == FLOAT8OID) {
+          attributes[j++] = vacattrstats[i]->tupattnum;
+        }
+      }
+      /* Now determine how many rows we want in our sample */
+      sample_size = ocl_maxSampleSize(float_columns);
+      sample = (HeapTuple*) malloc(sample_size * sizeof(HeapTuple));
+      sample_size = acquire_sample_rows(onerel, sample, sample_size, &total_rows, &total_dead_rows);
+      if (sample_size > 0)
+        ocl_constructEstimator(onerel, (unsigned int)total_rows, float_columns,
+                               attributes, sample_size, sample);
+      free(sample);
+    }
+  }
+#endif /* USE_OPENCL */
+
 	/*
 	 * Acquire the sample rows
 	 */

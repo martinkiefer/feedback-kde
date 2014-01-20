@@ -100,13 +100,141 @@ clauselist_selectivity(PlannerInfo *root,
 	RangeQueryClause *rqlist = NULL;
 	ListCell   *l;
 
+#if USE_OPENCL
+  /*
+   * In this block, we check whether we can estimate a selectivity via KDE on the GPU.
+   * This requires a few things:
+   *  a) We have a model for the relation.
+   *  b) The clause is a conjunction of not more than one interval per dimension.
+   */
+  if (ocl_useKDE()) {
+    /* Estimator request, that is used to aggregate the range requests */
+    ocl_estimator_request_t ocl_request;
+    unsigned int total_clauses = 0;
+    unsigned int known_clauses = 0;
+    memset(&ocl_request, 0, sizeof(ocl_estimator_request_t));
+
+    /* Now walk each clause, extracting required information from each */
+    fprintf(stderr, ">>> BEGINNING OF clauselist_selectivity\n");
+    foreach(l, clauses) {
+      Node     *clause = (Node *) lfirst(l);
+      total_clauses++;
+      if (IsA(clause, RestrictInfo)) {
+        // Variable Definitions
+        RestrictInfo *rinfo;
+        VariableStatData vardata;
+        Node     *other;
+        bool    varonleft;
+        float   constval;
+        Oid     relation;
+        AttrNumber  colno;
+        char*   opname;
+        union { Datum orig; double dval; } Datum2Double;
+        // Check if this is a restriction clause:
+        rinfo = (RestrictInfo *) clause;
+        if (rinfo->pseudoconstant) {
+              continue;
+        }
+        clause = (Node *) rinfo->clause;
+        if (!IsA(clause, OpExpr)) {
+          fprintf(stderr, "Unsupported clause.\n");
+          continue;
+        }
+        // Extract the operator information:
+        if (!get_restriction_variable(root, ((OpExpr *)clause)->args, varRelid, &vardata, &other, &varonleft)) {
+          fprintf(stderr, "Undefined clause.\n");
+          continue;
+        }
+        // Check that this is a valid operator (lt or gt):
+        if (varonleft) {
+          opname = get_opname(((OpExpr *)clause)->opno);
+        } else {
+          opname = get_opname(get_commutator(((OpExpr *)clause)->opno));
+        }
+        if (!strcmp(">", opname) && !strcmp("<", opname) && !strcmp("=", opname)) {
+          ReleaseVariableStats(vardata);
+          continue;
+        }
+        // Check that we have a constant on one side.
+        if (!IsA(other, Const)) {
+          ReleaseVariableStats(vardata);
+          continue;
+        }
+        // Check that we have a singular base relation on the left side.
+        if (vardata.rel->reloptkind != RELOPT_BASEREL) {
+          ReleaseVariableStats(vardata);
+          continue;
+        }
+        // Check that the base relation is the same as before.
+        relation = root->simple_rte_array[bms_singleton_member(vardata.rel->relids)]->relid;
+        if (ocl_request.table_identifier != 0 && ocl_request.table_identifier != relation) {
+          ReleaseVariableStats(vardata);
+          continue;
+        } else
+          ocl_request.table_identifier = relation;
+        // Check that this a selection on a float column.
+        if (((Const *) other)->consttype != FLOAT4OID && ((Const *) other)->consttype != FLOAT8OID) {
+          ReleaseVariableStats(vardata);
+          continue;
+        }
+        // Extract the float value of the attribute.
+        Datum2Double.orig = ((Const *) other)->constvalue;
+        constval = (float)Datum2Double.dval;
+        // Extract the column number.
+        colno = ((Var*)vardata.var)->varattno;
+        // Now insert the range information
+        if (*opname == '<') {
+          ocl_updateRequest(&ocl_request, colno, NULL, &constval);
+        } else if (*opname == '>') {
+          ocl_updateRequest(&ocl_request, colno, &constval, NULL);
+        } else if (*opname == '=') {
+          ocl_updateRequest(&ocl_request, colno, &constval, &constval);
+        }
+        known_clauses++;
+        // Flag the node as invalid, so it is not used in estimation.
+        ((Node *)lfirst(l))->type = T_Invalid;
+        // Clean up
+        ReleaseVariableStats(vardata);
+      }
+    }
+    // If we have identified a request, try to run it on the device:
+    fprintf(stderr, "Identified %i valid from %i total clauses for OpenCL offloading.\n", known_clauses, total_clauses);
+    if (ocl_request.table_identifier) {
+      ocl_dumpRequest(&ocl_request);
+      if (!ocl_estimateSelectivity(&ocl_request, &s1)) {
+        // Ok... we were unable to evaluate this. Remove the flags from the nodes.
+        foreach(l, clauses) {
+          Node* clause = (Node *) lfirst(l);
+          if (clause->type == T_Invalid)
+            clause->type = T_RestrictInfo;
+        }
+        fprintf(stderr, "-> Request failed :(.\n");
+      } else
+        fprintf(stderr, "-> Request successful :).\n");
+      if (ocl_request.ranges) {
+        free(ocl_request.ranges);
+      }
+    }
+    fprintf(stderr, "<<< END OF clauselist_selectivity\n");
+  }
+#endif
+
 	/*
 	 * If there's exactly one clause, then no use in trying to match up pairs,
 	 * so just go directly to clause_selectivity().
 	 */
 	if (list_length(clauses) == 1)
-		return clause_selectivity(root, (Node *) linitial(clauses),
-								  varRelid, jointype, sjinfo);
+#ifdef USE_OPENCL
+    if (ocl_useKDE() && ((Node*)linitial(clauses))->type == T_Invalid) {
+        ((Node*)linitial(clauses))->type = T_RestrictInfo;
+        return s1;
+    } else {
+#endif
+    return clause_selectivity(root, (Node *) linitial(clauses),
+                  varRelid, jointype, sjinfo);
+#ifdef USE_OPENCL
+    }
+#endif
 
 	/*
 	 * Initial scan over clauses.  Anything that doesn't look like a potential
@@ -120,7 +248,17 @@ clauselist_selectivity(PlannerInfo *root,
 		Selectivity s2;
 
 		/* Always compute the selectivity using clause_selectivity */
-		s2 = clause_selectivity(root, clause, varRelid, jointype, sjinfo);
+#ifdef USE_OPENCL
+    if (ocl_useKDE() && clause->type == T_Invalid) {
+      // This clause was pre-processed by the GPU. Ignore it
+      s2 = 1.0;
+      clause->type = T_RestrictInfo; // Remove the tag, so Postgres doesn't die.
+    } else {
+#endif
+      s2 = clause_selectivity(root, clause, varRelid, jointype, sjinfo);
+#ifdef USE_OPENCL
+    }
+#endif
 
 		/*
 		 * Check for being passed a RestrictInfo.
