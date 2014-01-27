@@ -13,6 +13,7 @@
 #include "access/htup_details.h"
 #include "utils/rel.h"
 #include <time.h>
+#include <float.h>
 
 typedef enum bound { HIGHBOUND,LOWBOUND,EQUALITY} bound_t;
 
@@ -48,9 +49,9 @@ static char *kde_print_rqlist(RQClause *rqlist){
 	{
 	    int o_size;
 	    if(rqlist->next != NULL)
-		o_size = snprintf(ranges+chars,left,"%d,%f,%f,", (int) rqlist->var->varattno,rqlist->lobound,rqlist->hibound);
+		o_size = snprintf(ranges+chars,left,"%d,%.*g,%.*g,", (int) rqlist->var->varattno,DBL_DIG,rqlist->lobound,DBL_DIG,rqlist->hibound);
 	    else
-		o_size = snprintf(ranges+chars,left,"%d,%f,%f", (int) rqlist->var->varattno,rqlist->lobound,rqlist->hibound);
+		o_size = snprintf(ranges+chars,left,"%d,%.*g,%.*g", (int) rqlist->var->varattno,DBL_DIG,rqlist->lobound,DBL_DIG,rqlist->hibound);
 	    
 	    if(o_size <= left){
 	      chars += o_size;
