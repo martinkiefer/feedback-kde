@@ -139,6 +139,9 @@ extern bool ocl_use_gpu;
 extern void assign_ocl_use_gpu(bool newval, void *extra);
 #endif
 
+//KDE
+extern bool enable_kde_feedback_collection;
+
 #ifdef TRACE_SORT
 extern bool trace_sort;
 #endif
@@ -1461,6 +1464,17 @@ static struct config_bool ConfigureNamesBool[] =
 			NULL,
 		},
 		&quote_all_identifiers,
+		false,
+		NULL, NULL, NULL
+	},
+	//KDE
+	{
+		{"enable_kde_feedback_collection", PGC_USERSET, DEVELOPER_OPTIONS,
+			gettext_noop("Enable the KDE feedback data collection."),
+			NULL,
+			GUC_NOT_IN_SAMPLE
+		},
+		&enable_kde_feedback_collection,
 		false,
 		NULL, NULL, NULL
 	},
@@ -3327,7 +3341,6 @@ static struct config_enum ConfigureNamesEnum[] =
 		XMLOPTION_CONTENT, xmloption_options,
 		NULL, NULL, NULL
 	},
-
 #ifdef USE_OPENCL
   {
     {"enable_kde_estimator", PGC_USERSET, DEVELOPER_OPTIONS,
@@ -3360,7 +3373,6 @@ static struct config_enum ConfigureNamesEnum[] =
     NULL, assign_ocl_use_gpu, NULL
   },
 #endif
-
 	/* End-of-list marker */
 	{
 		{NULL, 0, 0, NULL, NULL}, NULL, 0, NULL, NULL, NULL, NULL

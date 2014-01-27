@@ -343,18 +343,17 @@ ExecInitNode(Plan *node, EState *estate, int eflags)
 		result->instrument = InstrAlloc(1, estate->es_instrument);
 	
 	//KDE
-	if (nodeTag(node) == T_SeqScan){
-	    RQClause *rq = kde_get_rqlist(node->qual); 
-	    //fprintf(stderr, "SeqScan Found. %i\n", rq);
-	    if(rq != NULL){
-	      //fprintf(stderr, "Providing instrumentation\n");
-	      if(! estate->es_instrument){
-		result->instrument = InstrAlloc(1, INSTRUMENT_ROWS);
-	      }
-	      result->instrument->kde_rq = rq;
-	      result->instrument->kde_rtable = estate->es_range_table;
-	   }
-	   
+	if(kde_feedback_use_collection()){
+	    if (nodeTag(node) == T_SeqScan){
+		RQClause *rq = kde_get_rqlist(node->qual); 
+		if(rq != NULL){
+		    if(! estate->es_instrument){
+			result->instrument = InstrAlloc(1, INSTRUMENT_ROWS);
+		    }
+		    result->instrument->kde_rq = rq;
+		    result->instrument->kde_rtable = estate->es_range_table;
+		}
+	    }
 	}
 	
 	  //fprintf(stderr, "SeqScan not found.%i\n", nodeTag(node));

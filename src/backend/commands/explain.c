@@ -31,6 +31,7 @@
 #include "utils/snapmgr.h"
 #include "utils/tuplesort.h"
 #include "utils/xml.h"
+#include "kde_feedback/kde_feedback.h"
 
 
 /* Hook for plugins to get control in ExplainOneQuery() */
@@ -1142,6 +1143,12 @@ ExplainNode(PlanState *planstate, List *ancestors,
 		}
 	}
 
+	//KDE
+	//get stats before explain analyze messes with the iteration count
+	if(nodeTag(planstate) == T_SeqScanState){
+	      kde_finish(planstate);
+	} 
+	
 	/*
 	 * We have to forcibly clean up the instrumentation state because we
 	 * haven't done ExecutorEnd yet.  This is pretty grotty ...
@@ -1149,6 +1156,7 @@ ExplainNode(PlanState *planstate, List *ancestors,
 	if (planstate->instrument)
 		InstrEndLoop(planstate->instrument);
 
+	
 	if (planstate->instrument && planstate->instrument->nloops > 0)
 	{
 		double		nloops = planstate->instrument->nloops;

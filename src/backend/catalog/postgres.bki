@@ -2878,6 +2878,15 @@ create pg_inherits 2611 without_oids
  inhparent = oid ,
  inhseqno = int4
  )
+#KDE
+create kde_rq_feedback 3779 without_oids
+ (
+ time = int8,
+ table = oid,
+ ranges = text,
+ alltuples = float8,
+ qualifiedtuples = float8
+ )
 open pg_inherits
 close pg_inherits
 create pg_index 2610 without_oids
