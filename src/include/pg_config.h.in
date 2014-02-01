@@ -788,6 +788,9 @@
 /* Define to build with (Open)SSL support. (--with-openssl) */
 #undef USE_SSL
 
+/* Define to build with OpenCL support. (--with-opencl) */
+#undef USE_OPENCL
+
 /* Define to select SysV-style semaphores. */
 #undef USE_SYSV_SEMAPHORES
 
