@@ -221,6 +221,7 @@ ifeq ($(MAKE_DLL), true)
 endif
 endif
 	$(MAKE) -C catalog install-data
+	$(MAKE) -C optimizer install-data
 	$(MAKE) -C tsearch install-data
 	$(INSTALL_DATA) $(srcdir)/libpq/pg_hba.conf.sample '$(DESTDIR)$(datadir)/pg_hba.conf.sample'
 	$(INSTALL_DATA) $(srcdir)/libpq/pg_ident.conf.sample '$(DESTDIR)$(datadir)/pg_ident.conf.sample'
@@ -279,6 +280,7 @@ ifeq ($(MAKE_DLL), true)
 endif
 endif
 	$(MAKE) -C catalog uninstall-data
+	$(MAKE) -C optimizer uninstall-data
 	$(MAKE) -C tsearch uninstall-data
 	rm -f '$(DESTDIR)$(datadir)/pg_hba.conf.sample' \
 	      '$(DESTDIR)$(datadir)/pg_ident.conf.sample' \
