@@ -9,6 +9,7 @@
 #define ESTIMATOR_H_
 
 #include "ocl_estimator_api.h"
+#include "container/directory.h"
 
 #ifdef USE_OPENCL
 
@@ -18,10 +19,11 @@
 typedef struct ocl_estimator {
 	/* Information about the scope of this estimator */
 	Oid relation_id;			/* For which relation is this estimator configured? */
-	AttrNumber* column_numbers;	/* Which columns are stored within this estimator? */
+	int32 columns;	/* Bitmap encoding which columns are stored in this estimator */
+	AttrNumber* column_order; /* Required order of the columns when sending requests. */
 	/* Some statistics about the estimator */
 	unsigned int nr_of_dimensions; 
-	size_t sample_size;
+	unsigned int sample_size;
 	/* Prepared kernels for the estimator */
 	bool exact; // Do we use KDE or exact evaluation?
 	cl_kernel range_kernel;
@@ -34,29 +36,19 @@ typedef struct ocl_estimator {
 } ocl_estimator_t;
 
 /*
- * Performance characteristics.
- */
-typedef struct ocl_perf_stats {
-	float ms_per_tuple;
-} ocl_perf_stats_t;
-
-/*
  * Registry of all known estimators.
  */
 typedef struct ocl_estimator_registry {
-	/* List of estimators */
-	unsigned int nr_of_estimators;
-	ocl_estimator_t* estimators;
-	/* Performance characteristics */
-	ocl_perf_stats_t perf_stats;
+  // This encodes in a bitmap for which oids we have estimators.
+  char* estimator_bitmap;
+  // This stores an OID->estimator mapping.
+	directory_t estimator_directory;
 } ocl_estimator_registry_t;
 
 /*
- * Construct a new estimator descriptor:
+ * Initialize the kernels for a given estimator.
  */
-extern int ocl_prepareEstimator(ocl_estimator_t* estimator,
-		unsigned int n, unsigned int d, bool full_sample,
-		cl_mem buffer, float* bandwidth);
+extern int ocl_prepareEstimator(ocl_estimator_t* estimator);
 
 #endif /* USE_OPENCL */
 #endif /* ESTIMATOR_H_ */

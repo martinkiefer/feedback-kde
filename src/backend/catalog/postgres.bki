@@ -2878,6 +2878,9 @@ create pg_inherits 2611 without_oids
  inhparent = oid ,
  inhseqno = int4
  )
+open pg_inherits
+close pg_inherits
+
 #KDE
 create kde_rq_feedback 3779 without_oids
  (
@@ -2887,8 +2890,21 @@ create kde_rq_feedback 3779 without_oids
  alltuples = float8,
  qualifiedtuples = float8
  )
-open pg_inherits
-close pg_inherits
+open kde_rq_feedback
+close kde_rq_feedback
+create kde_estimators 3780 without_oids
+ (
+ table = oid,
+ columns = int4,
+ is_exact = bool,
+ sample_size = int4,
+ scalefactors = float4[],
+ bandwidth = float4[],
+ sample = bytea
+ )
+open kde_estimators
+close kde_estimators
+
 create pg_index 2610 without_oids
  (
  indexrelid = oid ,
@@ -5532,4 +5548,6 @@ declare unique index pg_shseclabel_object_index 3593 on pg_shseclabel using btre
 declare unique index pg_extension_oid_index 3080 on pg_extension using btree(oid oid_ops)
 declare unique index pg_extension_name_index 3081 on pg_extension using btree(extname name_ops)
 declare unique index pg_range_rngtypid_index 3542 on pg_range using btree(rngtypid oid_ops)
+# KDE index
+declare index kde_rq_feedback_index 3781 on kde_rq_feedback using btree(table oid_ops)
 build indices

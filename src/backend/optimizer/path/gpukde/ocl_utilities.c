@@ -18,16 +18,15 @@ ocl_context_t* ocl_context = NULL;
 /*
  * Global GUC Config variables.
  */
-bool ocl_use_gpu = true;
-bool enable_kde_estimator = false;
-int kde_samplesize = 5;
+bool ocl_use_gpu;
+bool enable_kde_estimator;
+int kde_samplesize;
 
 /*
  * Accessor for the global context. Make sure to initialize the context on first access.
  */
 ocl_context_t* ocl_getContext() {
-	if (!ocl_context)
-		ocl_initialize();
+	if (!ocl_context) ocl_initialize();
 	return ocl_context;
 }
 
@@ -92,7 +91,7 @@ void ocl_initialize(void) {
 	err = clGetDeviceInfo(device, CL_DEVICE_MAX_COMPUTE_UNITS, sizeof(cl_uint), &(ctxt->max_compute_units), NULL);
 
 	/* Allocate a 512 MB result buffer on the device */
-	ctxt->result_buffer_size =5122*1024*1024;
+	ctxt->result_buffer_size = 512*1024*1024;
 	ctxt->result_buffer = clCreateBuffer(ctxt->context, CL_MEM_READ_WRITE, ctxt->result_buffer_size, NULL, &err);
 	if (err != CL_SUCCESS) {
 		fprintf(stderr, "\tError allocating OpenCL result buffer.\n");
