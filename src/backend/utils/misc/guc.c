@@ -1496,7 +1496,7 @@ static struct config_bool ConfigureNamesBool[] =
       GUC_NOT_IN_SAMPLE
     },
     &ocl_use_gpu,
-    false,
+    true,
     NULL, assign_ocl_use_gpu, NULL
   },
 #endif
