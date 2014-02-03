@@ -18,6 +18,7 @@
 #include "access/heapam.h"
 #include "access/htup_details.h"
 #include "access/sysattr.h"
+#include "catalog/pg_kdemodels.h"
 #include "catalog/pg_type.h"
 #include "storage/lock.h"
 #include "storage/ipc.h"
@@ -29,17 +30,6 @@
 extern bool ocl_use_gpu;
 extern bool enable_kde_estimator;
 extern int kde_samplesize;
-
-// Definitions for the KDE estimator table.
-#define KDE_TABLE_OID 3780
-#define kde_table_num_rels 7
-#define Anum_kde_table_relid 1
-#define Anum_kde_table_columns 2
-#define Anum_kde_table_is_exact 3
-#define Anum_kde_table_sample_size 4
-#define Anum_kde_table_scalefactors 5
-#define Anum_kde_table_bandwidth 6
-#define Anum_kde_table_sample 7
 
 // Struct describing the KDE estimator catalogue table.
 typedef struct FormData_kde_table {
@@ -128,11 +118,11 @@ static ocl_estimator_t* ocl_buildEstimatorFromCatalogEntry(Relation kde_rel,
   ocl_context_t* context = ocl_getContext();
   ocl_estimator_t* descriptor = calloc(1, sizeof(ocl_estimator_t));
   // Extract the table identifier.
-  datum = heap_getattr(tuple, Anum_kde_table_relid,
+  datum = heap_getattr(tuple, Anum_pg_kdemodels_table,
                        RelationGetDescr(kde_rel), &isNull);
   descriptor->relation_id = DatumGetObjectId(datum);
   // Extract the dimensionality and the column order.
-  datum = heap_getattr(tuple, Anum_kde_table_columns,
+  datum = heap_getattr(tuple, Anum_pg_kdemodels_columns,
                        RelationGetDescr(kde_rel), &isNull);
   descriptor->columns = DatumGetInt32(datum);
   unsigned int i;
@@ -147,19 +137,19 @@ static ocl_estimator_t* ocl_buildEstimatorFromCatalogEntry(Relation kde_rel,
     columns >>= 1;
   }
   // Extract the scale factors.
-  datum = heap_getattr(tuple, Anum_kde_table_scalefactors,
+  datum = heap_getattr(tuple, Anum_pg_kdemodels_scalefactors,
                        RelationGetDescr(kde_rel), &isNull);
   array = DatumGetArrayTypeP(datum);
   descriptor->scale_factors = malloc(sizeof(float) * descriptor->nr_of_dimensions);
   memcpy(descriptor->scale_factors, (float*)ARR_DATA_PTR(array),
          descriptor->nr_of_dimensions * sizeof(float));
   // Extract whether the estimator is exact.
-  datum = heap_getattr(tuple, Anum_kde_table_is_exact,
+  datum = heap_getattr(tuple, Anum_pg_kdemodels_is_exact,
                        RelationGetDescr(kde_rel), &isNull);
   descriptor->exact = DatumGetBool(datum);
   if (!descriptor->exact) {
     // This is no exact estimator, extract the bandwidth.
-    datum = heap_getattr(tuple, Anum_kde_table_bandwidth,
+    datum = heap_getattr(tuple, Anum_pg_kdemodels_bandwidth,
                          RelationGetDescr(kde_rel), &isNull);
     array = DatumGetArrayTypeP(datum);
     descriptor->bandwidth_buffer = clCreateBuffer(
@@ -170,11 +160,11 @@ static ocl_estimator_t* ocl_buildEstimatorFromCatalogEntry(Relation kde_rel,
                          (char*)ARR_DATA_PTR(array), 0, NULL, NULL);
   }
   // Extract the sample size.
-  datum = heap_getattr(tuple, Anum_kde_table_sample_size,
+  datum = heap_getattr(tuple, Anum_pg_kdemodels_sample_size,
                        RelationGetDescr(kde_rel), &isNull);
   descriptor->sample_size = DatumGetInt32(datum);
   // Finally, extract the sample.
-  datum = heap_getattr(tuple, Anum_kde_table_sample,
+  datum = heap_getattr(tuple, Anum_pg_kdemodels_sample,
                           RelationGetDescr(kde_rel), &isNull);
   bytea* host_copy = DatumGetByteaP(datum);
   descriptor->data_sample = clCreateBuffer(
@@ -193,25 +183,24 @@ static ocl_estimator_t* ocl_buildEstimatorFromCatalogEntry(Relation kde_rel,
 
 static void ocl_updateEstimatorInCatalog(ocl_estimator_t* estimator) {
   unsigned int i;
-  cl_int err = 0;
   HeapTuple tuple;
   Datum* array_datums;
   ArrayType* array;
   ocl_context_t* context = ocl_getContext();
 
-  Datum values[kde_table_num_rels];
-  bool  nulls[kde_table_num_rels];
-  bool  repl[kde_table_num_rels];
+  Datum values[Natts_pg_kdemodels];
+  bool  nulls[Natts_pg_kdemodels];
+  bool  repl[Natts_pg_kdemodels];
   memset(values, 0, sizeof(values));
   memset(nulls, false, sizeof(nulls));
   memset(repl, true, sizeof(repl));
 
   // Collect all tuple values.
     // Insert all static fields.
-  values[Anum_kde_table_relid-1] = ObjectIdGetDatum(estimator->relation_id);
-  values[Anum_kde_table_columns-1] = Int32GetDatum(estimator->columns);
-  values[Anum_kde_table_sample_size-1] = Int32GetDatum(estimator->sample_size);
-  values[Anum_kde_table_is_exact-1] = BoolGetDatum(estimator->exact);
+  values[Anum_pg_kdemodels_table-1] = ObjectIdGetDatum(estimator->relation_id);
+  values[Anum_pg_kdemodels_columns-1] = Int32GetDatum(estimator->columns);
+  values[Anum_pg_kdemodels_sample_size-1] = Int32GetDatum(estimator->sample_size);
+  values[Anum_pg_kdemodels_is_exact-1] = BoolGetDatum(estimator->exact);
     // Insert the scale factors.
   array_datums = palloc(sizeof(Datum) * estimator->nr_of_dimensions);
   for (i = 0; i < estimator->nr_of_dimensions; ++i) {
@@ -219,14 +208,14 @@ static void ocl_updateEstimatorInCatalog(ocl_estimator_t* estimator) {
   }
   array = construct_array(array_datums, estimator->nr_of_dimensions,
                           FLOAT4OID, sizeof(float), FLOAT4PASSBYVAL, 'i');
-  values[Anum_kde_table_scalefactors-1] = PointerGetDatum(array);
+  values[Anum_pg_kdemodels_scalefactors-1] = PointerGetDatum(array);
     // Insert the bandwidth.
   if (estimator->exact) {
     // We don't have to store the bandwidth.
-    nulls[Anum_kde_table_bandwidth-1] = true;
+    nulls[Anum_pg_kdemodels_bandwidth-1] = true;
   } else {
     float* host_bandwidth = palloc(estimator->nr_of_dimensions * sizeof(float));
-    err = clEnqueueReadBuffer(
+    clEnqueueReadBuffer(
         context->queue, estimator->bandwidth_buffer, CL_TRUE, 0,
         estimator->nr_of_dimensions * sizeof(float), host_bandwidth,
         0, NULL, NULL);
@@ -236,22 +225,22 @@ static void ocl_updateEstimatorInCatalog(ocl_estimator_t* estimator) {
     pfree(host_bandwidth);
     array = construct_array(array_datums, estimator->nr_of_dimensions,
                             FLOAT4OID, sizeof(float), FLOAT4PASSBYVAL, 'i');
-    values[Anum_kde_table_bandwidth-1] = PointerGetDatum(array);
+    values[Anum_pg_kdemodels_bandwidth-1] = PointerGetDatum(array);
   }
   // Transfer the sample to a host buffer.
   bytea* host_sample = palloc(
       sizeof(float) * estimator->nr_of_dimensions * estimator->sample_size + VARHDRSZ);
-  err = clEnqueueReadBuffer(
+  clEnqueueReadBuffer(
       context->queue, estimator->data_sample, CL_TRUE, 0,
       sizeof(float) * estimator->nr_of_dimensions * estimator->sample_size,
       VARDATA(host_sample), 0, NULL, NULL);
   SET_VARSIZE(host_sample, sizeof(float) * estimator->nr_of_dimensions * estimator->sample_size + VARHDRSZ);
-  values[Anum_kde_table_sample-1] = PointerGetDatum(host_sample);
+  values[Anum_pg_kdemodels_sample-1] = PointerGetDatum(host_sample);
 
   // Now, try to find whether this estimator already exists.
-  Relation kdeRel = heap_open(KDE_TABLE_OID, RowExclusiveLock);
+  Relation kdeRel = heap_open(KdeModelRelationID, RowExclusiveLock);
   ScanKeyData key[1];
-  ScanKeyInit(&key[0], Anum_kde_table_relid, BTEqualStrategyNumber, F_OIDEQ,
+  ScanKeyInit(&key[0], Anum_pg_kdemodels_table, BTEqualStrategyNumber, F_OIDEQ,
               ObjectIdGetDatum(estimator->relation_id));
   HeapScanDesc scan = heap_beginscan(kdeRel, SnapshotNow, 1, key);
   tuple = heap_getnext(scan, ForwardScanDirection);
@@ -307,13 +296,6 @@ static void ocl_releaseRegistry() {
   registry = NULL;
 }
 
-static void
-KDEReleaseCallback(int code, void* arg) {
-  fprintf(stderr, "Releasing OpenCL Resources.\n");
-  ocl_releaseRegistry();
-  ocl_releaseContext();
-}
-
 /*
  * Initialize the registry.
  */
@@ -329,7 +311,7 @@ static void ocl_initializeRegistry() {
 
 	// Now open the KDE estimator table, read in all stored estimators and
 	// register their descriptors.
-	Relation kdeRel = heap_open(KDE_TABLE_OID, RowExclusiveLock);
+	Relation kdeRel = heap_open(KdeModelRelationID, RowExclusiveLock);
 	HeapScanDesc scan = heap_beginscan(kdeRel, SnapshotNow, 0, NULL);
 	HeapTuple tuple;
 	while ((tuple = heap_getnext(scan, ForwardScanDirection)) != NULL) {
@@ -531,7 +513,6 @@ void ocl_constructEstimator(
     Relation rel, unsigned int rows_in_table, unsigned int dimensionality,
     AttrNumber* attributes, unsigned int sample_size, HeapTuple* sample) {
 	unsigned int i, j;
-	cl_int err;
 	// Make sure we have a context
 	ocl_context_t* ctxt = ocl_getContext();
 	if (ctxt == NULL)	return;
@@ -620,7 +601,7 @@ void ocl_constructEstimator(
 	cl_mem sample_buffer = clCreateBuffer(
 	    ctxt->context, CL_MEM_READ_WRITE,
 	    sizeof(float)*dimensionality*sample_size, NULL, NULL);
-	err = clEnqueueWriteBuffer(
+	clEnqueueWriteBuffer(
 	    ctxt->queue, sample_buffer, CL_TRUE, 0,
 	    sizeof(float)*dimensionality*sample_size, host_buffer, 0, NULL, NULL);
   free(host_buffer);
