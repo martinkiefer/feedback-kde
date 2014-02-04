@@ -2878,15 +2878,6 @@ create pg_inherits 2611 without_oids
  inhparent = oid ,
  inhseqno = int4
  )
-#KDE
-create kde_rq_feedback 3779 without_oids
- (
- time = int8,
- table = oid,
- ranges = text,
- alltuples = float8,
- qualifiedtuples = float8
- )
 open pg_inherits
 close pg_inherits
 create pg_index 2610 without_oids
@@ -5427,6 +5418,28 @@ insert ( 3910 1184 0 3127 - tstzrange_subdiff)
 insert ( 3912 1082 0 3122 daterange_canonical daterange_subdiff)
 insert ( 3926 20 0 3124 int8range_canonical int8range_subdiff)
 close pg_range
+create pg_kdemodels 3780 without_oids
+ (
+ table = oid ,
+ columns = int4 ,
+ is_exact = bool ,
+ sample_size = int4 ,
+ scale_factors = float4[] ,
+ bandwidths = float4[] ,
+ sample = bytea
+ )
+open pg_kdemodels
+close pg_kdemodels
+create pg_kdefeedback 3779 without_oids
+ (
+ time = int8 ,
+ table = oid ,
+ ranges = text ,
+ alltuples = float8 ,
+ qualifiedtuples = float8
+ )
+open pg_kdefeedback
+close pg_kdefeedback
 declare toast 2830 2831 on pg_attrdef
 declare toast 2832 2833 on pg_constraint
 declare toast 2834 2835 on pg_description
@@ -5532,4 +5545,5 @@ declare unique index pg_shseclabel_object_index 3593 on pg_shseclabel using btre
 declare unique index pg_extension_oid_index 3080 on pg_extension using btree(oid oid_ops)
 declare unique index pg_extension_name_index 3081 on pg_extension using btree(extname name_ops)
 declare unique index pg_range_rngtypid_index 3542 on pg_range using btree(rngtypid oid_ops)
+declare index pg_kdefeedback_table_index 3781 on pg_kdefeedback using btree(table oid_ops)
 build indices

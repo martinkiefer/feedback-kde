@@ -8,7 +8,7 @@
 #define ACCEPT_TYPE_ARG2 struct sockaddr *
 
 /* Define to the type of arg 3 of 'accept' */
-#define ACCEPT_TYPE_ARG3 size_t
+#define ACCEPT_TYPE_ARG3 socklen_t
 
 /* Define to the return type of 'accept' */
 #define ACCEPT_TYPE_RETURN int
@@ -17,16 +17,16 @@
 /* #undef AC_APPLE_UNIVERSAL_BUILD */
 
 /* The normal alignment of `double', in bytes. */
-#define ALIGNOF_DOUBLE 4
+#define ALIGNOF_DOUBLE 8
 
 /* The normal alignment of `int', in bytes. */
 #define ALIGNOF_INT 4
 
 /* The normal alignment of `long', in bytes. */
-#define ALIGNOF_LONG 4
+#define ALIGNOF_LONG 8
 
 /* The normal alignment of `long long int', in bytes. */
-#define ALIGNOF_LONG_LONG_INT 4
+/* #undef ALIGNOF_LONG_LONG_INT */
 
 /* The normal alignment of `short', in bytes. */
 #define ALIGNOF_SHORT 2
@@ -73,7 +73,7 @@
 
 /* float8, int8, and related values are passed by value if 'true', by
    reference if 'false' */
-#define FLOAT8PASSBYVAL false
+#define FLOAT8PASSBYVAL true
 
 /* Define to 1 if getpwuid_r() takes a 5th argument. */
 #define GETPWUID_R_5ARG /**/
@@ -320,19 +320,19 @@
 
 /* Define to 1 if constants of type 'long long int' should have the suffix LL.
    */
-#define HAVE_LL_CONSTANTS 1
+/* #undef HAVE_LL_CONSTANTS */
 
 /* Define to 1 if the system has the type `locale_t'. */
 #define HAVE_LOCALE_T 1
 
 /* Define to 1 if `long int' works and is 64 bits. */
-/* #undef HAVE_LONG_INT_64 */
+#define HAVE_LONG_INT_64 1
 
 /* Define to 1 if the system has the type `long long int'. */
 #define HAVE_LONG_LONG_INT 1
 
 /* Define to 1 if `long long int' works and is 64 bits. */
-#define HAVE_LONG_LONG_INT_64 1
+/* #undef HAVE_LONG_LONG_INT_64 */
 
 /* Define to 1 if you have the `mbstowcs_l' function. */
 /* #undef HAVE_MBSTOWCS_L */
@@ -652,7 +652,7 @@
 #define HAVE__VA_ARGS 1
 
 /* Define to the appropriate snprintf format for 64-bit ints. */
-#define INT64_FORMAT "%lld"
+#define INT64_FORMAT "%ld"
 
 /* Define to build with Kerberos 5 support. (--with-krb5) */
 /* #undef KRB5 */
@@ -661,7 +661,7 @@
 /* #undef LOCALE_T_IN_XLOCALE */
 
 /* Define as the maximum alignment requirement of any C data type. */
-#define MAXIMUM_ALIGNOF 4
+#define MAXIMUM_ALIGNOF 8
 
 /* Define bytes to use libc memset(). */
 #define MEMSET_LOOP_LIMIT 1024
@@ -682,7 +682,7 @@
 #define PACKAGE_VERSION "9.3.1"
 
 /* Define to the name of a signed 64-bit integer type. */
-#define PG_INT64_TYPE long long int
+#define PG_INT64_TYPE long int
 
 /* Define to the name of the default PostgreSQL service principal in Kerberos.
    (--with-krb-srvnam=NAME) */
@@ -702,7 +702,7 @@
 #define PG_VERSION_NUM 90301
 
 /* A string containing the version number, platform, and C compiler */
-#define PG_VERSION_STR "PostgreSQL 9.3.1 on i686-pc-linux-gnu, compiled by gcc (Debian 4.8.2-10) 4.8.2, 32-bit"
+#define PG_VERSION_STR "PostgreSQL 9.3.1 on x86_64-unknown-linux-gnu, compiled by gcc (Ubuntu/Linaro 4.8.1-10ubuntu9) 4.8.1, 64-bit"
 
 /* Define to 1 to allow profiling output to be saved separately for each
    process. */
@@ -726,16 +726,16 @@
 #define RELSEG_SIZE 131072
 
 /* The size of `long', as computed by sizeof. */
-#define SIZEOF_LONG 4
+#define SIZEOF_LONG 8
 
 /* The size of `off_t', as computed by sizeof. */
 #define SIZEOF_OFF_T 8
 
 /* The size of `size_t', as computed by sizeof. */
-#define SIZEOF_SIZE_T 4
+#define SIZEOF_SIZE_T 8
 
 /* The size of `void *', as computed by sizeof. */
-#define SIZEOF_VOID_P 4
+#define SIZEOF_VOID_P 8
 
 /* Define to 1 if you have the ANSI C header files. */
 #define STDC_HEADERS 1
@@ -747,7 +747,7 @@
 /* #undef TM_IN_SYS_TIME */
 
 /* Define to the appropriate snprintf format for unsigned 64-bit ints. */
-#define UINT64_FORMAT "%llu"
+#define UINT64_FORMAT "%lu"
 
 /* Define to 1 to build with assertion checks. (--enable-cassert) */
 /* #undef USE_ASSERT_CHECKING */
@@ -761,7 +761,7 @@
 
 /* Define to 1 if you want float8, int8, etc values to be passed by value.
    (--enable-float8-byval) */
-/* #undef USE_FLOAT8_BYVAL */
+#define USE_FLOAT8_BYVAL 1
 
 /* Define to 1 if you want 64-bit integer timestamp and interval support.
    (--enable-integer-datetimes) */
@@ -788,6 +788,9 @@
 
 /* Define to build with (Open)SSL support. (--with-openssl) */
 /* #undef USE_SSL */
+
+/* Define to build with OpenCL support. (--with-opencl) */
+#define USE_OPENCL 1
 
 /* Define to select SysV-style semaphores. */
 #define USE_SYSV_SEMAPHORES 1
@@ -829,7 +832,7 @@
 #define XLOG_SEG_SIZE (16 * 1024 * 1024)
 
 /* Number of bits in a file offset, on hosts where this is settable. */
-#define _FILE_OFFSET_BITS 64
+/* #undef _FILE_OFFSET_BITS */
 
 /* Define to 1 to make fseeko visible on some hosts (e.g. glibc 2.2). */
 /* #undef _LARGEFILE_SOURCE */

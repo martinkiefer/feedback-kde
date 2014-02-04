@@ -1468,6 +1468,7 @@ static struct config_bool ConfigureNamesBool[] =
 		NULL, NULL, NULL
 	},
 	//KDE
+#ifdef USE_OPENCL
 	{
 		{"enable_kde_feedback_collection", PGC_USERSET, DEVELOPER_OPTIONS,
 			gettext_noop("Enable the KDE feedback data collection."),
@@ -1478,6 +1479,27 @@ static struct config_bool ConfigureNamesBool[] =
 		false,
 		NULL, NULL, NULL
 	},
+  {
+    {"enable_kde_estimator", PGC_USERSET, DEVELOPER_OPTIONS,
+      gettext_noop("Use Kernel Density Estimation for selectivity estimation."),
+      NULL,
+      GUC_NOT_IN_SAMPLE
+    },
+    &enable_kde_estimator,
+    false,
+    NULL, assign_enable_kde_estimator, NULL
+  },
+  {
+    {"ocl_use_gpu", PGC_USERSET, DEVELOPER_OPTIONS,
+      gettext_noop("Use the GPU for OpenCL?."),
+      NULL,
+      GUC_NOT_IN_SAMPLE
+    },
+    &ocl_use_gpu,
+    true,
+    NULL, assign_ocl_use_gpu, NULL
+  },
+#endif
 
 	/* End-of-list marker */
 	{
@@ -2434,6 +2456,19 @@ static struct config_int ConfigureNamesInt[] =
 		NULL, NULL, NULL
 	},
 
+#ifdef USE_OPENCL
+  {
+    {"kde_samplesize", PGC_USERSET, DEVELOPER_OPTIONS,
+      gettext_noop("Sample size (in kB) that is used for the Kernel Density Estimator."),
+      NULL,
+      GUC_NOT_IN_SAMPLE
+    },
+    &kde_samplesize,
+    5*1024, 16, 1024*1024,
+    NULL, assign_kde_samplesize, NULL
+  },
+#endif
+
 	/* End-of-list marker */
 	{
 		{NULL, 0, 0, NULL, NULL}, NULL, 0, 0, 0, NULL, NULL, NULL
@@ -3341,38 +3376,6 @@ static struct config_enum ConfigureNamesEnum[] =
 		XMLOPTION_CONTENT, xmloption_options,
 		NULL, NULL, NULL
 	},
-#ifdef USE_OPENCL
-  {
-    {"enable_kde_estimator", PGC_USERSET, DEVELOPER_OPTIONS,
-      gettext_noop("Use Kernel Density Estimation for selectivity estimation."),
-      NULL,
-      GUC_NOT_IN_SAMPLE
-    },
-    &enable_kde_estimator,
-    false,
-    NULL, assign_enable_kde_estimator, NULL
-  },
-  {
-    {"kde_samplesize", PGC_USERSET, DEVELOPER_OPTIONS,
-      gettext_noop("Sample size (in MB) that is used for the Kernel Density Estimator."),
-      NULL,
-      GUC_NOT_IN_SAMPLE
-    },
-    &enable_kde_estimator,
-    5,
-    NULL, assign_kde_samplesize, NULL
-  },
-  {
-    {"ocl_use_gpu", PGC_USERSET, DEVELOPER_OPTIONS,
-      gettext_noop("Use the GPU for OpenCL?."),
-      NULL,
-      GUC_NOT_IN_SAMPLE
-    },
-    &ocl_use_gpu,
-    false,
-    NULL, assign_ocl_use_gpu, NULL
-  },
-#endif
 	/* End-of-list marker */
 	{
 		{NULL, 0, 0, NULL, NULL}, NULL, 0, NULL, NULL, NULL, NULL

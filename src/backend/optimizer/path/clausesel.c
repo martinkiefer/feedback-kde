@@ -15,11 +15,13 @@
 #include "postgres.h"
 
 #include "catalog/pg_operator.h"
+#include "catalog/pg_type.h"
 #include "nodes/makefuncs.h"
 #include "optimizer/clauses.h"
 #include "optimizer/cost.h"
 #include "optimizer/pathnode.h"
 #include "optimizer/plancat.h"
+#include "../backend/optimizer/path/gpukde/ocl_estimator_api.h"
 #include "utils/fmgroids.h"
 #include "utils/lsyscache.h"
 #include "utils/selfuncs.h"
@@ -223,7 +225,7 @@ clauselist_selectivity(PlannerInfo *root,
 	 * If there's exactly one clause, then no use in trying to match up pairs,
 	 * so just go directly to clause_selectivity().
 	 */
-	if (list_length(clauses) == 1)
+	if (list_length(clauses) == 1) {
 #ifdef USE_OPENCL
     if (ocl_useKDE() && ((Node*)linitial(clauses))->type == T_Invalid) {
         ((Node*)linitial(clauses))->type = T_RestrictInfo;
@@ -235,6 +237,7 @@ clauselist_selectivity(PlannerInfo *root,
 #ifdef USE_OPENCL
     }
 #endif
+	}
 
 	/*
 	 * Initial scan over clauses.  Anything that doesn't look like a potential

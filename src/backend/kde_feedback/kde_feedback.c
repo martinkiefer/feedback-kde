@@ -7,6 +7,7 @@
 #include "parser/parsetree.h"
 #include "optimizer/clauses.h"
 #include "catalog/pg_type.h"
+#include "catalog/pg_kdefeedback.h"
 #include "utils/lsyscache.h"
 #include "utils/fmgroids.h"
 #include "nodes/nodes.h"
@@ -16,14 +17,6 @@
 #include <float.h>
 
 typedef enum bound { HIGHBOUND,LOWBOUND,EQUALITY} bound_t;
-
-#define KdeRelationId 3779
-#define kde_num_rels 5
-#define Anum_kde_time 1
-#define Anum_kde_relid 2
-#define Anum_kde_ranges 3
-#define Anum_kde_all_tuples 4
-#define Anum_kde_qualified_tuples 5
 
 //OIDs from pg_operator.h
 #define OID_FLOAT8_EQ 670
@@ -279,8 +272,8 @@ int kde_finish(PlanState *node){
 	time_t seconds;
 	
 	Relation pg_database_rel;
-	Datum		new_record[kde_num_rels];
-	bool		new_record_nulls[kde_num_rels];
+	Datum		new_record[Natts_pg_kdefeedback];
+	bool		new_record_nulls[Natts_pg_kdefeedback];
 	HeapTuple	tuple;
 
 	if(node == NULL)
@@ -310,14 +303,14 @@ int kde_finish(PlanState *node){
 		return 1;
 	    }
 	    
-	    pg_database_rel = heap_open(KdeRelationId, RowExclusiveLock);
+	    pg_database_rel = heap_open(KdeFeedbackRelationID, RowExclusiveLock);
 	    
 	    seconds = time (NULL);
-	    new_record[Anum_kde_time-1] = Int64GetDatum((int64) seconds);
-	    new_record[Anum_kde_relid-1] = ObjectIdGetDatum(rte->relid);
-	    new_record[Anum_kde_ranges-1] = CStringGetTextDatum(rq_string);
-	    new_record[Anum_kde_qualified_tuples-1] = Float8GetDatum(qual_tuples);
-	    new_record[Anum_kde_all_tuples-1] = Float8GetDatum(all_tuples);
+	    new_record[Anum_pg_kdefeedback_time-1] = Int64GetDatum((int64) seconds);
+	    new_record[Anum_pg_kdefeedback_relid-1] = ObjectIdGetDatum(rte->relid);
+	    new_record[Anum_pg_kdefeedback_ranges-1] = CStringGetTextDatum(rq_string);
+	    new_record[Anum_pg_kdefeedback_all_tuples-1] = Float8GetDatum(all_tuples);
+      new_record[Anum_pg_kdefeedback_qualified_tuples-1] = Float8GetDatum(qual_tuples);
 	    
 	    tuple = heap_form_tuple(RelationGetDescr(pg_database_rel),
 							new_record, new_record_nulls);

@@ -42,6 +42,7 @@ POSTGRES_BKI_SRCS = $(addprefix $(top_srcdir)/src/include/catalog/,\
 	pg_foreign_table.h \
 	pg_default_acl.h pg_seclabel.h pg_shseclabel.h pg_collation.h pg_range.h \
 	toasting.h indexing.h \
+	pg_kdemodels.h pg_kdefeedback.h \
     )
 
 # location of Catalog.pm

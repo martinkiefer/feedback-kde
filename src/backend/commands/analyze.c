@@ -34,6 +34,7 @@
 #include "foreign/fdwapi.h"
 #include "miscadmin.h"
 #include "nodes/nodeFuncs.h"
+#include "../backend/optimizer/path/gpukde/ocl_estimator_api.h"
 #include "parser/parse_oper.h"
 #include "parser/parse_relation.h"
 #include "pgstat.h"
@@ -511,12 +512,13 @@ do_analyze_rel(Relation onerel, VacuumStmt *vacstmt,
       }
       /* Now determine how many rows we want in our sample */
       sample_size = ocl_maxSampleSize(float_columns);
-      sample = (HeapTuple*) malloc(sample_size * sizeof(HeapTuple));
-      sample_size = acquire_sample_rows(onerel, sample, sample_size, &total_rows, &total_dead_rows);
+      sample = (HeapTuple*) palloc(sample_size * sizeof(HeapTuple));
+      sample_size = acquire_sample_rows(onerel, elevel, sample, sample_size,
+                                        &total_rows, &total_dead_rows);
       if (sample_size > 0)
         ocl_constructEstimator(onerel, (unsigned int)total_rows, float_columns,
                                attributes, sample_size, sample);
-      free(sample);
+      pfree(sample);
     }
   }
 #endif /* USE_OPENCL */
