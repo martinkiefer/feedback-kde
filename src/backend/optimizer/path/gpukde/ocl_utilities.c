@@ -1,12 +1,12 @@
+#pragma GCC diagnostic ignored "-Wdeclaration-after-statement"
 /*
- * oclinit.c
+ * ocl_utilities.c
  *
  *  Created on: 08.05.2012
  *      Author: mheimel
  */
 
 #include "ocl_utilities.h"
-#pragma GCC diagnostic ignored "-Wdeclaration-after-statement"
 
 #ifdef USE_OPENCL
 

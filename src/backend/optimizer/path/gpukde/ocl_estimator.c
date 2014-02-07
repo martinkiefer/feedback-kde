@@ -1,12 +1,15 @@
+#pragma GCC diagnostic ignored "-Wdeclaration-after-statement"
 /*
- * estimator.c
+
+ * ocl_estimator.c
  *
  *  Created on: 25.05.2012
  *      Author: mheimel
  */
 
 #include "ocl_estimator.h"
-#pragma GCC diagnostic ignored "-Wdeclaration-after-statement"
+#include "ocl_utilities.h"
+
 #ifdef USE_OPENCL
 
 #include <float.h>

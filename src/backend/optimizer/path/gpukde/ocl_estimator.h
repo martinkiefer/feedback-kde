@@ -8,8 +8,10 @@
 #ifndef ESTIMATOR_H_
 #define ESTIMATOR_H_
 
-#include "ocl_estimator_api.h"
 #include "container/directory.h"
+#include "optimizer/path/gpukde/ocl_estimator_api.h"
+
+#include "ocl_utilities.h"
 
 #ifdef USE_OPENCL
 
