@@ -12,7 +12,7 @@ subdir = src/backend/optimizer/path/gpukde
 top_builddir = ../../../../..
 include $(top_builddir)/src/Makefile.global
 
-OBJS = ocl_utilities.o ocl_estimator.o  
+OBJS = ocl_utilities.o ocl_estimator.o ocl_sample_maintenance.o
 
 SUBDIRS = container
 
@@ -23,6 +23,7 @@ include $(top_srcdir)/src/backend/common.mk
 install-data: all installdirs
 	$(INSTALL_DATA) $(srcdir)/kernel/sum.cl '$(DESTDIR)$(datadir)/kernel/sum.cl'
 	$(INSTALL_DATA) $(srcdir)/kernel/kde.cl '$(DESTDIR)$(datadir)/kernel/kde.cl'
+	$(INSTALL_DATA) $(srcdir)/kernel/init.cl '$(DESTDIR)$(datadir)/kernel/init.cl'
 
 installdirs:
 	$(MKDIR_P) '$(DESTDIR)$(datadir)/kernel'

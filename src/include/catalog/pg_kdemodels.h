@@ -26,12 +26,14 @@ CATALOG(pg_kdemodels,3780) BKI_WITHOUT_OIDS
 {
   Oid     table;
   int32   columns;
-  bool    is_exact;
-  int32   sample_size;
+  int32   rowcount_table;
+  int32   rowcount_sample;
+  int32   sample_buffer_size;
 #ifdef CATALOG_VARLEN
-  float4  scale_factors[1];
-  float4  bandwidths[1];
+  float8  scale_factors[1];
+  float4  bandwidth[1];
   bytea   sample;
+  bytea   sample_quality;
 #endif
 } FormData_pg_kdemodels;
 
@@ -46,13 +48,15 @@ typedef FormData_pg_kdemodels *Form_pg_kdemodels;
  *    compiler constants for pg_kdemodels
  * ----------------
  */
-#define Natts_pg_kdemodels              7
-#define Anum_pg_kdemodels_table         1
-#define Anum_pg_kdemodels_columns       2
-#define Anum_pg_kdemodels_is_exact      3
-#define Anum_pg_kdemodels_sample_size   4
-#define Anum_pg_kdemodels_scalefactors  5
-#define Anum_pg_kdemodels_bandwidth     6
-#define Anum_pg_kdemodels_sample        7
+#define Natts_pg_kdemodels                        9
+#define Anum_pg_kdemodels_table                   1
+#define Anum_pg_kdemodels_columns                 2
+#define Anum_pg_kdemodels_rowcount_table          3
+#define Anum_pg_kdemodels_rowcount_sample         4
+#define Anum_pg_kdemodels_sample_buffer_size      5
+#define Anum_pg_kdemodels_scale_factors           6
+#define Anum_pg_kdemodels_bandwidth               7
+#define Anum_pg_kdemodels_sample                  8
+#define Anum_pg_kdemodels_sample_quality          9
 
 #endif /* PG_KDEMODELS_H_ */

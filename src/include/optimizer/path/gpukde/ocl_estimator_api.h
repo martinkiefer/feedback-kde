@@ -44,7 +44,7 @@ extern int ocl_updateRequest(ocl_estimator_request_t* request, AttrNumber column
 		float* lower_bound, float* upper_bound);
 
 /*
- * Helper function to dump a request to stderr.
+ * Helper function to dump a ocl_notifyEstimatorOfInsertrequest to stderr.
  */
 extern void ocl_dumpRequest(ocl_estimator_request_t* request);
 
@@ -61,7 +61,9 @@ unsigned int ocl_maxSampleSize(unsigned int dimensionality);
 /*
  * Entry function for generating a KDE estimator
  */
-void ocl_constructEstimator(Relation rel, unsigned int rows_in_table, unsigned int dimensionality, AttrNumber* attributes, unsigned int sample_size, HeapTuple* sample);
+void ocl_constructEstimator(Relation rel, unsigned int rows_in_table,
+                            unsigned int dimensionality, AttrNumber* attributes,
+                            unsigned int sample_size, HeapTuple* sample);
 
 /*
  * Returns whether KDE should be used or not.
@@ -74,6 +76,12 @@ bool ocl_useKDE(void);
 extern void assign_ocl_use_gpu(bool newval, void *extra);
 extern void assign_kde_samplesize(int newval, void *extra);
 extern void assign_enable_kde_estimator(bool newval, void *extra);
+
+/*
+ * Functions for propagating an insertion to the estimator engine.
+ */
+extern void ocl_notifyEstimatorOfInsertion(Relation rel, HeapTuple new_tuple);
+extern void ocl_notifyEstimatorOfDeletion(Relation rel);
 
 #endif /* USE_OPENCL */
 #endif /* OCL_ESTIMATOR_API_H_ */
