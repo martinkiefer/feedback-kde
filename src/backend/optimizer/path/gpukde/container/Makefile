@@ -12,6 +12,6 @@ subdir = src/backend/optimizer/path/gpukde/container
 top_builddir = ../../../../../..
 include $(top_builddir)/src/Makefile.global
 
-OBJS = directory.o
+OBJS = directory.o dictionary.o
 
 include $(top_srcdir)/src/backend/common.mk
