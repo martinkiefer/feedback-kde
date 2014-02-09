@@ -16,20 +16,13 @@
 
 #ifdef USE_OPENCL
 
+#include "container/dictionary.h"
+
 /*
  * Main OpenCL header.
  */
 #define CL_USE_DEPRECATED_OPENCL_1_1_APIS
 #include <CL/cl.h>
-
-/*
- * Registry for compiled kernels.
- */
-typedef struct ocl_kernel_registry {
-	char* id_string;
-	cl_program program;
-	struct ocl_kernel_registry* next;
-} ocl_kernel_registry_t;
 
 /*
  * Struct defining the current OpenCL context
@@ -52,7 +45,7 @@ typedef struct {
 	cl_mem input_buffer;
 	size_t input_buffer_size;
 	/* Kernel registry */
-	ocl_kernel_registry_t* kernel_registry;
+	dictionary_t program_registry; // Keeps a mapping from build parameters to OpenCL programs.
 } ocl_context_t;
 
 // #########################################################################
@@ -84,7 +77,7 @@ void ocl_releaseContext(void);
 /*
  * Get an instance of the given kernel using the given build_params.
  */
-cl_kernel ocl_getKernel(const char* kernel_name, const char* build_params);
+cl_kernel ocl_getKernel(const char* kernel_name, int dimensions);
 
 #endif /* USE_OPENCL */
 #endif /* OCL_UTILITIES_H_ */

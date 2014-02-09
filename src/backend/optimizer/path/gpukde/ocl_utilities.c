@@ -1,12 +1,14 @@
+#pragma GCC diagnostic ignored "-Wdeclaration-after-statement"
 /*
- * oclinit.c
+ * ocl_utilities.c
  *
  *  Created on: 08.05.2012
  *      Author: mheimel
  */
 
 #include "ocl_utilities.h"
-#pragma GCC diagnostic ignored "-Wdeclaration-after-statement"
+
+#include "catalog/pg_type.h"
 
 #ifdef USE_OPENCL
 
@@ -82,7 +84,7 @@ void ocl_initialize(void) {
 	ctxt->device = device;
 	ctxt->is_gpu = ocl_use_gpu;
 	ctxt->queue = clCreateCommandQueue(ctxt->context, ctxt->device, 0, &err);
-	ctxt->kernel_registry = NULL;
+	ctxt->program_registry = dictionary_init();
 
 	// Now get some device information parameters:
 	err = clGetDeviceInfo(device, CL_DEVICE_MAX_MEM_ALLOC_SIZE, sizeof(size_t), &(ctxt->max_alloc_size), NULL);
@@ -90,9 +92,10 @@ void ocl_initialize(void) {
 	err = clGetDeviceInfo(device, CL_DEVICE_MAX_WORK_GROUP_SIZE, sizeof(size_t), &(ctxt->max_workgroup_size), NULL);
 	err = clGetDeviceInfo(device, CL_DEVICE_MAX_COMPUTE_UNITS, sizeof(cl_uint), &(ctxt->max_compute_units), NULL);
 
-	/* Allocate a 512 MB result buffer on the device */
-	ctxt->result_buffer_size = 512*1024*1024;
-	ctxt->result_buffer = clCreateBuffer(ctxt->context, CL_MEM_READ_WRITE, ctxt->result_buffer_size, NULL, &err);
+	/* Allocate a result buffer of kde_samplesize kB on the device buffer */
+	ctxt->result_buffer_size = kde_samplesize * 1024;
+	ctxt->result_buffer = clCreateBuffer(ctxt->context, CL_MEM_READ_WRITE,
+	                                     ctxt->result_buffer_size, NULL, &err);
 	if (err != CL_SUCCESS) {
 		fprintf(stderr, "\tError allocating OpenCL result buffer.\n");
 		goto bad;
@@ -127,39 +130,23 @@ bad:
  * Release the global context
  */
 void ocl_releaseContext() {
-	if (ocl_context == NULL)
-		return;
+	if (ocl_context == NULL) return;
 
 	fprintf(stderr, "Releasing OpenCL context.\n");
 
-	if (ocl_context->queue)
-		clReleaseCommandQueue(ocl_context->queue);
+	if (ocl_context->queue) clReleaseCommandQueue(ocl_context->queue);
 	// Release kernel registry ressources:
-	while (ocl_context->kernel_registry) {
-		ocl_kernel_registry_t* next = ocl_context->kernel_registry->next;
-		// Clean this up
-		clReleaseProgram(ocl_context->kernel_registry->program);
-		free(ocl_context->kernel_registry->id_string);
-		free(ocl_context->kernel_registry);
-		// And move to the next registry item.
-		ocl_context->kernel_registry = next;
+	dictionary_iterator_t it = dictionary_iterator_init(ocl_context->program_registry);
+	while (dictionary_iterator_key(ocl_context->program_registry, it)) {
+	  clReleaseProgram((cl_program)dictionary_iterator_value(ocl_context->program_registry, it));
+	  it = dictionary_iterator_next(ocl_context->program_registry, it);
 	}
+	dictionary_release(ocl_context->program_registry, 0);
 	// Release the result buffer.
 	clReleaseMemObject(ocl_context->result_buffer);
 	clReleaseContext(ocl_context->context);
 	free(ocl_context);
 	ocl_context = NULL;
-}
-
-// Helper function to find the program for a given build string in the registry.
-static cl_program findProgram(const ocl_kernel_registry_t* registry, const char* build_params) {
-	if (!registry)
-		return NULL;
-	if (strcmp(registry->id_string, build_params)) {
-		return findProgram(registry->next, build_params);
-	} else {
-		return registry->program;
-	}
 }
 
 // Helper function to read a file into a buffer
@@ -208,29 +195,25 @@ static cl_program buildProgram(ocl_context_t* context, const char* build_params)
 	}
 	strcat(device_params, build_params);
 	// Ok, build the program
-	cl_program tmp_program = clCreateProgramWithSource(
-			context->context, nr_of_kernels, (const char**)file_buffers, (const size_t*)file_lengths, NULL);
+	cl_program program = clCreateProgramWithSource(
+	    context->context, nr_of_kernels,
+	    (const char**)file_buffers, (const size_t*)file_lengths, NULL);
 	fprintf(stderr, "Compiling OpenCL kernels: %s\n", device_params);
-	cl_int err = clBuildProgram(tmp_program, 1, &(context->device), device_params, NULL, NULL);
+	cl_int err = clBuildProgram(program, 1, &(context->device), device_params, NULL, NULL);
 	if (err != CL_SUCCESS) {
 		// Print the error log
 		fprintf(stderr, "Error compiling the program:\n");
 		size_t log_size;
-		clGetProgramBuildInfo(tmp_program, context->device, CL_PROGRAM_BUILD_LOG, 0, NULL, &log_size);
+		clGetProgramBuildInfo(program, context->device, CL_PROGRAM_BUILD_LOG, 0, NULL, &log_size);
 		char* log = malloc(log_size+1);
-		clGetProgramBuildInfo(tmp_program, context->device, CL_PROGRAM_BUILD_LOG, log_size, log, NULL);
+		clGetProgramBuildInfo(program, context->device, CL_PROGRAM_BUILD_LOG, log_size, log, NULL);
 		fprintf(stderr, "%s\n", log);
 		free(log);
-		tmp_program = NULL;
+		program = NULL;
 		goto cleanup;
 	}
 	// And add it to the registry:
-	ocl_kernel_registry_t* node = (ocl_kernel_registry_t*)malloc(sizeof(ocl_kernel_registry_t));
-	node->program = tmp_program;
-	node->id_string = malloc(1 + strlen(build_params));
-	strcpy(node->id_string, build_params);
-	node->next = context->kernel_registry;
-	context->kernel_registry = node;
+	dictionary_insert(context->program_registry, build_params, program);
 
 cleanup:
 	// Release the resources.
@@ -239,17 +222,21 @@ cleanup:
 	free(file_buffers);
 	free(file_lengths);
 	// We are done.
-	return tmp_program;
+	return program;
 }
 
 /*
  *	Fetches the given kernel for the given build_params.
  */
-cl_kernel ocl_getKernel(const char* kernel_name, const char* build_params) {
+cl_kernel ocl_getKernel(const char* kernel_name, int dimensions) {
+  // We only introduce the number of dimensions into the kernels.
+  char build_params[16];
+  sprintf(build_params, "-DD=%i", dimensions);
 	// Get the context
 	ocl_context_t* context = ocl_getContext();
 	// Check if we already know the program for the given build_params
-	cl_program program = findProgram(context->kernel_registry, build_params);
+	cl_program program = (cl_program)dictionary_get(context->program_registry,
+	                                                build_params);
 	if (program == NULL) {
 		// The program was not found, build a new program using the given build_params.
 		program = buildProgram(context, build_params);

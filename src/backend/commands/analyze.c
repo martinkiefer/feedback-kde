@@ -34,7 +34,7 @@
 #include "foreign/fdwapi.h"
 #include "miscadmin.h"
 #include "nodes/nodeFuncs.h"
-#include "../backend/optimizer/path/gpukde/ocl_estimator_api.h"
+#include "optimizer/path/gpukde/ocl_estimator_api.h"
 #include "parser/parse_oper.h"
 #include "parser/parse_relation.h"
 #include "pgstat.h"

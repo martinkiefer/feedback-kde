@@ -45,6 +45,7 @@
 #include "foreign/fdwapi.h"
 #include "miscadmin.h"
 #include "nodes/nodeFuncs.h"
+#include "optimizer/path/gpukde/ocl_estimator_api.h"
 #include "storage/bufmgr.h"
 #include "utils/builtins.h"
 #include "utils/memutils.h"
@@ -183,6 +184,8 @@ ExecInsert(TupleTableSlot *slot,
 	 */
 	resultRelInfo = estate->es_result_relation_info;
 	resultRelationDesc = resultRelInfo->ri_RelationDesc;
+
+	ocl_notifyEstimatorOfInsertion(resultRelationDesc, tuple);
 
 	/*
 	 * If the result relation has OIDs, force the tuple's OID to zero so that
@@ -324,6 +327,9 @@ ExecDelete(ItemPointer tupleid,
 	 */
 	resultRelInfo = estate->es_result_relation_info;
 	resultRelationDesc = resultRelInfo->ri_RelationDesc;
+
+  ocl_notifyEstimatorOfDeletion(resultRelationDesc);
+
 
 	/* BEFORE ROW DELETE Triggers */
 	if (resultRelInfo->ri_TrigDesc &&

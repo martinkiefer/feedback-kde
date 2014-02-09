@@ -137,6 +137,8 @@ extern void assign_kde_samplesize(int newval, void *extra);
 /* Determines whether we use the GPU or the CPU for running KDE. */
 extern bool ocl_use_gpu;
 extern void assign_ocl_use_gpu(bool newval, void *extra);
+/* Determines whether we propagate inserts to the KDE estimator via reservoir sampling. */
+extern bool ocl_propagate_inserts_to_sample;
 #endif
 
 //KDE
@@ -1481,7 +1483,7 @@ static struct config_bool ConfigureNamesBool[] =
 	},
   {
     {"enable_kde_estimator", PGC_USERSET, DEVELOPER_OPTIONS,
-      gettext_noop("Use Kernel Density Estimation for selectivity estimation."),
+      gettext_noop("Use Kernel Density Estimation for selectivity estimation?"),
       NULL,
       GUC_NOT_IN_SAMPLE
     },
@@ -1491,13 +1493,23 @@ static struct config_bool ConfigureNamesBool[] =
   },
   {
     {"ocl_use_gpu", PGC_USERSET, DEVELOPER_OPTIONS,
-      gettext_noop("Use the GPU for OpenCL?."),
+      gettext_noop("Use the GPU for OpenCL?"),
       NULL,
       GUC_NOT_IN_SAMPLE
     },
     &ocl_use_gpu,
     true,
     NULL, assign_ocl_use_gpu, NULL
+  },
+  {
+    {"ocl_propagate_inserts_to_sample", PGC_USERSET, DEVELOPER_OPTIONS,
+      gettext_noop("Propagate data inserts to an existing estimator?"),
+      NULL,
+      GUC_NOT_IN_SAMPLE
+    },
+    &ocl_propagate_inserts_to_sample,
+    false,
+    NULL, NULL, NULL
   },
 #endif
 
