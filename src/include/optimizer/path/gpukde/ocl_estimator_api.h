@@ -25,7 +25,9 @@
 typedef struct ocl_colrange {
 	AttrNumber colno;
 	float lower_bound;
+	bool lower_included;
 	float upper_bound;
+	bool upper_included;
 } ocl_colrange_t;
 
 /*
@@ -42,7 +44,7 @@ typedef struct ocl_estimator_request {
  * Function for updating a range request with new bounds on a given attribute.
  */
 extern int ocl_updateRequest(ocl_estimator_request_t* request, AttrNumber column,
-		float* lower_bound, float* upper_bound);
+		float* lower_bound, bool lower_included, float* upper_bound, bool upper_included);
 
 /*
  * Helper function to dump a ocl_notifyEstimatorOfInsertrequest to stderr.

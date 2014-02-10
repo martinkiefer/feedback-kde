@@ -491,7 +491,8 @@ void ocl_dumpRequest(ocl_estimator_request_t* request) {
 }
 
 int ocl_updateRequest(ocl_estimator_request_t* request,
-		AttrNumber colno, float* lower_bound, float* upper_bound) {
+		AttrNumber colno, float* lower_bound, bool lower_included,
+		float* upper_bound, bool upper_included) {
 	/*
 	 * First, make sure to find the range entry for the given column.
 	 * If no column exists, insert a new one.
@@ -538,6 +539,8 @@ int ocl_updateRequest(ocl_estimator_request_t* request,
 			column_range->upper_bound = *upper_bound;
 		}
 	}
+	column_range->lower_included = lower_included;
+	column_range->upper_included = upper_included;
 	return 1;
 }
 
@@ -581,6 +584,10 @@ int ocl_estimateSelectivity(const ocl_estimator_request_t* request,
 				// Make sure we adjust the request to the re-scaled data.
 				row_ranges[2*j] = request->ranges[i].lower_bound / estimator->scale_factors[j];
 				row_ranges[2*j+1] = request->ranges[i].upper_bound / estimator->scale_factors[j];
+				if (request->ranges[i].lower_included)
+					row_ranges[2*j] -= 0.01f;
+				if (request->ranges[i].upper_included)
+					row_ranges[2*j] += 0.01f;
 				found = 1;
 			}
 		}

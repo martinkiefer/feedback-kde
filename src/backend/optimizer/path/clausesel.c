@@ -153,10 +153,6 @@ clauselist_selectivity(PlannerInfo *root,
         } else {
           opname = get_opname(get_commutator(((OpExpr *)clause)->opno));
         }
-        if (!strcmp(">", opname) && !strcmp("<", opname) && !strcmp("=", opname)) {
-          ReleaseVariableStats(vardata);
-          continue;
-        }
         // Check that we have a constant on one side.
         if (!IsA(other, Const)) {
           ReleaseVariableStats(vardata);
@@ -185,12 +181,20 @@ clauselist_selectivity(PlannerInfo *root,
         // Extract the column number.
         colno = ((Var*)vardata.var)->varattno;
         // Now insert the range information
-        if (*opname == '<') {
-          ocl_updateRequest(&ocl_request, colno, NULL, &constval);
-        } else if (*opname == '>') {
-          ocl_updateRequest(&ocl_request, colno, &constval, NULL);
-        } else if (*opname == '=') {
-          ocl_updateRequest(&ocl_request, colno, &constval, &constval);
+        if (strcmp(opname, "<") == 0) {
+          ocl_updateRequest(&ocl_request, colno, NULL, false, &constval, false);
+        } else if (strcmp(opname, "<=") == 0) {
+            ocl_updateRequest(&ocl_request, colno, NULL, true, &constval, false);
+        } else if (strcmp(opname, ">") == 0) {
+            ocl_updateRequest(&ocl_request, colno, &constval, false, NULL, false);
+        } else if (strcmp(opname, ">=") == 0) {
+            ocl_updateRequest(&ocl_request, colno, &constval, true, NULL, false);
+        } else if (strcmp(opname, "=") == 0) {
+          ocl_updateRequest(&ocl_request, colno, &constval, true, &constval, true);
+        } else {
+          // Unsupported operation.
+          ReleaseVariableStats(vardata);
+          continue;
         }
         known_clauses++;
         // Flag the node as invalid, so it is not used in estimation.
