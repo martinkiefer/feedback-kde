@@ -6,6 +6,7 @@
 #include "utils/builtins.h"
 #include "parser/parsetree.h"
 #include "optimizer/clauses.h"
+#include "optimizer/path/gpukde/ocl_estimator_api.h"
 #include "catalog/pg_type.h"
 #include "catalog/pg_kdefeedback.h"
 #include "utils/lsyscache.h"
@@ -303,6 +304,10 @@ int kde_finish(PlanState *node){
 		return 1;
 	    }
 	    
+	    // Notify the model maintenance of this observation.
+	    ocl_notifyModelMaintenanceOfSelectivity(rte->relid, node->instrument->kde_rq,
+	                                            qual_tuples / all_tuples);
+
 	    pg_database_rel = heap_open(KdeFeedbackRelationID, RowExclusiveLock);
 	    
 	    seconds = time (NULL);

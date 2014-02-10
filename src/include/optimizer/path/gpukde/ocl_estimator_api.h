@@ -12,6 +12,7 @@
 
 #include "access/attnum.h"
 #include "access/htup.h"
+#include "executor/kde_execute.h"
 #include "nodes/nodes.h"
 #include "utils/rel.h"
 #include "utils/relcache.h"
@@ -78,10 +79,16 @@ extern void assign_kde_samplesize(int newval, void *extra);
 extern void assign_enable_kde_estimator(bool newval, void *extra);
 
 /*
- * Functions for propagating an insertion to the estimator engine.
+ * Functions for propagating informations to the estimator sample maintenanec..
  */
-extern void ocl_notifyEstimatorOfInsertion(Relation rel, HeapTuple new_tuple);
-extern void ocl_notifyEstimatorOfDeletion(Relation rel);
+extern void ocl_notifySampleMaintenanceOfInsertion(Relation rel, HeapTuple new_tuple);
+extern void ocl_notifySampleMaintenanceOfDeletion(Relation rel);
+
+/*
+ * Propagate selectivity information to the model maintenance.
+ */
+extern void ocl_notifyModelMaintenanceOfSelectivity(Oid rel, RQClause* bounds,
+                                                    float selectivity);
 
 #endif /* USE_OPENCL */
 #endif /* OCL_ESTIMATOR_API_H_ */

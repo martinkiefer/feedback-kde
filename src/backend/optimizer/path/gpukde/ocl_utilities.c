@@ -171,8 +171,12 @@ static int readFile(FILE* f, char** content, size_t* length) {
 /*
  * List of all kernel names
  */
-static const char *kernel_names[] = {PGSHAREDIR"/kernel/sum.cl", PGSHAREDIR"/kernel/kde.cl"};
-static const unsigned int nr_of_kernels = 2;
+static const char *kernel_names[] = {
+    PGSHAREDIR"/kernel/sum.cl",
+    PGSHAREDIR"/kernel/kde.cl",
+    PGSHAREDIR"/kernel/init.cl",
+    PGSHAREDIR"/kernel/sample_maintenance.cl"};
+static const unsigned int nr_of_kernels = 4;
 
 // Helper function to build a program from all kernel files using the given build params
 static cl_program buildProgram(ocl_context_t* context, const char* build_params) {
@@ -251,6 +255,30 @@ cl_kernel ocl_getKernel(const char* kernel_name, int dimensions) {
 		return NULL;
 	else
 		return result;
+}
+
+void ocl_dumpBufferToFile(const char* file, cl_mem buffer,
+                          int dimensions, int items) {
+  ocl_context_t* context = ocl_getContext();
+  clFinish(context->queue);
+
+  // Fetch the buffer to disk.
+  float* host_buffer = palloc(sizeof(float) * dimensions * items);
+  clEnqueueReadBuffer(context->queue, buffer, CL_TRUE,
+                      0, sizeof(float) * dimensions * items,
+                      host_buffer, 0, NULL, NULL);
+
+  FILE* f = fopen(file, "w");
+  unsigned int i,j;
+  for (i=0; i<items; ++i) {
+    fprintf(f, "%f", host_buffer[i*dimensions]);
+    for (j=1; j<dimensions; ++j) {
+      fprintf(f, "; %f", host_buffer[i*dimensions + j]);
+    }
+    fprintf(f, "\n");
+  }
+  fclose(f);
+  pfree(host_buffer);
 }
 
 #endif /* USE_OPENCL */

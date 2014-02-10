@@ -49,6 +49,17 @@ typedef struct {
 } ocl_context_t;
 
 // #########################################################################
+// ################## FUNCTIONS FOR DEBUGGING ##############################
+/**
+ * ocl_printBufferToFile
+ *
+ * Takes the content of the given buffer and writes it to the provided file.
+ * The function assumes that the buffer is of size dimensions*items*sizeof(float)
+ *
+ */
+void ocl_dumpBufferToFile(const char* file, cl_mem buffer, int dimensions, int items);
+
+// #########################################################################
 // ################## FUNCTIONS FOR OCL CONTEXT MANAGEMENT #################
 
 /*

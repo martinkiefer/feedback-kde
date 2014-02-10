@@ -25,16 +25,21 @@ typedef struct ocl_estimator {
 	AttrNumber* column_order; // Order of the columns on the device.
 	/* Some statistics about the estimator */
 	unsigned int nr_of_dimensions; 
-	/* Buffers that keeps the current bandwidth estiamte*/
+	/* Buffers that keeps the current bandwidth estimate*/
 	cl_mem bandwidth_buffer;
-	/* Fields for the sample and for sample maintenance */
+	/* Fields for the sample */
 	unsigned int rows_in_table;   // Current number of tuples in the table.
 	unsigned int rows_in_sample;  // Current number of tuples in the sample.
 	size_t sample_buffer_size;      // Size of the sample buffer in bytes.
 	cl_mem sample_buffer;           // Buffer that stores the data sample.
-	cl_mem sample_quality_buffer;   // Buffer that stores the quality factors for each sample item.
+	/* These two buffers are used to track a linear regression between sample contributions and the expected results */
+	cl_mem sample_quality_slopes_buffer;
+	cl_mem sample_quality_intercepts_buffer;
 	/* Normalization factors */
 	double* scale_factors;    // Scale factors that were applied to the data in the sample.
+	/* Runtime information */
+	bool open_estimation;     // Set to true if this estimator has produced a valid estimation for which we are still waiting for feedback.
+	double last_selectivity;  // Stores the last selectivity computed by this estimator.
 } ocl_estimator_t;
 
 /*
@@ -50,7 +55,7 @@ typedef struct ocl_estimator_registry {
 /*
  * Fetch an estimator for a relation (We allow one estimator per relation).
  */
-ocl_estimator_t* ocl_getEstimator(Relation rel);
+ocl_estimator_t* ocl_getEstimator(Oid relation);
 
 // #########################################################################
 // ################## FUNCTIONS FOR SAMPLE MANAGEMENT ######################
@@ -61,6 +66,14 @@ ocl_estimator_t* ocl_getEstimator(Relation rel);
  * Returns the size of a single sample item for the given estimator in bytes.
  */
 size_t ocl_sizeOfSampleItem(ocl_estimator_t* estimator);
+
+/*
+ * ocl_maxRowsInSample
+ *
+ * Returns the maximum number of rows that can possibly be stored in the
+ * sample for the given estimator.
+ */
+unsigned int ocl_maxRowsInSample(ocl_estimator_t* estimator);
 
 /*
  * extractSampleTuple

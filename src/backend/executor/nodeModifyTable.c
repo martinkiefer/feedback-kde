@@ -185,7 +185,7 @@ ExecInsert(TupleTableSlot *slot,
 	resultRelInfo = estate->es_result_relation_info;
 	resultRelationDesc = resultRelInfo->ri_RelationDesc;
 
-	ocl_notifyEstimatorOfInsertion(resultRelationDesc, tuple);
+	ocl_notifySampleMaintenanceOfInsertion(resultRelationDesc, tuple);
 
 	/*
 	 * If the result relation has OIDs, force the tuple's OID to zero so that
@@ -328,7 +328,7 @@ ExecDelete(ItemPointer tupleid,
 	resultRelInfo = estate->es_result_relation_info;
 	resultRelationDesc = resultRelInfo->ri_RelationDesc;
 
-  ocl_notifyEstimatorOfDeletion(resultRelationDesc);
+  ocl_notifySampleMaintenanceOfDeletion(resultRelationDesc);
 
 
 	/* BEFORE ROW DELETE Triggers */
