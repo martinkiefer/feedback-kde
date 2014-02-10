@@ -583,11 +583,9 @@ int ocl_estimateSelectivity(const ocl_estimator_request_t* request,
 			if (estimator->column_order[j] == request->ranges[i].colno) {
 				// Make sure we adjust the request to the re-scaled data.
 				row_ranges[2*j] = request->ranges[i].lower_bound / estimator->scale_factors[j];
-				row_ranges[2*j+1] = request->ranges[i].upper_bound / estimator->scale_factors[j];
-				if (request->ranges[i].lower_included)
-					row_ranges[2*j] -= 0.01f;
-				if (request->ranges[i].upper_included)
-					row_ranges[2*j] += 0.01f;
+				row_ranges[2*j + 1] = request->ranges[i].upper_bound / estimator->scale_factors[j];
+				if (request->ranges[i].lower_included) row_ranges[2*j] -= 0.01f;
+				if (request->ranges[i].upper_included) row_ranges[2*j + 1] += 0.01f;
 				found = 1;
 			}
 		}
@@ -599,6 +597,7 @@ int ocl_estimateSelectivity(const ocl_estimator_request_t* request,
                2*estimator->nr_of_dimensions*sizeof(float), row_ranges, 
                0, NULL, NULL);
 	  *selectivity = rangeKDE(ctxt, estimator);
+	  estimator->last_selectivity = *selectivity;
 	  estimator->open_estimation = true;
 		// Print timing: 
 		struct timeval now; gettimeofday(&now, NULL); 
