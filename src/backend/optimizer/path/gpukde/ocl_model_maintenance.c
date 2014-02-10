@@ -1,3 +1,4 @@
+#pragma GCC diagnostic ignored "-Wdeclaration-after-statement"
 /*
  * ocl_model_maintenance.c
  *
@@ -12,41 +13,82 @@
 
 // Global GUC variables
 char* kde_estimation_quality_logfile_name;
+
+// ############################################################
+// # Define estimation error metrics.
+// ############################################################
+
+typedef struct error_metric {
+	const char* name;
+	float (*function)(float,float);
+} error_metric_t;
+
+
+// Functions that implement the error metrics.
+static float QuadraticError(float actual, float expected) {
+  return (actual - expected) * (actual - expected);
+}
+static float QErrror(float actual, float expected) {
+  // Constants are required to avoid computing the log of 0.
+  float tmp = log(0.001f + actual) - log(0.001f + expected);
+  return tmp * tmp;
+}
+static float AbsoluteError(float actual, float expected) {
+  return fabs(actual - expected);
+}
+static float RelativeError(float actual, float expected) {
+  // Not entirely correct, but robust against zero estimates.
+  return fabs(actual - expected) / (0.001f + expected);
+}
+
+// Array of all available metrics.
+static error_metric_t error_metrics[] = {
+   {
+      "Absolute",  &AbsoluteError
+   },
+   {
+      "Relative", &RelativeError
+   },
+   {
+      "Quadratic", &QuadraticError
+   },
+   {
+      "Q", &QErrror
+   }
+};
+
+// ############################################################
+// # Code for estimation error reporting.
+// ############################################################
+
 static FILE* estimation_quality_log_file = NULL;
 
 void assign_kde_estimation_quality_logfile_name(const char *newval, void *extra) {
   if (estimation_quality_log_file != NULL) fclose(estimation_quality_log_file);
   estimation_quality_log_file = fopen(newval, "w");
-}
-
-static void ocl_reportErrorToLogFile(float error) {
   if (estimation_quality_log_file == NULL) return;
-  fprintf(estimation_quality_log_file, "%f\n", error);
+  // Write a header to the file to specify all registered error metrics.
+  unsigned int i;
+  for (i=0; i<sizeof(error_metrics)/sizeof(error_metric_t); ++i) {
+	  if (i>0) fprintf(estimation_quality_log_file, " ; ");
+	  fprintf(estimation_quality_log_file, "%s", error_metrics[i].name);
+  }
+  fprintf(estimation_quality_log_file, "\n");
   fflush(estimation_quality_log_file);
 }
 
-
-/*
- * The error functions that we support.
- */
-typedef enum error_metric {
-  Absolute,    /* |target - actual| */
-  Relative,    /* |target - actual| / (lambda + actual) */
-  Quadratic,   /* (target - actual)^2 */
-  Q            /* log(target / actual)^2 */
-} error_metric_t;
-
-error_metric_t selected_error_metric;
-
-static double QuadraticError(float actual, float expected) {
-  return (actual - expected) * (actual - expected);
+static void ocl_reportErrorToLogFile(float actual, float expected) {
+  if (estimation_quality_log_file == NULL) return;
+  // Compute the estimation error for all metrics and write them to the file.
+  unsigned int i;
+  for (i=0; i<sizeof(error_metrics)/sizeof(error_metric_t); ++i) {
+ 	  if (i>0) fprintf(estimation_quality_log_file, " ; ");
+ 	  float error = (*(error_metrics[i].function))(actual, expected);
+ 	  fprintf(estimation_quality_log_file, "%.3f", error);
+   }
+   fprintf(estimation_quality_log_file, "\n");
+   fflush(estimation_quality_log_file);
 }
-
-static double QErrror(float actual, float expected) {
-  double tmp = log(0.001f + actual) - log(0.001f + expected); // Constants are required to avoid computing the log of 0.
-  return tmp * tmp;
-}
-
 
 extern void ocl_notifyModelMaintenanceOfSelectivity(
     Oid relation, RQClause* bounds, float selectivity) {
@@ -58,19 +100,9 @@ extern void ocl_notifyModelMaintenanceOfSelectivity(
   // Notify the sample maintenance of this observation.
   ocl_notifySampleMaintenanceOfSelectivity(estimator, selectivity);
 
-  // Compute the error.
-  float error = 0;
-  switch (selected_error_metric) {
-    case Quadratic:
-      error = QuadraticError(estimator->last_selectivity, selectivity);
-      break;
+  // Write the error to the log file.
+  ocl_reportErrorToLogFile(estimator->last_selectivity, selectivity);
 
-    case Q:
-      error = QErrror(estimator->last_selectivity, selectivity);
-      break;
-  }
-
-  // And report it.
-  ocl_reportErrorToLogFile(error);
-
+  // We are done.
+  estimator->open_estimation = false;
 }
