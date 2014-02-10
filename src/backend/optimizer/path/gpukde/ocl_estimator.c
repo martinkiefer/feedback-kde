@@ -32,7 +32,7 @@
 #include "utils/tqual.h"
 
 extern bool ocl_use_gpu;
-extern bool enable_kde_estimator;
+extern bool kde_enable;
 extern int kde_samplesize;
 
 bool scale_to_unit_variance = false;
@@ -757,15 +757,15 @@ void assign_kde_samplesize(int newval, void *extra) {
   }
 }
 
-void assign_enable_kde_estimator(bool newval, void *extra) {
-  if (newval != enable_kde_estimator) {
+void assign_kde_enable(bool newval, void *extra) {
+  if (newval != kde_enable) {
     ocl_releaseRegistry();
     ocl_releaseContext();
   }
 }
 
 bool ocl_useKDE(void) {
-  return enable_kde_estimator;
+  return kde_enable;
 }
 
 ocl_estimator_t* ocl_getEstimator(Oid relation) {

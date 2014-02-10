@@ -128,9 +128,11 @@ extern int	ssl_renegotiation_limit;
 extern char *SSLCipherSuites;
 
 #ifdef USE_OPENCL
+
+
 /* Flag to determine whether we should use the OpenCL KDE estimator or not. */
-extern bool enable_kde_estimator;
-extern void assign_enable_kde_estimator(bool newval, void *extra);
+extern bool kde_enable;
+extern void assign_kde_enable(bool newval, void *extra);
 /* Determines how big the sample should be that is used for kde.*/
 extern int kde_samplesize;
 extern void assign_kde_samplesize(int newval, void *extra);
@@ -138,11 +140,14 @@ extern void assign_kde_samplesize(int newval, void *extra);
 extern bool ocl_use_gpu;
 extern void assign_ocl_use_gpu(bool newval, void *extra);
 /* Determines whether we propagate inserts to the KDE estimator via reservoir sampling. */
-extern bool ocl_propagate_inserts_to_sample;
-#endif
+extern bool kde_propagate_inserts;
+/* Name of the file where we log estimation errors. */
+extern char* kde_estimation_quality_logfile_name;
+extern void assign_kde_estimation_quality_logfile_name(const char* newval, void *extra);
+/* Determines whether we use feedback collection. */
+extern bool kde_collect_feedback;
 
-//KDE
-extern bool enable_kde_feedback_collection;
+#endif
 
 #ifdef TRACE_SORT
 extern bool trace_sort;
@@ -1472,45 +1477,46 @@ static struct config_bool ConfigureNamesBool[] =
 	//KDE
 #ifdef USE_OPENCL
 	{
-		{"enable_kde_feedback_collection", PGC_USERSET, DEVELOPER_OPTIONS,
-			gettext_noop("Enable the KDE feedback data collection."),
+		{"kde_enable", PGC_USERSET, DEVELOPER_OPTIONS,
+			gettext_noop("Enable Kernel Density Estimation for selectivity estimation."),
 			NULL,
 			GUC_NOT_IN_SAMPLE
 		},
-		&enable_kde_feedback_collection,
+		&kde_enable,
+		false,
+		NULL, assign_kde_enable, NULL
+	},
+	{
+		{"kde_collect_feedback", PGC_USERSET, DEVELOPER_OPTIONS,
+			gettext_noop("Collect query feedback to improve the KDE model."),
+			NULL,
+			GUC_NOT_IN_SAMPLE
+		},
+		&kde_collect_feedback,
 		false,
 		NULL, NULL, NULL
 	},
-  {
-    {"enable_kde_estimator", PGC_USERSET, DEVELOPER_OPTIONS,
-      gettext_noop("Use Kernel Density Estimation for selectivity estimation?"),
-      NULL,
-      GUC_NOT_IN_SAMPLE
-    },
-    &enable_kde_estimator,
-    false,
-    NULL, assign_enable_kde_estimator, NULL
-  },
-  {
-    {"ocl_use_gpu", PGC_USERSET, DEVELOPER_OPTIONS,
-      gettext_noop("Use the GPU for OpenCL?"),
-      NULL,
-      GUC_NOT_IN_SAMPLE
-    },
-    &ocl_use_gpu,
-    true,
-    NULL, assign_ocl_use_gpu, NULL
-  },
-  {
-    {"ocl_propagate_inserts_to_sample", PGC_USERSET, DEVELOPER_OPTIONS,
-      gettext_noop("Propagate data inserts to an existing estimator?"),
-      NULL,
-      GUC_NOT_IN_SAMPLE
-    },
-    &ocl_propagate_inserts_to_sample,
-    false,
-    NULL, NULL, NULL
-  },
+	{
+		{"kde_propagate_inserts", PGC_USERSET, DEVELOPER_OPTIONS,
+			gettext_noop("Propagate data inserts to improve the KDE model."),
+			NULL,
+			GUC_NOT_IN_SAMPLE
+		},
+		&kde_propagate_inserts,
+		false,
+		NULL, NULL, NULL
+	},
+	{
+		{"ocl_use_gpu", PGC_USERSET, DEVELOPER_OPTIONS,
+			gettext_noop("Use the GPU for OpenCL?"),
+			NULL,
+			GUC_NOT_IN_SAMPLE
+		},
+		&ocl_use_gpu,
+		true,
+		NULL, assign_ocl_use_gpu, NULL
+	},
+
 #endif
 
 	/* End-of-list marker */
@@ -3172,6 +3178,20 @@ static struct config_string ConfigureNamesString[] =
 		"",
 		check_application_name, assign_application_name, NULL
 	},
+
+#ifdef USE_OPENCL
+	{
+		{"kde_estimation_quality_logfile", PGC_USERSET, DEVELOPER_OPTIONS,
+			gettext_noop("Sets the file that is used to log estimation errors."),
+			NULL,
+			GUC_NOT_IN_SAMPLE
+		},
+		&kde_estimation_quality_logfile_name,
+		"",
+		NULL, assign_kde_estimation_quality_logfile_name, NULL
+	},
+
+#endif	/* USE_OPENCL */
 
 	/* End-of-list marker */
 	{

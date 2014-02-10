@@ -21,7 +21,7 @@ ocl_context_t* ocl_context = NULL;
  * Global GUC Config variables.
  */
 bool ocl_use_gpu;
-bool enable_kde_estimator;
+bool kde_enable;
 int kde_samplesize;
 
 /*

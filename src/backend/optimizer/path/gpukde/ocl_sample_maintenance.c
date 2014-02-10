@@ -14,18 +14,15 @@
 
 #ifdef USE_OPENCL
 
-/*
- * Global GUC Config variables.
- */
-bool ocl_propagate_inserts_to_sample;
-
+// GUC configuration variable.
+bool kde_propagate_inserts;
 
 void ocl_notifySampleMaintenanceOfInsertion(Relation rel, HeapTuple new_tuple) {
   // Check whether we have a table for this relation.
   ocl_estimator_t* estimator = ocl_getEstimator(rel->rd_id);
   if (estimator == NULL) return;
   estimator->rows_in_table++;
-  if (!ocl_propagate_inserts_to_sample) return;
+  if (!kde_propagate_inserts) return;
   int insert_position = -1;
   // First, check whether we still have size in the sample.
   if (estimator->rows_in_sample < ocl_maxRowsInSample(estimator)) {

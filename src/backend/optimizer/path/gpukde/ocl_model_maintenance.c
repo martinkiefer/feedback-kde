@@ -11,17 +11,18 @@
 #include "ocl_sample_maintenance.h"
 
 // Global GUC variables
-char* error_log_file_name;
-FILE* error_log_file = NULL;
+char* kde_estimation_quality_logfile_name;
+static FILE* estimation_quality_log_file = NULL;
 
-static void assign_error_log_file_name(const char *newval, void *extra) {
-  if (error_log_file != NULL) fclose(error_log_file);
-  error_log_file = fopen(newval, "w");
+void assign_kde_estimation_quality_logfile_name(const char *newval, void *extra) {
+  if (estimation_quality_log_file != NULL) fclose(estimation_quality_log_file);
+  estimation_quality_log_file = fopen(newval, "w");
 }
 
 static void ocl_reportErrorToLogFile(float error) {
-  fprintf(error_log_file, "%f\n", error);
-  fflush(error_log_file);
+  if (estimation_quality_log_file == NULL) return;
+  fprintf(estimation_quality_log_file, "%f\n", error);
+  fflush(estimation_quality_log_file);
 }
 
 

@@ -26,10 +26,11 @@ typedef enum bound { HIGHBOUND,LOWBOUND,EQUALITY} bound_t;
 #define OID_FLOAT8_GT 674
 #define OID_FLOAT8_GE 675
 
-bool enable_kde_feedback_collection = false;
+// GUC configuration variable.
+bool kde_collect_feedback = false;
 
 bool kde_feedback_use_collection(){
-    return enable_kde_feedback_collection;
+    return kde_collect_feedback;
 }
 
 static char *kde_print_rqlist(RQClause *rqlist){

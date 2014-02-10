@@ -75,8 +75,10 @@ bool ocl_useKDE(void);
  * Helper functions for GUC that handle assignments for the configuration variables.
  */
 extern void assign_ocl_use_gpu(bool newval, void *extra);
+extern void assign_kde_enable(bool newval, void *extra);
 extern void assign_kde_samplesize(int newval, void *extra);
-extern void assign_enable_kde_estimator(bool newval, void *extra);
+extern void assign_kde_estimation_quality_logfile_name(const char *newval, void *extra);
+
 
 /*
  * Functions for propagating informations to the estimator sample maintenanec..
