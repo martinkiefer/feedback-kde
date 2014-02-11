@@ -415,6 +415,8 @@ static void ocl_freeEstimator(ocl_estimator_t* estimator, bool materialize) {
     clReleaseMemObject(estimator->sample_quality_slopes_buffer);
   if (estimator->bandwidth_buffer)
     clReleaseMemObject(estimator->bandwidth_buffer);
+  if (estimator->gradient_accumulator)
+    clReleaseMemObject(estimator->gradient_accumulator);
 }
 
 static void ocl_releaseRegistry() {

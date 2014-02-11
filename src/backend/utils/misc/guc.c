@@ -146,6 +146,10 @@ extern char* kde_estimation_quality_logfile_name;
 extern void assign_kde_estimation_quality_logfile_name(const char* newval, void *extra);
 /* Determines whether we use feedback collection. */
 extern bool kde_collect_feedback;
+/* Determines whether we use online learning to adjust the bandwidth. */
+extern bool kde_enable_adaptive_bandwidth;
+/* Determines the mini-batch size that is used for online learning. */
+extern int kde_adaptive_bandwidth_minibatch_size;
 
 #endif
 
@@ -1496,6 +1500,16 @@ static struct config_bool ConfigureNamesBool[] =
 		false,
 		NULL, NULL, NULL
 	},
+  {
+    {"kde_enable_adaptive_bandwidth", PGC_USERSET, DEVELOPER_OPTIONS,
+      gettext_noop("Use online learning to adjust the bandiwdth at runtime."),
+      NULL,
+      GUC_NOT_IN_SAMPLE
+    },
+    &kde_enable_adaptive_bandwidth,
+    false,
+    NULL, NULL, NULL
+  },
 	{
 		{"kde_propagate_inserts", PGC_USERSET, DEVELOPER_OPTIONS,
 			gettext_noop("Propagate data inserts to improve the KDE model."),
@@ -2485,6 +2499,17 @@ static struct config_int ConfigureNamesInt[] =
     5*1024, 16, 1024*1024,
     NULL, assign_kde_samplesize, NULL
   },
+  {
+    {"kde_adaptive_bandwidth_minibatch_size", PGC_USERSET, DEVELOPER_OPTIONS,
+      gettext_noop("Mini-batch size that is used to adaptively adjust the bandwidth."),
+      NULL,
+      GUC_NOT_IN_SAMPLE
+    },
+    &kde_adaptive_bandwidth_minibatch_size,
+    1, 1, 1024,
+    NULL, NULL, NULL
+  },
+
 #endif
 
 	/* End-of-list marker */

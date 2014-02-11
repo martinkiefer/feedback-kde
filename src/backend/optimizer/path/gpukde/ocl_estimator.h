@@ -19,27 +19,30 @@
  * Definition of a constructed KDE estimator.
  */
 typedef struct ocl_estimator {
-	/* Information about the scope of this estimator */
-	Oid table;    // For which table ss this estimator configured?
-	int32 columns;	 // Bitmap encoding which columns are stored in the estimator.
-	AttrNumber* column_order; // Order of the columns on the device.
-	/* Some statistics about the estimator */
-	unsigned int nr_of_dimensions; 
-	/* Buffers that keeps the current bandwidth estimate*/
-	cl_mem bandwidth_buffer;
-	/* Fields for the sample */
-	unsigned int rows_in_table;   // Current number of tuples in the table.
-	unsigned int rows_in_sample;  // Current number of tuples in the sample.
-	size_t sample_buffer_size;      // Size of the sample buffer in bytes.
-	cl_mem sample_buffer;           // Buffer that stores the data sample.
-	/* These two buffers are used to track a linear regression between sample contributions and the expected results */
-	cl_mem sample_quality_slopes_buffer;
-	cl_mem sample_quality_intercepts_buffer;
-	/* Normalization factors */
-	double* scale_factors;    // Scale factors that were applied to the data in the sample.
-	/* Runtime information */
-	bool open_estimation;     // Set to true if this estimator has produced a valid estimation for which we are still waiting for feedback.
-	double last_selectivity;  // Stores the last selectivity computed by this estimator.
+  /* Information about the scope of this estimator */
+  Oid table;    // For which table ss this estimator configured?
+  int32 columns;	 // Bitmap encoding which columns are stored in the estimator.
+  AttrNumber* column_order; // Order of the columns on the device.
+  /* Some statistics about the estimator */
+  unsigned int nr_of_dimensions;
+  /* Buffers that keeps the current bandwidth estimate*/
+  cl_mem bandwidth_buffer;
+  /* Fields for the sample */
+  unsigned int rows_in_table;   // Current number of tuples in the table.
+  unsigned int rows_in_sample;  // Current number of tuples in the sample.
+  size_t sample_buffer_size;      // Size of the sample buffer in bytes.
+  cl_mem sample_buffer;           // Buffer that stores the data sample.
+  /* These two buffers are used to track a linear regression between sample contributions and the expected results */
+  cl_mem sample_quality_slopes_buffer;
+  cl_mem sample_quality_intercepts_buffer;
+  /* Fields for tracking mini-batch gradient updates to the bandwidth. */
+  cl_mem gradient_accumulator;
+  unsigned int nr_of_accumulated_gradients;
+  /* Normalization factors */
+  double* scale_factors;    // Scale factors that were applied to the data in the sample.
+  /* Runtime information */
+  bool open_estimation;     // Set to true if this estimator has produced a valid estimation for which we are still waiting for feedback.
+  double last_selectivity;  // Stores the last selectivity computed by this estimator.
 } ocl_estimator_t;
 
 /*
