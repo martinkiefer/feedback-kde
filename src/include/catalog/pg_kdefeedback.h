@@ -24,10 +24,10 @@
 
 CATALOG(pg_kdefeedback,3779) BKI_WITHOUT_OIDS
 {
-  int8    time;
+  int8    timestamp;
   Oid     table;
 #ifdef CATALOG_VARLEN
-  text    ranges;
+  bytea   ranges;
 #endif
   float8  alltuples;
   float8  qualifiedtuples;
@@ -45,7 +45,7 @@ typedef FormData_pg_kdefeedback *Form_pg_kdefeedback;
  * ----------------
  */
 #define Natts_pg_kdefeedback                  5
-#define Anum_pg_kdefeedback_time              1
+#define Anum_pg_kdefeedback_timestamp         1
 #define Anum_pg_kdefeedback_relid             2
 #define Anum_pg_kdefeedback_ranges            3
 #define Anum_pg_kdefeedback_all_tuples        4

@@ -102,8 +102,7 @@ extern void ocl_notifySampleMaintenanceOfDeletion(Relation rel);
 /*
  * Propagate selectivity information to the model maintenance.
  */
-extern void ocl_notifyModelMaintenanceOfSelectivity(Oid rel, RQClause* bounds,
-                                                    float selectivity);
+extern void ocl_notifyModelMaintenanceOfSelectivity(Oid rel, float selectivity);
 
 #endif /* USE_OPENCL */
 #endif /* OCL_ESTIMATOR_API_H_ */

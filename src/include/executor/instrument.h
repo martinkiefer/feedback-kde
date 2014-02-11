@@ -64,7 +64,7 @@ typedef struct Instrumentation
 	BufferUsage bufusage;		/* Total buffer usage */
 	
 	//KDE
-	RQClause *kde_rq;
+	RQClauseList *kde_rq;
 	List 	 *kde_rtable;
 } Instrumentation;
 

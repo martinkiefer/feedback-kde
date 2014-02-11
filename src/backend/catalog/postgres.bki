@@ -5434,9 +5434,9 @@ open pg_kdemodels
 close pg_kdemodels
 create pg_kdefeedback 3779 without_oids
  (
- time = int8 ,
+ timestamp = int8 ,
  table = oid ,
- ranges = text ,
+ ranges = bytea ,
  alltuples = float8 ,
  qualifiedtuples = float8
  )

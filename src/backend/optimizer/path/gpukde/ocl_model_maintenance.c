@@ -400,8 +400,7 @@ static void ocl_runOnlineLearningStep(ocl_estimator_t* estimator,
 // ############################################################
 // # Main entry function.
 // ############################################################
-void ocl_notifyModelMaintenanceOfSelectivity(
-    Oid relation, RQClause* bounds, float selectivity) {
+void ocl_notifyModelMaintenanceOfSelectivity(Oid relation, float selectivity) {
   // Check if we have an estimator for this relation.
   ocl_estimator_t* estimator = ocl_getEstimator(relation);
   if (estimator == NULL) return;

@@ -345,7 +345,7 @@ ExecInitNode(Plan *node, EState *estate, int eflags)
 	//KDE
 	if(kde_feedback_use_collection()){
 	    if (nodeTag(node) == T_SeqScan){
-		RQClause *rq = kde_get_rqlist(node->qual); 
+		RQClauseList *rq = kde_get_rqlist(node->qual);
 		if(rq != NULL){
 		    if(! estate->es_instrument){
 			result->instrument = InstrAlloc(1, INSTRUMENT_ROWS);
