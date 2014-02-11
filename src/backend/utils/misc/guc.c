@@ -45,6 +45,7 @@
 #include "optimizer/cost.h"
 #include "optimizer/geqo.h"
 #include "optimizer/paths.h"
+#include "optimizer/path/gpukde/ocl_estimator_api.h"
 #include "optimizer/planmain.h"
 #include "parser/parse_expr.h"
 #include "parser/parse_type.h"
@@ -129,7 +130,6 @@ extern char *SSLCipherSuites;
 
 #ifdef USE_OPENCL
 
-
 /* Flag to determine whether we should use the OpenCL KDE estimator or not. */
 extern bool kde_enable;
 extern void assign_kde_enable(bool newval, void *extra);
@@ -150,6 +150,15 @@ extern bool kde_collect_feedback;
 extern bool kde_enable_adaptive_bandwidth;
 /* Determines the mini-batch size that is used for online learning. */
 extern int kde_adaptive_bandwidth_minibatch_size;
+/* Determines the error metric that is used to optimize the bandwidth. */
+static const struct config_enum_entry kde_error_metric_options[] = {
+  {"Absolute", ABSOLUTE, false},
+  {"Relative", RELATIVE, false},
+  {"Quadratic", QUADRATIC, false},
+  {"QError", Q, false},
+  {NULL, 0, false}
+};
+extern int kde_error_metric;
 
 #endif
 
@@ -3433,6 +3442,19 @@ static struct config_enum ConfigureNamesEnum[] =
 		XMLOPTION_CONTENT, xmloption_options,
 		NULL, NULL, NULL
 	},
+
+#ifdef USE_OPENCL
+  {
+    {"kde_error_metric", PGC_USERSET, DEVELOPER_OPTIONS,
+      gettext_noop("Sets the error metric that will be optimized by the KDE estimators."),
+      NULL
+    },
+    &kde_error_metric,
+    RELATIVE, kde_error_metric_options,
+    NULL, NULL, NULL
+  },
+#endif
+
 	/* End-of-list marker */
 	{
 		{NULL, 0, 0, NULL, NULL}, NULL, 0, NULL, NULL, NULL, NULL

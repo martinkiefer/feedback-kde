@@ -17,6 +17,8 @@
 bool kde_enable_adaptive_bandwidth;
 int kde_adaptive_bandwidth_minibatch_size;
 char* kde_estimation_quality_logfile_name;
+int kde_error_metric;
+
 
 // ############################################################
 // # Define estimation error metrics.
@@ -86,15 +88,6 @@ static error_metric_t error_metrics[] = {
    }
 };
 
-typedef enum error_metrics {
-  ABSOLUTE = 0,
-  RELATIVE = 1,
-  QUADRATIC = 2,
-  Q = 3
-} error_metrics_t;
-
-error_metrics_t selected_metric = QUADRATIC;
-
 // ############################################################
 // # Code for estimation error reporting.
 // ############################################################
@@ -129,9 +122,17 @@ static void ocl_reportErrorToLogFile(Oid relation, float actual, float expected)
 }
 
 // ############################################################
-// # Code to perform online adaption of the bandwidth.
+// # Code for adapting the bandwidth.
 // ############################################################
 
+/**
+ * Helper function to efficiently compute the sum of an input buffer.
+ *
+ * The computed sum is written to the offset result_buffer_offset in the
+ * specified result_buffer.
+ *
+ * The function returns an event to wait for the computation to complete.
+ */
 static cl_event sumOfArray(cl_mem input_buffer, unsigned int elements,
                            cl_mem result_buffer, unsigned int result_buffer_offset,
                            cl_event external_event) {
@@ -213,6 +214,11 @@ static cl_event sumOfArray(cl_mem input_buffer, unsigned int elements,
 
 const float learning_rate = 0.05f;
 
+
+
+/**
+ * Helper function to compute a single online learning step.
+ */
 static void ocl_runOnlineLearningStep(ocl_estimator_t* estimator,
                                       float selectivity) {
   if (!kde_enable_adaptive_bandwidth) return;
@@ -314,7 +320,7 @@ static void ocl_runOnlineLearningStep(ocl_estimator_t* estimator,
   // Finally, compute the gradient scaling factor.
   float scale_factor = 1.0f
       / (pow(2.0f, estimator->nr_of_dimensions) * estimator->rows_in_sample);
-  scale_factor *= (*(error_metrics[selected_metric].gradient_factor))(
+  scale_factor *= (*(error_metrics[kde_error_metric].gradient_factor))(
       estimator->last_selectivity, selectivity);
 
   // Now accumulate the bandwidth.

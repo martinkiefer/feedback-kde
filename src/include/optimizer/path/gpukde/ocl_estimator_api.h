@@ -41,6 +41,17 @@ typedef struct ocl_estimator_request {
 } ocl_estimator_request_t;
 
 /*
+ * Enum definition to select a possible error metric that should be optimized.
+ */
+
+typedef enum error_metrics {
+  ABSOLUTE = 0,
+  RELATIVE = 1,
+  QUADRATIC = 2,
+  Q = 3
+} ocl_error_metrics_t;
+
+/*
  * Function for updating a range request with new bounds on a given attribute.
  */
 extern int ocl_updateRequest(ocl_estimator_request_t* request, AttrNumber column,
