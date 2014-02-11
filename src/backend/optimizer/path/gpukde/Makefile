@@ -25,6 +25,7 @@ install-data: all installdirs
 	$(INSTALL_DATA) $(srcdir)/kernel/kde.cl '$(DESTDIR)$(datadir)/kernel/kde.cl'
 	$(INSTALL_DATA) $(srcdir)/kernel/init.cl '$(DESTDIR)$(datadir)/kernel/init.cl'
 	$(INSTALL_DATA) $(srcdir)/kernel/sample_maintenance.cl '$(DESTDIR)$(datadir)/kernel/sample_maintenance.cl'
+	$(INSTALL_DATA) $(srcdir)/kernel/model_maintenance.cl '$(DESTDIR)$(datadir)/kernel/model_maintenance.cl'
 
 installdirs:
 	$(MKDIR_P) '$(DESTDIR)$(datadir)/kernel'

@@ -64,15 +64,19 @@ static cl_kernel prepareKDEKernel(ocl_estimator_t* estimator,
   return kernel;
 }
 
-static float sumOfArray(cl_mem input_buffer, cl_mem result_buffer,
-                        unsigned int elements) {
+static float sumOfArray(cl_mem input_buffer, unsigned int elements, cl_event external_event) {
+  cl_int err = 0;
 	ocl_context_t* context = ocl_getContext();
+	cl_event init_event;
+	cl_event events[] = { NULL, NULL };
+	unsigned int nr_of_events = 0;
 	// Fetch the required sum kernels:
+	cl_kernel init_buffer = ocl_getKernel("init_zero", 0);
 	cl_kernel fast_sum = ocl_getKernel("sum_par", 0);
 	cl_kernel slow_sum = ocl_getKernel("sum_seq", 0);
-	clFinish(context->queue);
 	struct timeval start; gettimeofday(&start, NULL);
 	// Determine the kernel parameters:
+	size_t global_size = 0;
 	size_t local_size = context->max_workgroup_size;
 	size_t processors = context->max_compute_units;
 	// Figure out how many elements we can aggregate per thread in the parallel part:
@@ -81,41 +85,56 @@ static float sumOfArray(cl_mem input_buffer, cl_mem result_buffer,
 	unsigned int slow_kernel_data_offset = processors * tuples_per_thread * local_size;
 	unsigned int slow_kernel_elements = elements - slow_kernel_data_offset;
 	unsigned int slow_kernel_result_offset = processors;
+  // Allocate a temporary result buffer.
+  cl_mem tmp_buffer = clCreateBuffer(context->context, CL_MEM_READ_WRITE, sizeof(float) * (processors + 1), NULL, NULL);
+  err |= clSetKernelArg(init_buffer, 0, sizeof(cl_mem), &tmp_buffer);
+  global_size = processors + 1;
+  err |= clEnqueueNDRangeKernel(context->queue, init_buffer, 1, NULL, &global_size, NULL, 1, &external_event, &init_event);
 	// Ok, we selected the correct kernel and parameters. Now prepare the arguments.
-	cl_int err = 0;
 	err |= clSetKernelArg(fast_sum, 0, sizeof(cl_mem), &input_buffer);
-	err |= clSetKernelArg(fast_sum, 1, sizeof(cl_mem), &result_buffer);
+	err |= clSetKernelArg(fast_sum, 1, sizeof(cl_mem), &tmp_buffer);
 	err |= clSetKernelArg(fast_sum, 2, sizeof(unsigned int), &tuples_per_thread);
 	err |= clSetKernelArg(slow_sum, 0, sizeof(cl_mem), &input_buffer);
 	err |= clSetKernelArg(slow_sum, 1, sizeof(unsigned int), &slow_kernel_data_offset);
 	err |= clSetKernelArg(slow_sum, 2, sizeof(unsigned int), &slow_kernel_elements);
-	err |= clSetKernelArg(slow_sum, 3, sizeof(cl_mem), &result_buffer);
+	err |= clSetKernelArg(slow_sum, 3, sizeof(cl_mem), &tmp_buffer);
 	err |= clSetKernelArg(slow_sum, 4, sizeof(unsigned int), &slow_kernel_result_offset);
 	// Fire the kernel
 	if (tuples_per_thread) {
-		size_t global_size = local_size * processors;
-		err |= clEnqueueNDRangeKernel(context->queue, fast_sum, 1, NULL, &global_size, &local_size, 0, NULL, NULL);
+		global_size = local_size * processors;
+		cl_event event;
+		err |= clEnqueueNDRangeKernel(context->queue, fast_sum, 1, NULL, &global_size, &local_size, 1, &init_event, &event);
+		events[nr_of_events++] = event;
 	}
-	if (slow_kernel_elements)
-		err |= clEnqueueTask(context->queue, slow_sum, 0, NULL, NULL);
-	clEnqueueBarrier(context->queue);
-	// Now transfer the partial aggregates back to a local buffer ...
-	float* partial_aggregates = (float*)malloc(sizeof(float)*(1+processors));
-	err |= clEnqueueReadBuffer(context->queue, result_buffer, CL_TRUE, 0, (1+processors)*sizeof(float), partial_aggregates, 0, NULL, NULL);
-	// .. and compute the final aggregate.
-	float result = 0;
-	if (tuples_per_thread) {
-		result = partial_aggregates[0];
-		unsigned int i;
-		for (i = 1; i < processors; ++i)
-			result += partial_aggregates[i];
+	if (slow_kernel_elements) {
+    cl_event event;
+		err |= clEnqueueTask(context->queue, slow_sum, 1, &init_event, &event);
+    events[nr_of_events++] = event;
 	}
-	if (slow_kernel_elements)
-		result += partial_aggregates[processors];
+	// Now perform a final pass over the data to compute the aggregate.
+	slow_kernel_data_offset = 0;
+	slow_kernel_elements = processors + 1;
+	slow_kernel_result_offset = 0;
+  err |= clSetKernelArg(slow_sum, 0, sizeof(cl_mem), &tmp_buffer);
+  err |= clSetKernelArg(slow_sum, 1, sizeof(unsigned int), &slow_kernel_data_offset);
+  err |= clSetKernelArg(slow_sum, 2, sizeof(unsigned int), &slow_kernel_elements);
+  err |= clSetKernelArg(slow_sum, 3, sizeof(cl_mem), &tmp_buffer);
+  err |= clSetKernelArg(slow_sum, 4, sizeof(unsigned int), &slow_kernel_result_offset);
+  cl_event finalize_event;
+  err |= clEnqueueTask(context->queue, slow_sum, nr_of_events, events, &finalize_event);
+  // Now transfer the final aggregate back.
+  float result;
+  err |= clEnqueueReadBuffer(context->queue, tmp_buffer, CL_TRUE, 0,
+                             sizeof(float), &result, 1, &finalize_event, NULL);
 	// Clean up ...
 	clReleaseKernel(slow_sum);
 	clReleaseKernel(fast_sum);
-	free(partial_aggregates);
+	clReleaseKernel(init_buffer);
+	clReleaseMemObject(tmp_buffer);
+	clReleaseEvent(finalize_event);
+	clReleaseEvent(init_event);
+	if (events[0]) clReleaseEvent(events[0]);
+  if (events[1]) clReleaseEvent(events[1]);
 	// .. and return the result.
 	struct timeval now; gettimeofday(&now, NULL); long seconds = now.tv_sec - start.tv_sec; long useconds = now.tv_usec - start.tv_usec;
 	long mtime = ((seconds) * 1000 + useconds/1000.0) + 0.5;
@@ -140,13 +159,13 @@ static float rangeKDE(ocl_context_t* ctxt, ocl_estimator_t* estimator) {
   }
   // Now run the actual computation.
   size_t global_size = estimator->rows_in_sample;
+  cl_event kde_event;
 	clEnqueueNDRangeKernel(ctxt->queue, kde_kernel, 1, NULL, &global_size,
-	                       NULL, 0, NULL, NULL);
-	clEnqueueBarrier(ctxt->queue);
-	float result = sumOfArray(ctxt->result_buffer, ctxt->result_buffer,
-	                          estimator->rows_in_sample);
+	                       NULL, 0, NULL, &kde_event);
+	float result = sumOfArray(ctxt->result_buffer, estimator->rows_in_sample, kde_event);
 	result *= normalization_factor / estimator->rows_in_sample;
 	clReleaseKernel(kde_kernel);
+	clReleaseEvent(kde_event);
 	return result;
 }
 
@@ -723,7 +742,7 @@ void ocl_constructEstimator(
 
   // Prepare the buffers for storing the linear regression variables between
   // sample output expected result. We initialize each regression function as 1*x.
-  size_t global_size = estimator->sample_buffer_size / sizeof(float);
+  size_t global_size = ocl_maxRowsInSample(estimator);
     // Initialize the intercept to 0.
   estimator->sample_quality_intercepts_buffer = clCreateBuffer(
       ctxt->context, CL_MEM_READ_WRITE,

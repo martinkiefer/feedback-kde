@@ -34,8 +34,10 @@ typedef struct {
 	cl_bool is_gpu;
 	size_t max_alloc_size;		/* largest possible allocation */
 	size_t global_mem_size; 	/* global memory size */
+	size_t local_mem_size;    /* local memory size */
 	size_t max_workgroup_size;	/* maximum number of threads per workgrop */
 	cl_uint max_compute_units;	/* number of compute processors */
+	cl_uint required_mem_alignment; /* required memory alignment in bits */
 	/* Command queue for this device */
 	cl_command_queue queue;
 	/* Buffer for result data */

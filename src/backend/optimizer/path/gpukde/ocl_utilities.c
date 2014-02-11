@@ -83,14 +83,16 @@ void ocl_initialize(void) {
 	ctxt->context = clCreateContext(NULL, 1, &device, NULL, NULL, &err);
 	ctxt->device = device;
 	ctxt->is_gpu = ocl_use_gpu;
-	ctxt->queue = clCreateCommandQueue(ctxt->context, ctxt->device, 0, &err);
+	ctxt->queue = clCreateCommandQueue(ctxt->context, ctxt->device, CL_QUEUE_OUT_OF_ORDER_EXEC_MODE_ENABLE, &err);
 	ctxt->program_registry = dictionary_init();
 
 	// Now get some device information parameters:
-	err = clGetDeviceInfo(device, CL_DEVICE_MAX_MEM_ALLOC_SIZE, sizeof(size_t), &(ctxt->max_alloc_size), NULL);
-	err = clGetDeviceInfo(device, CL_DEVICE_GLOBAL_MEM_SIZE, sizeof(size_t), &(ctxt->global_mem_size), NULL);
-	err = clGetDeviceInfo(device, CL_DEVICE_MAX_WORK_GROUP_SIZE, sizeof(size_t), &(ctxt->max_workgroup_size), NULL);
-	err = clGetDeviceInfo(device, CL_DEVICE_MAX_COMPUTE_UNITS, sizeof(cl_uint), &(ctxt->max_compute_units), NULL);
+	err |= clGetDeviceInfo(device, CL_DEVICE_MAX_MEM_ALLOC_SIZE, sizeof(size_t), &(ctxt->max_alloc_size), NULL);
+	err |= clGetDeviceInfo(device, CL_DEVICE_GLOBAL_MEM_SIZE, sizeof(size_t), &(ctxt->global_mem_size), NULL);
+  err |= clGetDeviceInfo(device, CL_DEVICE_LOCAL_MEM_SIZE, sizeof(size_t), &(ctxt->local_mem_size), NULL);
+	err |= clGetDeviceInfo(device, CL_DEVICE_MAX_WORK_GROUP_SIZE, sizeof(size_t), &(ctxt->max_workgroup_size), NULL);
+	err |= clGetDeviceInfo(device, CL_DEVICE_MAX_COMPUTE_UNITS, sizeof(cl_uint), &(ctxt->max_compute_units), NULL);
+	err |= clGetDeviceInfo(device, CL_DEVICE_MEM_BASE_ADDR_ALIGN, sizeof(cl_uint), &(ctxt->required_mem_alignment), NULL);
 
 	/* Allocate a result buffer of kde_samplesize kB on the device buffer */
 	ctxt->result_buffer_size = kde_samplesize * 1024;
@@ -175,8 +177,10 @@ static const char *kernel_names[] = {
     PGSHAREDIR"/kernel/sum.cl",
     PGSHAREDIR"/kernel/kde.cl",
     PGSHAREDIR"/kernel/init.cl",
-    PGSHAREDIR"/kernel/sample_maintenance.cl"};
-static const unsigned int nr_of_kernels = 4;
+    PGSHAREDIR"/kernel/sample_maintenance.cl",
+    PGSHAREDIR"/kernel/model_maintenance.cl"
+};
+static const unsigned int nr_of_kernels = 5;
 
 // Helper function to build a program from all kernel files using the given build params
 static cl_program buildProgram(ocl_context_t* context, const char* build_params) {
