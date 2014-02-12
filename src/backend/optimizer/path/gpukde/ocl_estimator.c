@@ -523,8 +523,8 @@ int ocl_updateRequest(ocl_estimator_request_t* request,
 		request->ranges = (ocl_colrange_t*)malloc(sizeof(ocl_colrange_t));
 		request->range_count++;
 		request->ranges->colno = colno;
-		request->ranges->lower_bound = -1.0f * get_float4_infinity();
-		request->ranges->upper_bound = get_float4_infinity();
+		request->ranges->lower_bound = -1.0f * INFINITY;
+		request->ranges->upper_bound = INFINITY;
 		column_range = request->ranges;
 	} else {
 		/* Check whether we already have a range for this column */

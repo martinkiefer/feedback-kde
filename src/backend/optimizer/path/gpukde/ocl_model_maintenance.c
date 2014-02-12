@@ -437,9 +437,10 @@ static unsigned int findColumnPositionInEstimator(ocl_estimator_t* estimator,
   return estimator->nr_of_dimensions;
 }
 
+
 // Helper function to extract the n latest feedback records for the given
 // estimator from the catalogue. The function will only return tuples that
-// have feedback that maches the estimator's attributes.
+// have feedback that matches the estimator's attributes.
 //
 // This function returns the actual number of valid feedback records in
 // the catalog.
@@ -449,7 +450,7 @@ static unsigned int extractNLatestFeedbackRecordsFromCatalog(
   unsigned int current_tuple = 0;
 
   // Open a new scan over the feedback table.
-  unsigned int i;
+  unsigned int i, j;
   if (SPI_connect() != SPI_OK_CONNECT) {
     fprintf(stderr, "> Error connecting to Postgres Backend.\n");
     return current_tuple;
@@ -475,24 +476,24 @@ static unsigned int extractNLatestFeedbackRecordsFromCatalog(
     if ((columns_in_record | estimator->columns) != estimator->columns) continue;
     // This is a valid record, initialize the range buffer.
     unsigned int pos = current_tuple * 2 * estimator->nr_of_dimensions;
-    for (i=0; i<estimator->nr_of_dimensions; ++i) {
-      range_buffer[pos + 2*i] = -1.0f * get_float4_infinity();
-      range_buffer[pos + 2*i + 1] = get_float4_infinity();
+    for (j=0; j<estimator->nr_of_dimensions; ++j) {
+      range_buffer[pos + 2*j] = -1.0f * INFINITY;
+      range_buffer[pos + 2*j + 1] = INFINITY;
     }
     // Now extract all clauses and isert them into the range buffer.
     RQClause* clauses;
     unsigned int nr_of_clauses = extract_clauses_from_buffer(DatumGetByteaP(
         SPI_getbinval(record_tuple, spi_tupdesc, 2, &isnull)), &clauses);
-    for (i=0; i<nr_of_clauses; ++i) {
-      int column = clauses[i].var;
+    for (j=0; j<nr_of_clauses; ++j) {
+      int column = clauses[j].var;
       // First, locate the correct column position in the estimator.
-      int column_in_estimator = findColumnPositionInEstimator(estimator,
-                                                              column);
+      int column_in_estimator = findColumnPositionInEstimator(
+          estimator, column);
       // Re-Scale the bounds, add potential padding and write them to their position.
-      float lo = clauses[i].lobound / estimator->scale_factors[column_in_estimator];
-      if (clauses[i].loinclusive != EX) lo -= 0.001f;
-      float hi = clauses[i].hibound / estimator->scale_factors[column_in_estimator];
-      if (clauses[i].hiinclusive != EX) hi += 0.001f;
+      float lo = clauses[j].lobound / estimator->scale_factors[column_in_estimator];
+      if (clauses[j].loinclusive != EX) lo -= 0.001f;
+      float hi = clauses[j].hibound / estimator->scale_factors[column_in_estimator];
+      if (clauses[j].hiinclusive != EX) hi += 0.001f;
       range_buffer[pos + 2*column_in_estimator] = lo;
       range_buffer[pos + 2*column_in_estimator + 1] = hi;
     }
@@ -502,6 +503,11 @@ static unsigned int extractNLatestFeedbackRecordsFromCatalog(
     double qualified_rows = DatumGetFloat8(
         SPI_getbinval(record_tuple, spi_tupdesc, 4, &isnull));
     selectivity_buffer[current_tuple++] = qualified_rows / all_rows;
+    // Debug print.
+    fprintf(stderr, ">> Observation %i:\n", current_tuple);
+    for (j=0; j<estimator->nr_of_dimensions; ++j) {
+      fprintf(stderr, "\t[%f, %f]\n", range_buffer[pos + 2*j], range_buffer[pos + 2*j + 1]);
+    }
   }
   // We are done :)
   SPI_finish();
