@@ -707,7 +707,7 @@ void ocl_constructEstimator(
       sizeof(float) * dimensionality, bandwidth, 0, NULL, NULL);
 	// Print some debug info.
 	fprintf(stderr, "\tInitial bandwidth guess:");
-	for ( i = 0; i< dimensionality ; ++i)
+	for ( i = 0; i < dimensionality ; ++i)
 		fprintf(stderr, " %f", bandwidth[i]);
 	fprintf(stderr, "\n");
 	free(bandwidth);
@@ -828,16 +828,17 @@ void ocl_extractSampleTuple(ocl_estimator_t* estimator, Relation rel,
   unsigned int i;
   for (i=0; i<rel->rd_att->natts; ++i) {
     // Check if this column is contained in the estimator.
-    if (!(estimator->columns & (0x1 << i))) continue;
+    int16 colno = rel->rd_att->attrs[i]->attnum;
+    if (!(estimator->columns & (0x1 << colno))) continue;
     // Cool, it is. Check where to write the column content.
-    unsigned int wpos = estimator->column_order[i];
+    unsigned int wpos = estimator->column_order[colno];
     Oid attribute_type = rel->rd_att->attrs[i]->atttypid;
     bool isNull;
     if (attribute_type == FLOAT4OID)
-      target[wpos] = DatumGetFloat4(heap_getattr(tuple, i+1, rel->rd_att,
+      target[wpos] = DatumGetFloat4(heap_getattr(tuple, colno, rel->rd_att,
                                                  &isNull));
     else if (attribute_type == FLOAT8OID)
-      target[wpos] = DatumGetFloat8(heap_getattr(tuple, i+1, rel->rd_att,
+      target[wpos] = DatumGetFloat8(heap_getattr(tuple, colno, rel->rd_att,
                                                  &isNull));
   }
 }
