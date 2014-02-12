@@ -20,7 +20,7 @@
 #include <time.h>
 #include <float.h>
 
-typedef enum bound { HIGHBOUND,LOWBOUND,EQUALITY} bound_t;
+typedef enum bound { HIGHBOUND, LOWBOUND, EQUALITY} bound_t;
 
 //OIDs from pg_operator.h
 #define OID_FLOAT8_EQ 670
@@ -37,7 +37,8 @@ bool kde_feedback_use_collection() {
 }
 
 // Helper function to materialize an RQlist to a buffer.
-static bytea* materialize_rqlist_to_buffer(RQClauseList *rqlist) {
+static bytea* materialize_rqlist_to_buffer(RQClauseList *rqlist,
+                                           unsigned int* attribute_bitmap) {
   // First, count how many elements are in the list.
   unsigned int elements_in_list = 0;
   RQClauseList* tmp = rqlist;
@@ -55,6 +56,7 @@ static bytea* materialize_rqlist_to_buffer(RQClauseList *rqlist) {
   char* payload = VARDATA(buffer);
   while (rqlist) {
     *((RQClause*)(&(payload[pos]))) = rqlist->clause;
+    (*attribute_bitmap) |= (0x1 << rqlist->clause.var);
     pos += sizeof(RQClause);
     rqlist = rqlist->next;
   }
@@ -86,7 +88,7 @@ static int kde_add_rqentry(RQClauseList **rqlist, Var *var, float8 value,
                            bound_t bound, inclusiveness_t inclusiveness) {
   RQClauseList *rqelem = NULL;
   for (rqelem = *rqlist; rqelem; rqelem = rqelem->next) {
-    if (!equal(var, rqelem->clause.var))
+    if (var->varattno != rqelem->clause.var)
       continue;
     /* Found the right group to put this clause in */
 
@@ -142,7 +144,7 @@ static int kde_add_rqentry(RQClauseList **rqlist, Var *var, float8 value,
   }
 
   rqelem = (RQClauseList *) palloc(sizeof(RQClauseList));
-  rqelem->clause.var = var;
+  rqelem->clause.var = var->varattno;
 
   if (bound == LOWBOUND) {
     rqelem->clause.lobound = value;
@@ -309,7 +311,9 @@ int kde_finish(PlanState *node){
 	    MemSet(new_record, 0, sizeof(new_record));
 	    MemSet(new_record_nulls, false, sizeof(new_record_nulls));
 	    
-	    bytea* rq_buffer = materialize_rqlist_to_buffer(node->instrument->kde_rq);
+	    unsigned int attribute_bitmap = 0;
+	    bytea* rq_buffer = materialize_rqlist_to_buffer(
+	        node->instrument->kde_rq, &attribute_bitmap);
       release_rqlist(node->instrument->kde_rq);
 	    float8 qual_tuples = (float8)(node->instrument->tuplecount + node->instrument->ntuples)/(node->instrument->nloops+1);
 	    float8 all_tuples = (float8)(node->instrument->tuplecount + node->instrument->nfiltered2 + node->instrument->nfiltered1 + node->instrument->ntuples)/(node->instrument->nloops+1);
@@ -330,6 +334,7 @@ int kde_finish(PlanState *node){
 	    
 	    new_record[Anum_pg_kdefeedback_timestamp-1] = Int64GetDatum((int64)time(NULL));
 	    new_record[Anum_pg_kdefeedback_relid-1] = ObjectIdGetDatum(rte->relid);
+	    new_record[Anum_pg_kdefeedback_columns-1] = Int32GetDatum(attribute_bitmap);
 	    new_record[Anum_pg_kdefeedback_ranges-1] = PointerGetDatum(rq_buffer);
 	    new_record[Anum_pg_kdefeedback_all_tuples-1] = Float8GetDatum(all_tuples);
       new_record[Anum_pg_kdefeedback_qualified_tuples-1] = Float8GetDatum(qual_tuples);

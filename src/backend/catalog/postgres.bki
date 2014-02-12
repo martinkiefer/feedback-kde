@@ -5436,6 +5436,7 @@ create pg_kdefeedback 3779 without_oids
  (
  timestamp = int8 ,
  table = oid ,
+ columns = int4 ,
  ranges = bytea ,
  alltuples = float8 ,
  qualifiedtuples = float8

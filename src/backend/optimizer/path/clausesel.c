@@ -117,7 +117,6 @@ clauselist_selectivity(PlannerInfo *root,
     memset(&ocl_request, 0, sizeof(ocl_estimator_request_t));
 
     /* Now walk each clause, extracting required information from each */
-    fprintf(stderr, ">>> BEGINNING OF clauselist_selectivity\n");
     foreach(l, clauses) {
       Node     *clause = (Node *) lfirst(l);
       total_clauses++;
@@ -139,12 +138,12 @@ clauselist_selectivity(PlannerInfo *root,
         }
         clause = (Node *) rinfo->clause;
         if (!IsA(clause, OpExpr)) {
-          fprintf(stderr, "Unsupported clause.\n");
+          // Unsupported clause.
           continue;
         }
         // Extract the operator information:
         if (!get_restriction_variable(root, ((OpExpr *)clause)->args, varRelid, &vardata, &other, &varonleft)) {
-          fprintf(stderr, "Undefined clause.\n");
+          // Undefined clause.
           continue;
         }
         // Check that this is a valid operator (lt or gt):
@@ -204,9 +203,7 @@ clauselist_selectivity(PlannerInfo *root,
       }
     }
     // If we have identified a request, try to run it on the device:
-    fprintf(stderr, "Identified %i valid from %i total clauses for OpenCL offloading.\n", known_clauses, total_clauses);
     if (ocl_request.table_identifier) {
-      ocl_dumpRequest(&ocl_request);
       if (!ocl_estimateSelectivity(&ocl_request, &s1)) {
         // Ok... we were unable to evaluate this. Remove the flags from the nodes.
         foreach(l, clauses) {
@@ -214,14 +211,11 @@ clauselist_selectivity(PlannerInfo *root,
           if (clause->type == T_Invalid)
             clause->type = T_RestrictInfo;
         }
-        fprintf(stderr, "-> Request failed :(.\n");
-      } else
-        fprintf(stderr, "-> Request successful :).\n");
+      }
       if (ocl_request.ranges) {
         free(ocl_request.ranges);
       }
     }
-    fprintf(stderr, "<<< END OF clauselist_selectivity\n");
   }
 #endif
 

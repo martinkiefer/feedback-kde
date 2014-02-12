@@ -12,7 +12,6 @@
 
 #include "access/attnum.h"
 #include "access/htup.h"
-#include "executor/kde_execute.h"
 #include "nodes/nodes.h"
 #include "utils/rel.h"
 #include "utils/relcache.h"

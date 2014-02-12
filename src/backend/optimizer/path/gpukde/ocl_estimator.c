@@ -504,9 +504,8 @@ static int compareRange(const void* a, const void* b) {
  */
 void ocl_dumpRequest(ocl_estimator_request_t* request) {
 	unsigned int i;
-	if (!request)
-		return;
-	fprintf(stderr, "Firing request for table: %i:\n", request->table_identifier);
+	if (!request) return;
+	fprintf(stderr, "Received estimation request for table: %i:\n", request->table_identifier);
 	for (i=0; i<request->range_count; ++i)
 		fprintf(stderr, "\tColumn %i in: [%f , %f]\n", request->ranges[i].colno, request->ranges[i].lower_bound, request->ranges[i].upper_bound);
 }
@@ -524,8 +523,8 @@ int ocl_updateRequest(ocl_estimator_request_t* request,
 		request->ranges = (ocl_colrange_t*)malloc(sizeof(ocl_colrange_t));
 		request->range_count++;
 		request->ranges->colno = colno;
-		request->ranges->lower_bound = -FLT_MAX;
-		request->ranges->upper_bound = FLT_MAX;
+		request->ranges->lower_bound = -1.0f * get_float4_infinity();
+		request->ranges->upper_bound = get_float4_infinity();
 		column_range = request->ranges;
 	} else {
 		/* Check whether we already have a range for this column */
@@ -539,8 +538,8 @@ int ocl_updateRequest(ocl_estimator_request_t* request,
 			/* Initialize the new column range */
 			column_range = &(request->ranges[request->range_count-1]);
 			column_range->colno = colno;
-			column_range->lower_bound = -FLT_MAX;
-			column_range->upper_bound = FLT_MAX;
+			column_range->lower_bound = 1.0f * get_float4_infinity();
+			column_range->upper_bound = get_float4_infinity();
 			/* Now we have to re-sort the array */
 			qsort(request->ranges, request->range_count, sizeof(ocl_colrange_t), &compareRange);
 			/* Ok, we inserted the value. Use bsearch again to get the final position of our newly inserted range. */
@@ -605,8 +604,8 @@ int ocl_estimateSelectivity(const ocl_estimator_request_t* request,
 				// Make sure we adjust the request to the re-scaled data.
 				row_ranges[2*j] = request->ranges[i].lower_bound / estimator->scale_factors[j];
 				row_ranges[2*j + 1] = request->ranges[i].upper_bound / estimator->scale_factors[j];
-				if (request->ranges[i].lower_included) row_ranges[2*j] -= 0.01f;
-				if (request->ranges[i].upper_included) row_ranges[2*j + 1] += 0.01f;
+				if (request->ranges[i].lower_included) row_ranges[2*j] -= 0.001f;
+				if (request->ranges[i].upper_included) row_ranges[2*j + 1] += 0.001f;
 				found = 1;
 			}
 		}
@@ -625,6 +624,7 @@ int ocl_estimateSelectivity(const ocl_estimator_request_t* request,
 		long seconds = now.tv_sec - start.tv_sec; 
 		long useconds = now.tv_usec - start.tv_usec;
 		long mtime = ((seconds) * 1000 + useconds/1000.0) + 0.5; 
+		ocl_dumpRequest(request);
 		fprintf(stderr, "Estimated selectivity: %f, took: %ld ms.\n", *selectivity, mtime);
 		free(row_ranges);
 		return 1;
@@ -737,11 +737,6 @@ void ocl_constructEstimator(
 	    0, NULL, NULL);
   free(host_buffer);
 
-  // Dump the sample to disk for debugging purposes.
-  ocl_dumpBufferToFile("/tmp/sample.out", estimator->sample_buffer,
-                       estimator->nr_of_dimensions,
-                       estimator->rows_in_sample);
-
   // Prepare the buffers for storing the linear regression variables between
   // sample output expected result. We initialize each regression function as 1*x.
   size_t global_size = ocl_maxRowsInSample(estimator);
@@ -767,6 +762,9 @@ void ocl_constructEstimator(
   clReleaseKernel(init_one);
     // Wait for the initialization to finish.
   clFinish(ocl_getContext()->queue);
+
+  // Finally, hand the estimator over for model optimization.
+  ocl_runModelOptimization(estimator);
 }
 
 void assign_ocl_use_gpu(bool newval, void *extra) {

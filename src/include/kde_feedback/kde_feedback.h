@@ -10,7 +10,7 @@ typedef enum inclusiveness { IN, EX, EQ} inclusiveness_t;
 /* Prototypes for KDE functions */
 typedef struct RQClause
 {
-	Var	   *var;			/* The common variable of the clauses */
+	AttrNumber	   var;			/* The common variable of the clauses */
 	inclusiveness_t   loinclusive;
 	inclusiveness_t   hiinclusive;
 	float8 lobound;		/* Value of a var > something clause */

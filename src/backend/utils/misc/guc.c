@@ -57,7 +57,7 @@
 #include "postmaster/bgwriter.h"
 #include "postmaster/postmaster.h"
 #include "postmaster/syslogger.h"
-#include "postmaster/walwriter.h"
+#include "postmaster/walwriter.h"kde_bandwidth_optimization_feedback_window
 #include "replication/syncrep.h"
 #include "replication/walreceiver.h"
 #include "replication/walsender.h"
@@ -146,7 +146,11 @@ extern char* kde_estimation_quality_logfile_name;
 extern void assign_kde_estimation_quality_logfile_name(const char* newval, void *extra);
 /* Determines whether we use feedback collection. */
 extern bool kde_collect_feedback;
-/* Determines whether we use online learning to adjust the bandwidth. */
+/* Determines whether to use query feedback to pick an optimal bandwidth during estimator construction */
+extern bool kde_enable_bandwidth_optimization;
+/* Determines how many feedback records should at most be used for the bandwidth optimization. If set to -1, all will be used.*/
+extern int kde_bandwidth_optimization_feedback_window;
+/* Determines whether to use online learningto adjust the bandwidth at runtime. */
 extern bool kde_enable_adaptive_bandwidth;
 /* Determines the mini-batch size that is used for online learning. */
 extern int kde_adaptive_bandwidth_minibatch_size;
@@ -160,7 +164,7 @@ static const struct config_enum_entry kde_error_metric_options[] = {
 };
 extern int kde_error_metric;
 
-#endif
+#endif /* USE_OPENCL */
 
 #ifdef TRACE_SORT
 extern bool trace_sort;
@@ -1511,11 +1515,21 @@ static struct config_bool ConfigureNamesBool[] =
 	},
   {
     {"kde_enable_adaptive_bandwidth", PGC_USERSET, DEVELOPER_OPTIONS,
-      gettext_noop("Use online learning to adjust the bandiwdth at runtime."),
+      gettext_noop("Use online learning to adjust the bandwidth at runtime."),
       NULL,
       GUC_NOT_IN_SAMPLE
     },
     &kde_enable_adaptive_bandwidth,
+    false,
+    NULL, NULL, NULL
+  },
+  {
+    {"kde_enable_bandwidth_optimization", PGC_USERSET, DEVELOPER_OPTIONS,
+      gettext_noop("During estimator construction, use query feedback to pick an optimal bandwidth value."),
+      NULL,
+      GUC_NOT_IN_SAMPLE
+    },
+    &kde_enable_bandwidth_optimization,
     false,
     NULL, NULL, NULL
   },
@@ -2509,6 +2523,18 @@ static struct config_int ConfigureNamesInt[] =
     NULL, assign_kde_samplesize, NULL
   },
   {
+    {"kde_bandwidth_optimization_feedback_window", PGC_USERSET, DEVELOPER_OPTIONS,
+      gettext_noop("Determines how many of the most recent feedback records "
+          "will be used to optimize the model bandwidth. If set to -1, all "
+          "available records will be used."),
+      NULL,
+      GUC_NOT_IN_SAMPLE
+    },
+    &kde_bandwidth_optimization_feedback_window,
+    -1, -1, 1024*1024,
+    NULL, NULL, NULL
+  },
+  {
     {"kde_adaptive_bandwidth_minibatch_size", PGC_USERSET, DEVELOPER_OPTIONS,
       gettext_noop("Mini-batch size that is used to adaptively adjust the bandwidth."),
       NULL,
@@ -2518,6 +2544,9 @@ static struct config_int ConfigureNamesInt[] =
     1, 1, 1024,
     NULL, NULL, NULL
   },
+
+
+
 
 #endif
 

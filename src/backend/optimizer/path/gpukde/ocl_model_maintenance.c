@@ -6,6 +6,8 @@
  *      Author: mheimel
  */
 
+#include "ocl_model_maintenance.h"
+
 #include <math.h>
 #include <stdlib.h>
 #include <sys/time.h>
@@ -13,7 +15,13 @@
 #include "ocl_estimator.h"
 #include "ocl_sample_maintenance.h"
 
+#include "catalog/pg_kdefeedback.h"
+#include "executor/spi.h"
+#include "storage/lock.h"
+
 // Global GUC variables
+bool kde_enable_bandwidth_optimization;
+int kde_bandwidth_optimization_feedback_window;
 bool kde_enable_adaptive_bandwidth;
 int kde_adaptive_bandwidth_minibatch_size;
 char* kde_estimation_quality_logfile_name;
@@ -23,7 +31,6 @@ int kde_error_metric;
 // ############################################################
 // # Define estimation error metrics.
 // ############################################################
-
 typedef struct error_metric {
 	const char* name;
 	float (*function)(float, float);
@@ -121,10 +128,6 @@ static void ocl_reportErrorToLogFile(Oid relation, float actual, float expected)
    fflush(estimation_quality_log_file);
 }
 
-// ############################################################
-// # Code for adapting the bandwidth.
-// ############################################################
-
 /**
  * Helper function to efficiently compute the sum of an input buffer.
  *
@@ -214,7 +217,9 @@ static cl_event sumOfArray(cl_mem input_buffer, unsigned int elements,
 
 const float learning_rate = 0.05f;
 
-
+// ############################################################
+// # Code for adaptive bandwidth optimization (online learning).
+// ############################################################
 
 /**
  * Helper function to compute a single online learning step.
@@ -397,9 +402,6 @@ static void ocl_runOnlineLearningStep(ocl_estimator_t* estimator,
 }
 
 
-// ############################################################
-// # Main entry function.
-// ############################################################
 void ocl_notifyModelMaintenanceOfSelectivity(Oid relation, float selectivity) {
   // Check if we have an estimator for this relation.
   ocl_estimator_t* estimator = ocl_getEstimator(relation);
@@ -417,4 +419,150 @@ void ocl_notifyModelMaintenanceOfSelectivity(Oid relation, float selectivity) {
 
   // We are done.
   estimator->open_estimation = false;
+}
+
+// ############################################################
+// # Code for offline bandwidth optimization (batch learning).
+// ############################################################
+
+// Helper function to find the assigned position of a given column in the
+// estimator.
+static unsigned int findColumnPositionInEstimator(ocl_estimator_t* estimator,
+                                                  unsigned int column) {
+  unsigned int j;
+  for (j=0; j<estimator->nr_of_dimensions; ++j) {
+    if (estimator->column_order[j] == column)
+      return j;
+  }
+  return estimator->nr_of_dimensions;
+}
+
+// Helper function to extract the n latest feedback records for the given
+// estimator from the catalogue. The function will only return tuples that
+// have feedback that maches the estimator's attributes.
+//
+// This function returns the actual number of valid feedback records in
+// the catalog.
+static unsigned int extractNLatestFeedbackRecordsFromCatalog(
+    ocl_estimator_t* estimator, unsigned int requested_records,
+    float* range_buffer, float* selectivity_buffer) {
+  unsigned int current_tuple = 0;
+
+  // Open a new scan over the feedback table.
+  unsigned int i;
+  if (SPI_connect() != SPI_OK_CONNECT) {
+    fprintf(stderr, "> Error connecting to Postgres Backend.\n");
+    return current_tuple;
+  }
+  char query_buffer[1024];
+  snprintf(query_buffer, 1024,
+           "SELECT columns, ranges, alltuples, qualifiedtuples FROM "
+           "pg_kdefeedback WHERE \"table\" = %i ORDER BY \"timestamp\" DESC "
+           "LIMIT %i;", estimator->table, requested_records);
+  if (SPI_execute(query_buffer, true, 0) != SPI_OK_SELECT) {
+    fprintf(stderr, "> Error querying system table.\n");
+    return current_tuple;
+  }
+  SPITupleTable *spi_tuptable = SPI_tuptable;
+  unsigned int result_tuples = SPI_processed;
+  TupleDesc spi_tupdesc = spi_tuptable->tupdesc;
+  for (i = 0; i < result_tuples; ++i) {
+    bool isnull;
+    HeapTuple record_tuple = spi_tuptable->vals[i];
+    // First, check whether this record only covers columns that are part of the estimator.
+    unsigned int columns_in_record = DatumGetInt32(
+          SPI_getbinval(record_tuple, spi_tupdesc, 1, &isnull));
+    if ((columns_in_record | estimator->columns) != estimator->columns) continue;
+    // This is a valid record, initialize the range buffer.
+    unsigned int pos = current_tuple * 2 * estimator->nr_of_dimensions;
+    for (i=0; i<estimator->nr_of_dimensions; ++i) {
+      range_buffer[pos + 2*i] = -1.0f * get_float4_infinity();
+      range_buffer[pos + 2*i + 1] = get_float4_infinity();
+    }
+    // Now extract all clauses and isert them into the range buffer.
+    RQClause* clauses;
+    unsigned int nr_of_clauses = extract_clauses_from_buffer(DatumGetByteaP(
+        SPI_getbinval(record_tuple, spi_tupdesc, 2, &isnull)), &clauses);
+    for (i=0; i<nr_of_clauses; ++i) {
+      int column = clauses[i].var;
+      // First, locate the correct column position in the estimator.
+      int column_in_estimator = findColumnPositionInEstimator(estimator,
+                                                              column);
+      // Re-Scale the bounds, add potential padding and write them to their position.
+      float lo = clauses[i].lobound / estimator->scale_factors[column_in_estimator];
+      if (clauses[i].loinclusive != EX) lo -= 0.001f;
+      float hi = clauses[i].hibound / estimator->scale_factors[column_in_estimator];
+      if (clauses[i].hiinclusive != EX) hi += 0.001f;
+      range_buffer[pos + 2*column_in_estimator] = lo;
+      range_buffer[pos + 2*column_in_estimator + 1] = hi;
+    }
+    // Finally, extract the selectivity and increase the tuple count.
+    double all_rows = DatumGetFloat8(
+        SPI_getbinval(record_tuple, spi_tupdesc, 3, &isnull));
+    double qualified_rows = DatumGetFloat8(
+        SPI_getbinval(record_tuple, spi_tupdesc, 4, &isnull));
+    selectivity_buffer[current_tuple++] = qualified_rows / all_rows;
+  }
+  // We are done :)
+  SPI_finish();
+  return current_tuple;
+}
+
+void ocl_runModelOptimization(ocl_estimator_t* estimator) {
+  if (estimator == NULL) return;
+  if (!kde_enable_bandwidth_optimization) return;
+
+  SPITupleTable *tuptable;
+  bool isnull;
+
+  fprintf(stderr, "Beginning model optimization for estimator on table %i\n", estimator->table);
+
+  // First, we have to count how many matching feedback records are available
+  // for this estimator in the query feedback table.
+  if (SPI_connect() != SPI_OK_CONNECT) {
+     fprintf(stderr, "> Error connecting to Postgres Backend.\n");
+     return;
+   }
+  char query_buffer[1024];
+  snprintf(query_buffer, 1024,
+           "SELECT COUNT(*) FROM pg_kdefeedback WHERE \"table\" = %i;",
+           estimator->table);
+  if (SPI_execute(query_buffer, true, 0) != SPI_OK_SELECT) {
+    fprintf(stderr, "> Error querying system table.\n");
+    return;
+  }
+  tuptable = SPI_tuptable;
+  unsigned int available_records = DatumGetInt32(
+      SPI_getbinval(tuptable->vals[0], tuptable->tupdesc, 1, &isnull));
+  SPI_finish();
+
+  if (available_records == 0) {
+    fprintf(stderr, "> No feedback available for table %i\n", estimator->table);
+    return;
+  }
+
+  // Adjust the number of records according to the specified window size.
+  int used_records;
+  if (kde_bandwidth_optimization_feedback_window == -1)
+    used_records = available_records;
+  else
+    used_records = Min(
+        available_records, kde_bandwidth_optimization_feedback_window);
+  fprintf(stderr, "> Checking the %i latest feedback records.\n",
+          used_records);
+
+  // Allocate arrays and fetch the actual feedback data.
+  float* range_buffer = palloc(sizeof(float) * 2 * estimator->nr_of_dimensions * used_records);
+  float* selectivity_buffer = palloc(sizeof(float) * used_records);
+  unsigned int actual_records = extractNLatestFeedbackRecordsFromCatalog(
+      estimator, used_records, range_buffer, selectivity_buffer);
+
+  // Now push thoe arrays to the device to prepare the actual computation.
+  if (actual_records == 0) {
+    fprintf(stderr, "No valid feedback records found.\n");
+    return;
+  }
+  fprintf(stderr, "> Found %i valid records, pushing to device.\n",
+          actual_records);
+    //TODO: IMPLEMENT ME!
 }
