@@ -57,11 +57,6 @@ extern int ocl_updateRequest(ocl_estimator_request_t* request, AttrNumber column
 		float* lower_bound, bool lower_included, float* upper_bound, bool upper_included);
 
 /*
- * Helper function to dump a ocl_notifyEstimatorOfInsertrequest to stderr.
- */
-extern void ocl_dumpRequest(ocl_estimator_request_t* request);
-
-/*
  * Main entry function for the opencl selectivity estimator.
  */
 int ocl_estimateSelectivity(const ocl_estimator_request_t* estimation_request, Selectivity* selectivity);

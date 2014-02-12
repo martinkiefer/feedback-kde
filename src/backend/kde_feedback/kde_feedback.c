@@ -71,7 +71,7 @@ unsigned int extract_clauses_from_buffer(bytea* buffer, RQClause** result) {
   *result = (RQClause*)palloc(clauses * sizeof(RQClause));
   unsigned int i;
   for (i=0; i<clauses; ++i) {
-    char* payload = VARDATA(buffer) + i*sizeof(RQClauseList);
+    char* payload = VARDATA(buffer) + i*sizeof(RQClause);
     (*result)[i] = *((RQClause*)payload);
   }
   return clauses;

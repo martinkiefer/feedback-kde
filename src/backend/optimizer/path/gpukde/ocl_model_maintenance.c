@@ -425,19 +425,6 @@ void ocl_notifyModelMaintenanceOfSelectivity(Oid relation, float selectivity) {
 // # Code for offline bandwidth optimization (batch learning).
 // ############################################################
 
-// Helper function to find the assigned position of a given column in the
-// estimator.
-static unsigned int findColumnPositionInEstimator(ocl_estimator_t* estimator,
-                                                  unsigned int column) {
-  unsigned int j;
-  for (j=0; j<estimator->nr_of_dimensions; ++j) {
-    if (estimator->column_order[j] == column)
-      return j;
-  }
-  return estimator->nr_of_dimensions;
-}
-
-
 // Helper function to extract the n latest feedback records for the given
 // estimator from the catalogue. The function will only return tuples that
 // have feedback that matches the estimator's attributes.
@@ -485,10 +472,8 @@ static unsigned int extractNLatestFeedbackRecordsFromCatalog(
     unsigned int nr_of_clauses = extract_clauses_from_buffer(DatumGetByteaP(
         SPI_getbinval(record_tuple, spi_tupdesc, 2, &isnull)), &clauses);
     for (j=0; j<nr_of_clauses; ++j) {
-      int column = clauses[j].var;
       // First, locate the correct column position in the estimator.
-      int column_in_estimator = findColumnPositionInEstimator(
-          estimator, column);
+      int column_in_estimator = estimator->column_order[clauses[j].var];
       // Re-Scale the bounds, add potential padding and write them to their position.
       float lo = clauses[j].lobound / estimator->scale_factors[column_in_estimator];
       if (clauses[j].loinclusive != EX) lo -= 0.001f;

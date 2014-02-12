@@ -9,6 +9,7 @@
 
 #include "ocl_estimator.h"
 #include "ocl_utilities.h"
+#include "ocl_model_maintenance.h"
 
 #ifdef USE_OPENCL
 
@@ -497,15 +498,15 @@ static int compareRange(const void* a, const void* b) {
 		return -1;
 }
 
-/*
- * Dump the request to stderr.
- */
-void ocl_dumpRequest(ocl_estimator_request_t* request) {
+// Helper function to print a request to stderr.
+static void ocl_dumpRequest(const ocl_estimator_request_t* request) {
 	unsigned int i;
 	if (!request) return;
-	fprintf(stderr, "Received estimation request for table: %i:\n", request->table_identifier);
+	fprintf(stderr, "Received estimation request for table: %i:\n",
+	        request->table_identifier);
 	for (i=0; i<request->range_count; ++i)
-		fprintf(stderr, "\tColumn %i in: [%f , %f]\n", request->ranges[i].colno, request->ranges[i].lower_bound, request->ranges[i].upper_bound);
+		fprintf(stderr, "\tColumn %i in: [%f , %f]\n", request->ranges[i].colno,
+		        request->ranges[i].lower_bound, request->ranges[i].upper_bound);
 }
 
 int ocl_updateRequest(ocl_estimator_request_t* request,
@@ -537,8 +538,8 @@ int ocl_updateRequest(ocl_estimator_request_t* request,
 			/* Initialize the new column range */
 			column_range = &(request->ranges[request->range_count-1]);
 			column_range->colno = colno;
-			column_range->lower_bound = 1.0f * get_float4_infinity();
-			column_range->upper_bound = get_float4_infinity();
+			column_range->lower_bound = -1.0f * INFINITY;
+			column_range->upper_bound = INFINITY;
 			/* Now we have to re-sort the array */
 			qsort(request->ranges, request->range_count,
 			      sizeof(ocl_colrange_t), &compareRange);
@@ -592,46 +593,36 @@ int ocl_estimateSelectivity(const ocl_estimator_request_t* request,
 	// Cool, prepare a request to the estimator
 	float* row_ranges = (float*)malloc(2*sizeof(float)*estimator->nr_of_dimensions);
 	for (i = 0; i < estimator->nr_of_dimensions; ++i) {
-		row_ranges[2*i] = -FLT_MAX;
-		row_ranges[2*i+1] = FLT_MAX;
+		row_ranges[2*i] = -1.0f * INFINITY;
+		row_ranges[2*i+1] = INFINITY;
 	}
-	j = 0;
-	int found = 1;
 	for (i = 0; i < request->range_count; ++i) {
-		found = 0;
-		for (;!found && j < estimator->nr_of_dimensions; ++j) {
-			if (estimator->column_order[j] == request->ranges[i].colno) {
-				// Make sure we adjust the request to the re-scaled data.
-				row_ranges[2*j] = request->ranges[i].lower_bound / estimator->scale_factors[j];
-				row_ranges[2*j + 1] = request->ranges[i].upper_bound / estimator->scale_factors[j];
-				if (request->ranges[i].lower_included) row_ranges[2*j] -= 0.001f;
-				if (request->ranges[i].upper_included) row_ranges[2*j + 1] += 0.001f;
-				found = 1;
-			}
-		}
-		if (!found) break;
-	}
-	if (found) {
-		// Prepare the requst
-		clEnqueueWriteBuffer(ctxt->queue, ctxt->input_buffer, CL_TRUE, 0,
+		unsigned int range_pos = estimator->column_order[request->ranges[i].colno];
+    row_ranges[2*range_pos] =
+        request->ranges[i].lower_bound / estimator->scale_factors[j];
+    row_ranges[2*range_pos + 1] =
+        request->ranges[i].upper_bound / estimator->scale_factors[j];
+    if (request->ranges[i].lower_included)
+      row_ranges[2*range_pos] -= 0.001f;
+    if (request->ranges[i].upper_included)
+      row_ranges[2*range_pos + 1] += 0.001f;
+  }
+  // Prepare the reqeust
+  clEnqueueWriteBuffer(ctxt->queue, ctxt->input_buffer, CL_TRUE, 0,
                2*estimator->nr_of_dimensions*sizeof(float), row_ranges, 
                0, NULL, NULL);
-	  *selectivity = rangeKDE(ctxt, estimator);
-	  estimator->last_selectivity = *selectivity;
-	  estimator->open_estimation = true;
-		// Print timing: 
-		struct timeval now; gettimeofday(&now, NULL); 
-		long seconds = now.tv_sec - start.tv_sec; 
-		long useconds = now.tv_usec - start.tv_usec;
-		long mtime = ((seconds) * 1000 + useconds/1000.0) + 0.5; 
-		ocl_dumpRequest(request);
-		fprintf(stderr, "Estimated selectivity: %f, took: %ld ms.\n", *selectivity, mtime);
-		free(row_ranges);
-		return 1;
-	} else {
-		free(row_ranges);
-		return 0;
-	}
+  *selectivity = rangeKDE(ctxt, estimator);
+  estimator->last_selectivity = *selectivity;
+  estimator->open_estimation = true;
+  // Print timing:
+  struct timeval now; gettimeofday(&now, NULL);
+  long seconds = now.tv_sec - start.tv_sec;
+  long useconds = now.tv_usec - start.tv_usec;
+  long mtime = ((seconds) * 1000 + useconds/1000.0) + 0.5;
+  ocl_dumpRequest(request);
+  fprintf(stderr, "Estimated selectivity: %f, took: %ld ms.\n", *selectivity, mtime);
+  free(row_ranges);
+  return 1;
 }
 
 unsigned int ocl_maxSampleSize(unsigned int dimensionality) {
@@ -666,7 +657,7 @@ void ocl_constructEstimator(
 	// Update the descriptor info.
 	estimator->table = rel->rd_node.relNode;
   estimator->nr_of_dimensions = dimensionality;
-  estimator->column_order = calloc(1, rel->rd_att.natts * sizeof(unsigned int));
+  estimator->column_order = calloc(1, rel->rd_att->natts * sizeof(unsigned int));
 	for (i = 0; i<dimensionality; ++i) {
 	  estimator->columns |= 0x1 << attributes[i];
 	  estimator->column_order[attributes[i]] = i;
@@ -835,14 +826,19 @@ void ocl_pushEntryToSampleBufer(ocl_estimator_t* estimator, int position,
 void ocl_extractSampleTuple(ocl_estimator_t* estimator, Relation rel,
                             HeapTuple tuple, float* target) {
   unsigned int i;
-  for (i=0; i<estimator->nr_of_dimensions; ++i) {
-    unsigned int colNr = estimator->column_order[i];
-    Oid attribute_type = rel->rd_att->attrs[colNr-1]->atttypid;
+  for (i=0; i<rel->rd_att->natts; ++i) {
+    // Check if this column is contained in the estimator.
+    if (!(estimator->columns & (0x1 << i))) continue;
+    // Cool, it is. Check where to write the column content.
+    unsigned int wpos = estimator->column_order[i];
+    Oid attribute_type = rel->rd_att->attrs[i]->atttypid;
     bool isNull;
     if (attribute_type == FLOAT4OID)
-      target[i] = DatumGetFloat4(heap_getattr(tuple, colNr, rel->rd_att, &isNull));
+      target[wpos] = DatumGetFloat4(heap_getattr(tuple, i+1, rel->rd_att,
+                                                 &isNull));
     else if (attribute_type == FLOAT8OID)
-      target[i] = DatumGetFloat8(heap_getattr(tuple, colNr, rel->rd_att, &isNull));
+      target[wpos] = DatumGetFloat8(heap_getattr(tuple, i+1, rel->rd_att,
+                                                 &isNull));
   }
 }
 
