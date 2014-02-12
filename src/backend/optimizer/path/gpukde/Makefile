@@ -14,7 +14,7 @@ include $(top_builddir)/src/Makefile.global
 
 OBJS = ocl_utilities.o ocl_estimator.o ocl_sample_maintenance.o ocl_model_maintenance.o
 
-SUBDIRS = container
+SUBDIRS = container lbfgs
 
 include $(top_srcdir)/src/backend/common.mk
 
