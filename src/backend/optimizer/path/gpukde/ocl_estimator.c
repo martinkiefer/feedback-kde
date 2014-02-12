@@ -189,12 +189,10 @@ static ocl_estimator_t* ocl_buildEstimatorFromCatalogEntry(Relation kde_rel,
                        RelationGetDescr(kde_rel), &isNull);
   descriptor->columns = DatumGetInt32(datum);
   unsigned int columns = descriptor->columns;
+  descriptor->column_order = calloc(1, 32*sizeof(unsigned int));
   for (i=0; columns && i<32; ++i) {
     if (columns & (0x1)) {
-      descriptor->nr_of_dimensions++;
-      descriptor->column_order = realloc(
-          descriptor->column_order, descriptor->nr_of_dimensions * sizeof(AttrNumber));
-      descriptor->column_order[descriptor->nr_of_dimensions - 1] = (AttrNumber)i;
+      descriptor->column_order[i] = descriptor->nr_of_dimensions++;
     }
     columns >>= 1;
   }
@@ -534,14 +532,16 @@ int ocl_updateRequest(ocl_estimator_request_t* request,
 		if (column_range == NULL) {
 			/* We have to add the column. Add storage for a new value */
 			request->range_count++;
-			request->ranges = (ocl_colrange_t*)realloc(request->ranges, sizeof(ocl_colrange_t)*(request->range_count));
+			request->ranges = (ocl_colrange_t*)realloc(
+			    request->ranges, sizeof(ocl_colrange_t)*(request->range_count));
 			/* Initialize the new column range */
 			column_range = &(request->ranges[request->range_count-1]);
 			column_range->colno = colno;
 			column_range->lower_bound = 1.0f * get_float4_infinity();
 			column_range->upper_bound = get_float4_infinity();
 			/* Now we have to re-sort the array */
-			qsort(request->ranges, request->range_count, sizeof(ocl_colrange_t), &compareRange);
+			qsort(request->ranges, request->range_count,
+			      sizeof(ocl_colrange_t), &compareRange);
 			/* Ok, we inserted the value. Use bsearch again to get the final position of our newly inserted range. */
 			column_range = bsearch(
 							&colno, request->ranges, request->range_count,
@@ -666,10 +666,10 @@ void ocl_constructEstimator(
 	// Update the descriptor info.
 	estimator->table = rel->rd_node.relNode;
   estimator->nr_of_dimensions = dimensionality;
-  estimator->column_order = calloc(1, dimensionality * sizeof(AttrNumber));
+  estimator->column_order = calloc(1, rel->rd_att.natts * sizeof(unsigned int));
 	for (i = 0; i<dimensionality; ++i) {
 	  estimator->columns |= 0x1 << attributes[i];
-	  estimator->column_order[i] = attributes[i];
+	  estimator->column_order[attributes[i]] = i;
 	}
 	estimator->rows_in_sample = sample_size;
 	estimator->rows_in_table = rows_in_table;

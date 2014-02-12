@@ -22,7 +22,7 @@ typedef struct ocl_estimator {
   /* Information about the scope of this estimator */
   Oid table;    // For which table ss this estimator configured?
   int32 columns;	 // Bitmap encoding which columns are stored in the estimator.
-  AttrNumber* column_order; // Order of the columns on the device.
+  unsigned int* column_order; // Order of the columns on the device.
   /* Some statistics about the estimator */
   unsigned int nr_of_dimensions;
   /* Buffers that keeps the current bandwidth estimate*/
