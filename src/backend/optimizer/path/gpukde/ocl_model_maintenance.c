@@ -429,9 +429,8 @@ void ocl_notifyModelMaintenanceOfSelectivity(Oid relation, float selectivity) {
 // estimator from the catalogue. The function will only return tuples that
 // have feedback that matches the estimator's attributes.
 //
-// This function returns the actual number of valid feedback records in
-// the catalog.
-static unsigned int extractNLatestFeedbackRecordsFromCatalog(
+// Returns the actual number of valid feedback records in the catalog.
+static unsigned int ocl_extractLatestFeedbackRecordsFromCatalog(
     ocl_estimator_t* estimator, unsigned int requested_records,
     float* range_buffer, float* selectivity_buffer) {
   unsigned int current_tuple = 0;
@@ -493,43 +492,41 @@ static unsigned int extractNLatestFeedbackRecordsFromCatalog(
     for (j=0; j<estimator->nr_of_dimensions; ++j) {
       fprintf(stderr, "\t[%f, %f]\n", range_buffer[pos + 2*j], range_buffer[pos + 2*j + 1]);
     }
+    fprintf(stderr, "\tSel: %f\n", selectivity_buffer[current_tuple - 1]);
   }
   // We are done :)
   SPI_finish();
   return current_tuple;
 }
 
-void ocl_runModelOptimization(ocl_estimator_t* estimator) {
-  if (estimator == NULL) return;
-  if (!kde_enable_bandwidth_optimization) return;
-
-  SPITupleTable *tuptable;
-  bool isnull;
-
-  fprintf(stderr, "Beginning model optimization for estimator on table %i\n", estimator->table);
-
+// Helper function that extracts feedback for the given estimator and
+// pushes it to the device.
+static unsigned int ocl_prepareFeedback(ocl_estimator_t* estimator,
+                                        cl_mem* device_ranges,
+                                        cl_mem* device_selectivities) {
   // First, we have to count how many matching feedback records are available
   // for this estimator in the query feedback table.
   if (SPI_connect() != SPI_OK_CONNECT) {
-     fprintf(stderr, "> Error connecting to Postgres Backend.\n");
-     return;
-   }
+    fprintf(stderr, "> Error connecting to Postgres Backend.\n");
+    return 0;
+  }
   char query_buffer[1024];
   snprintf(query_buffer, 1024,
            "SELECT COUNT(*) FROM pg_kdefeedback WHERE \"table\" = %i;",
            estimator->table);
   if (SPI_execute(query_buffer, true, 0) != SPI_OK_SELECT) {
     fprintf(stderr, "> Error querying system table.\n");
-    return;
+    return 0;
   }
-  tuptable = SPI_tuptable;
+  SPITupleTable *tuptable = SPI_tuptable;
+  bool isnull;
   unsigned int available_records = DatumGetInt32(
       SPI_getbinval(tuptable->vals[0], tuptable->tupdesc, 1, &isnull));
   SPI_finish();
 
   if (available_records == 0) {
     fprintf(stderr, "> No feedback available for table %i\n", estimator->table);
-    return;
+    return 0;
   }
 
   // Adjust the number of records according to the specified window size.
@@ -537,23 +534,55 @@ void ocl_runModelOptimization(ocl_estimator_t* estimator) {
   if (kde_bandwidth_optimization_feedback_window == -1)
     used_records = available_records;
   else
-    used_records = Min(
-        available_records, kde_bandwidth_optimization_feedback_window);
-  fprintf(stderr, "> Checking the %i latest feedback records.\n",
-          used_records);
+    used_records = Min(available_records,
+                       kde_bandwidth_optimization_feedback_window);
+  fprintf(stderr, "> Checking the %i latest feedback records.\n", used_records);
 
   // Allocate arrays and fetch the actual feedback data.
-  float* range_buffer = palloc(sizeof(float) * 2 * estimator->nr_of_dimensions * used_records);
+  float* range_buffer = palloc(
+      sizeof(float) * 2 * estimator->nr_of_dimensions * used_records);
   float* selectivity_buffer = palloc(sizeof(float) * used_records);
-  unsigned int actual_records = extractNLatestFeedbackRecordsFromCatalog(
+  unsigned int actual_records = ocl_extractLatestFeedbackRecordsFromCatalog(
       estimator, used_records, range_buffer, selectivity_buffer);
 
-  // Now push thoe arrays to the device to prepare the actual computation.
+  // Now push the records to the device to prepare the actual optimization.
   if (actual_records == 0) {
-    fprintf(stderr, "No valid feedback records found.\n");
-    return;
+    fprintf(stderr, "> No valid feedback records found.\n");
+    return 0;
   }
   fprintf(stderr, "> Found %i valid records, pushing to device.\n",
           actual_records);
-    //TODO: IMPLEMENT ME!
+  ocl_context_t* context = ocl_getContext();
+  *device_ranges = clCreateBuffer(context->context, CL_MEM_READ_WRITE,
+                                  sizeof(float) * 2 * actual_records,
+                                  NULL, NULL);
+  clEnqueueWriteBuffer(context->queue, *device_ranges, CL_FALSE, 0,
+                       sizeof(float) * 2 * actual_records, range_buffer, 0,
+                       NULL, NULL);
+  *device_selectivities = clCreateBuffer(context->context, CL_MEM_READ_WRITE,
+                                         sizeof(float) * actual_records,
+                                         NULL, NULL);
+  clEnqueueWriteBuffer(context->queue, *device_selectivities, CL_FALSE, 0,
+                       sizeof(float) * actual_records, selectivity_buffer, 0,
+                       NULL, NULL);
+  clFinish(context->queue);
+  pfree(range_buffer);
+  pfree(selectivity_buffer);
+  return actual_records;
+}
+
+void ocl_runModelOptimization(ocl_estimator_t* estimator) {
+  if (estimator == NULL) return;
+  if (!kde_enable_bandwidth_optimization) return;
+  fprintf(stderr, "Beginning model optimization for estimator on "
+      "table %i\n", estimator->table);
+
+  // First, we need to fetch the feedback records for this table and push them
+  // to the device.
+  cl_mem device_ranges, device_selectivites;
+  unsigned int feedback_records = ocl_prepareFeedback(
+      estimator, &device_ranges, &device_selectivites);
+  if (feedback_records == 0) return;
+
+
 }
