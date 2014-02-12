@@ -26,5 +26,6 @@ typedef struct RQClauseList
 extern bool kde_feedback_use_collection();
 extern RQClauseList *kde_get_rqlist(List *clauses);
 extern int kde_finish(PlanState *node);
+unsigned int extract_clauses_from_buffer(bytea* buffer, RQClause** result);
 
 #endif

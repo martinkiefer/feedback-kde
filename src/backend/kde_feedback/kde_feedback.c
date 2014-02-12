@@ -9,6 +9,7 @@
 #include "parser/parsetree.h"
 #include "optimizer/clauses.h"
 #include "optimizer/path/gpukde/ocl_estimator_api.h"
+#include "catalog/indexing.h"
 #include "catalog/pg_type.h"
 #include "catalog/pg_kdefeedback.h"
 #include "utils/lsyscache.h"
@@ -58,6 +59,20 @@ static bytea* materialize_rqlist_to_buffer(RQClauseList *rqlist) {
     rqlist = rqlist->next;
   }
   return buffer;
+}
+
+// Helper function to extract a materialized list of RQClauses from a buffer.
+unsigned int extract_clauses_from_buffer(bytea* buffer, RQClause** result) {
+  size_t size_of_buffer = VARSIZE(buffer);
+  unsigned int clauses = (size_of_buffer - VARHDRSZ) / sizeof(RQClause);
+  if (clauses == 0) return 0;
+  *result = (RQClause*)palloc(clauses * sizeof(RQClause));
+  unsigned int i;
+  for (i=0; i<clauses; ++i) {
+    char* payload = VARDATA(buffer) + i*sizeof(RQClauseList);
+    (*result)[i] = *((RQClause*)payload);
+  }
+  return clauses;
 }
 
 // Helper function to release the memory that ware allocated for a RQlist.
@@ -280,12 +295,10 @@ int kde_finish(PlanState *node){
 	Datum		new_record[Natts_pg_kdefeedback];
 	bool		new_record_nulls[Natts_pg_kdefeedback];
 	HeapTuple	tuple;
+	CatalogIndexState index_state;
 
-	if(node == NULL)
-		return 0;
+	if(node == NULL) return 0;
 	
-
-   		
 	if(nodeTag(node) == T_SeqScanState){
 	  if(node->instrument != NULL && node->instrument->kde_rq != NULL){
 	    rtable=node->instrument->kde_rtable;
@@ -313,6 +326,7 @@ int kde_finish(PlanState *node){
 	    ocl_notifyModelMaintenanceOfSelectivity(rte->relid, qual_tuples / all_tuples);
 
 	    pg_database_rel = heap_open(KdeFeedbackRelationID, RowExclusiveLock);
+	    index_state = CatalogOpenIndexes(pg_database_rel);
 	    
 	    new_record[Anum_pg_kdefeedback_timestamp-1] = Int64GetDatum((int64)time(NULL));
 	    new_record[Anum_pg_kdefeedback_relid-1] = ObjectIdGetDatum(rte->relid);
@@ -323,7 +337,9 @@ int kde_finish(PlanState *node){
 	    tuple = heap_form_tuple(RelationGetDescr(pg_database_rel),
 							new_record, new_record_nulls);
 	    simple_heap_insert(pg_database_rel, tuple);
+	    CatalogIndexInsert(index_state, tuple);
 	
+	    CatalogCloseIndexes(index_state);
 	    heap_close(pg_database_rel, RowExclusiveLock);
 	    pfree(rq_buffer);
 	    node->instrument->kde_rq = NULL;	    
