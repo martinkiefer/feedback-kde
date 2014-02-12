@@ -91,6 +91,8 @@ void ocl_initialize(void) {
 	err |= clGetDeviceInfo(device, CL_DEVICE_GLOBAL_MEM_SIZE, sizeof(size_t), &(ctxt->global_mem_size), NULL);
   err |= clGetDeviceInfo(device, CL_DEVICE_LOCAL_MEM_SIZE, sizeof(size_t), &(ctxt->local_mem_size), NULL);
 	err |= clGetDeviceInfo(device, CL_DEVICE_MAX_WORK_GROUP_SIZE, sizeof(size_t), &(ctxt->max_workgroup_size), NULL);
+	// Cap to 1024 (our sum kernel cannot deal with larger workgroup sizes atm).
+	ctxt->max_workgroup_size = Min(ctxt->max_workgroup_size, 1024);
 	err |= clGetDeviceInfo(device, CL_DEVICE_MAX_COMPUTE_UNITS, sizeof(cl_uint), &(ctxt->max_compute_units), NULL);
 	err |= clGetDeviceInfo(device, CL_DEVICE_MEM_BASE_ADDR_ALIGN, sizeof(cl_uint), &(ctxt->required_mem_alignment), NULL);
 
