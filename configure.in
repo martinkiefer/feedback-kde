@@ -978,6 +978,7 @@ fi
 
 if test "$with_opencl" = yes ; then
   AC_CHECK_LIB(OpenCL, clGetPlatformIDs, [], [AC_MSG_ERROR([No installed OpenCL platform found.])])
+  AC_CHECK_LIB(nlopt, nlopt_create, [], [AC_MSG_ERROR([library 'nlopt' is required for OpenCl.])])
 fi
 
 if test "$with_pam" = yes ; then
@@ -1100,6 +1101,7 @@ fi
 
 if test "$with_opencl" = yes ; then
   AC_CHECK_HEADER(CL/cl.h, [], [AC_MSG_ERROR([header file <CL/cl.h> is required for OpenCL support])])
+  AC_CHECK_HEADER(nlopt.h, [], [AC_MSG_ERROR([header file <nlopt.h> is required for OpenCL support])])
 fi
 
 if test "$with_pam" = yes ; then
