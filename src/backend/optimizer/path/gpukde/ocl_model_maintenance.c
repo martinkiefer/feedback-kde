@@ -705,10 +705,8 @@ static lbfgsfloatval_t computeGradient(
   for (i = 0; i<estimator->nr_of_dimensions; ++i) {
     gradient[i] /= params->nr_of_observations;
     // Apply a penalty for negative bandwidths.
-    if (current_bandwidth[i] < 0) {
-      gradient[i] -= 10000;
-      error += 10000 * current_bandwidth[i];
-    }
+    error += 0.05*exp(-30 * current_bandwidth[i]);
+    gradient[i] -= 1.5*exp(-30 * current_bandwidth[i]);
     fprintf(stderr, " %f", gradient[i]);
   }
   fprintf(stderr, " - error: %f\n", error);
@@ -723,7 +721,6 @@ static lbfgsfloatval_t computeGradient(
   clReleaseEvent(partial_gradient_event);
   clReleaseEvent(result_events[0]);
   clReleaseEvent(result_events[1]);
-  getchar();
   return error;
 }
 
