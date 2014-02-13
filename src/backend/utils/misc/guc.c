@@ -57,7 +57,7 @@
 #include "postmaster/bgwriter.h"
 #include "postmaster/postmaster.h"
 #include "postmaster/syslogger.h"
-#include "postmaster/walwriter.h"kde_bandwidth_optimization_feedback_window
+#include "postmaster/walwriter.h"
 #include "replication/syncrep.h"
 #include "replication/walreceiver.h"
 #include "replication/walsender.h"
@@ -150,6 +150,13 @@ extern bool kde_collect_feedback;
 extern bool kde_enable_bandwidth_optimization;
 /* Determines how many feedback records should at most be used for the bandwidth optimization. If set to -1, all will be used.*/
 extern int kde_bandwidth_optimization_feedback_window;
+/* Determines which optimization strategy should be used for the bandwidth optimization. */
+static const struct config_enum_entry kde_bandwidth_optimization_strategy_options[] = {
+    {"Constrained", CONSTRAINED, false},
+    {"Penalized", UNCONSTRAINED_PENALIZED, false},
+    {NULL, 0, false}
+};
+extern int kde_bandwidth_optimization_strategy;
 /* Determines whether to use online learningto adjust the bandwidth at runtime. */
 extern bool kde_enable_adaptive_bandwidth;
 /* Determines the mini-batch size that is used for online learning. */
@@ -3480,6 +3487,15 @@ static struct config_enum ConfigureNamesEnum[] =
     },
     &kde_error_metric,
     RELATIVE, kde_error_metric_options,
+    NULL, NULL, NULL
+  },
+  {
+    {"kde_bandwidth_optimization_strategy", PGC_USERSET, DEVELOPER_OPTIONS,
+      gettext_noop("Sets the optimization strategy that will be used for bandwidth optimization."),
+      NULL
+    },
+    &kde_bandwidth_optimization_strategy,
+    UNCONSTRAINED_PENALIZED, kde_bandwidth_optimization_strategy_options,
     NULL, NULL, NULL
   },
 #endif

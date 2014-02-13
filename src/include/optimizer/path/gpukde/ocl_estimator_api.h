@@ -42,13 +42,20 @@ typedef struct ocl_estimator_request {
 /*
  * Enum definition to select a possible error metric that should be optimized.
  */
-
 typedef enum error_metrics {
   ABSOLUTE = 0,
   RELATIVE = 1,
   QUADRATIC = 2,
   Q = 3
 } ocl_error_metrics_t;
+
+/*
+ * Enum definition to select a batch optimziation strategy.
+ */
+typedef enum {
+  CONSTRAINED,
+  UNCONSTRAINED_PENALIZED
+} kde_optimization_strategy_t;
 
 /*
  * Function for updating a range request with new bounds on a given attribute.

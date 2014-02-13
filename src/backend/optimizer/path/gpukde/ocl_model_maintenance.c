@@ -15,6 +15,8 @@
 #include "ocl_estimator.h"
 #include "ocl_sample_maintenance.h"
 
+// Optimization routines.
+#include <nlopt.h>
 #include "lbfgs/lbfgs.h"
 
 #include "catalog/pg_kdefeedback.h"
@@ -23,6 +25,7 @@
 
 // Global GUC variables
 bool kde_enable_bandwidth_optimization;
+int kde_bandwidth_optimization_strategy;
 int kde_bandwidth_optimization_feedback_window;
 bool kde_enable_adaptive_bandwidth;
 int kde_adaptive_bandwidth_minibatch_size;
@@ -580,49 +583,57 @@ typedef struct {
   cl_mem error_accumulator_buffer;
   cl_mem gradient_buffer;
   cl_mem error_buffer;
-} optimization_payload_t;
+} optimization_config_t;
 
+/**
+ * Counter for evaluations.
+ */
 int evaluations;
 
-// Function to compute the gradient with regard to the current bandwidth
-// parameters and the provided observations.
-static lbfgsfloatval_t computeGradient(
-    void* user_params,
-    const lbfgsfloatval_t* current_bandwidth,
-    lbfgsfloatval_t* gradient,
-    const int n,
-    const lbfgsfloatval_t step
-    ) {
+
+/*
+ * Function to compute the gradient for a penalized objective function that will
+ * add a strong penalty factor to negative bandwidth values. This function is
+ * used so we can optimize the constrained optimization problem with a regular
+ * unconstrained lbfgs solver.
+ *
+ */
+
+/*
+ * Callback function that computes the gradient and value for the objective
+ * function at the current bandwidth.
+ */
+static double computeGradient(unsigned n, const double* bandwidth,
+                              double* gradient, void* params) {
   unsigned int i;
   cl_int err = 0;
-  optimization_payload_t* params = (optimization_payload_t*)user_params;
-  ocl_estimator_t* estimator = params->estimator;
+  optimization_config_t* conf = (optimization_config_t*)params;
+  ocl_estimator_t* estimator = conf->estimator;
   ocl_context_t* context = ocl_getContext();
 
   evaluations++;
 
-  fprintf(stderr, "\t>>>> Iteration %i, bandwidth:", evaluations);
+  // First, transfer the current bandwidth to the device. Note that we need
+  // to cast to float first, as the kernel expects float input.
+  float* fbandwidth = palloc(sizeof(float) * estimator->nr_of_dimensions);
   for (i = 0; i<estimator->nr_of_dimensions; ++i) {
-    gradient[i] /= params->nr_of_observations;
-    fprintf(stderr, " %f", current_bandwidth[i]);
+    fbandwidth[i] = bandwidth[i];
   }
-  fprintf(stderr, "\n");
-
-  // First, we need to push the new bandwidth to the device.
   cl_event input_transfer_event;
   clEnqueueWriteBuffer(context->queue, estimator->bandwidth_buffer, CL_FALSE,
                        0, sizeof(float) * estimator->nr_of_dimensions,
-                       current_bandwidth, 0, NULL, &input_transfer_event);
-  // Now compute the gradient contributions.
+                       fbandwidth, 0, NULL, &input_transfer_event);
+  // Prepare the kernel that computes a gradient for each observation.
   cl_kernel gradient_kernel = ocl_getKernel(
       error_metrics[kde_error_metric].batch_kernel_name,
       estimator->nr_of_dimensions);
-  // Determine the maximum local workgroup size for this kernel.
+    // First, fix the local and global size. We identify the optimal local size
+    // by looking at available and required local memory and by ensuring that
+    // the local size is evenly divisible by the preferred workgroup multiple..
   size_t local_size;
   clGetKernelWorkGroupInfo(gradient_kernel, context->device,
                            CL_KERNEL_WORK_GROUP_SIZE, sizeof(size_t),
                            &local_size, NULL);
-  // Now cap this to the local memory size requirements.
   size_t available_local_memory;
   clGetKernelWorkGroupInfo(gradient_kernel, context->device,
                            CL_KERNEL_LOCAL_MEM_SIZE, sizeof(size_t),
@@ -631,27 +642,25 @@ static lbfgsfloatval_t computeGradient(
   local_size = Min(
       local_size,
       available_local_memory / (3 * sizeof(float) * estimator->nr_of_dimensions));
-  // Finally, cap the local size to a multiple of the preferred multiple size.
   size_t preferred_local_size_multiple;
   clGetKernelWorkGroupInfo(gradient_kernel, context->device,
                            CL_KERNEL_PREFERRED_WORK_GROUP_SIZE_MULTIPLE,
                            sizeof(size_t), &preferred_local_size_multiple, NULL);
   local_size = preferred_local_size_multiple
-             * (local_size / preferred_local_size_multiple);
-  // Ok, compute the global size to match this local size.
-  size_t global_size = local_size * (params->nr_of_observations / local_size);
-  if (global_size < params->nr_of_observations) global_size += local_size;
-  // Cool, parameterize the kernel.
+      * (local_size / preferred_local_size_multiple);
+  size_t global_size = local_size * (conf->nr_of_observations / local_size);
+  if (global_size < conf->nr_of_observations) global_size += local_size;
+    // Configure the kernel by setting all required parameters.
   err |= clSetKernelArg(gradient_kernel, 0, sizeof(cl_mem),
                         &(estimator->sample_buffer));
   err |= clSetKernelArg(gradient_kernel, 1, sizeof(unsigned int),
                         &(estimator->rows_in_sample));
   err |= clSetKernelArg(gradient_kernel, 2, sizeof(cl_mem),
-                        &(params->observed_ranges));
+                        &(conf->observed_ranges));
   err |= clSetKernelArg(gradient_kernel, 3, sizeof(cl_mem),
-                        &(params->observed_selectivities));
+                        &(conf->observed_selectivities));
   err |= clSetKernelArg(gradient_kernel, 4, sizeof(unsigned int),
-                        &(params->nr_of_observations));
+                        &(conf->nr_of_observations));
   err |= clSetKernelArg(gradient_kernel, 5, sizeof(cl_mem),
                         &(estimator->bandwidth_buffer));
   err |= clSetKernelArg(gradient_kernel, 6,
@@ -661,66 +670,87 @@ static lbfgsfloatval_t computeGradient(
   err |= clSetKernelArg(gradient_kernel, 8,
                         sizeof(float) * estimator->nr_of_dimensions, NULL);
   err |= clSetKernelArg(gradient_kernel, 9, sizeof(cl_mem),
-                        &(params->error_accumulator_buffer));
+                        &(conf->error_accumulator_buffer));
   err |= clSetKernelArg(gradient_kernel, 10, sizeof(cl_mem),
-                        &(params->gradient_accumulator_buffer));
-  unsigned int stride_elements = params->stride_size / sizeof(float);
+                        &(conf->gradient_accumulator_buffer));
+  unsigned int stride_elements = conf->stride_size / sizeof(float);
   err |= clSetKernelArg(gradient_kernel, 11, sizeof(unsigned int),
                         &stride_elements);
+  // Compute the gradient for each observation.
   cl_event partial_gradient_event;
   err |= clEnqueueNDRangeKernel(context->queue, gradient_kernel, 1, NULL,
                                 &global_size, &local_size, 1,
                                 &input_transfer_event, &partial_gradient_event);
+  // Sum up the individual error contributions ...
   cl_event* events = palloc(sizeof(cl_event) * (1 + estimator->nr_of_dimensions));
+  events[0] = sumOfArray(
+      conf->error_accumulator_buffer, conf->nr_of_observations,
+      conf->error_buffer, 0, partial_gradient_event);
+  // .. and the individual gradients.
   cl_mem* sub_buffers = palloc(sizeof(cl_mem) * estimator->nr_of_dimensions);
   for (i=0; i<estimator->nr_of_dimensions; ++i) {
     cl_buffer_region region;
-    region.size = params->stride_size;
-    region.origin = i * params->stride_size;
+    region.size = conf->stride_size;
+    region.origin = i * conf->stride_size;
     sub_buffers[i] = clCreateSubBuffer(
-        params->gradient_accumulator_buffer, CL_MEM_READ_ONLY,
+        conf->gradient_accumulator_buffer, CL_MEM_READ_ONLY,
         CL_BUFFER_CREATE_TYPE_REGION, &region, &err);
-    events[i + 1] = sumOfArray(sub_buffers[i], params->nr_of_observations,
-                           params->gradient_buffer, i, partial_gradient_event);
+    events[i + 1] = sumOfArray(
+        sub_buffers[i], conf->nr_of_observations,
+        conf->gradient_buffer, i, partial_gradient_event);
   }
-  events[0] = sumOfArray(
-      params->error_accumulator_buffer, params->nr_of_observations,
-      params->error_buffer, 0, partial_gradient_event);
-  // Transfer the gradient and error back.
+  // Now transfer the gradient back to the device.
   cl_event result_events[2];
-  err |= clEnqueueReadBuffer(context->queue, params->gradient_buffer, CL_FALSE,
+  float* tmp_gradient = palloc(sizeof(float) * estimator->nr_of_dimensions);
+  err |= clEnqueueReadBuffer(context->queue, conf->gradient_buffer, CL_FALSE,
                              0, sizeof(float) * estimator->nr_of_dimensions,
-                             gradient, estimator->nr_of_dimensions + 1, events,
-                             &(result_events[0]));
+                             tmp_gradient, estimator->nr_of_dimensions + 1,
+                             events, &(result_events[0]));
   float error;
-  err |= clEnqueueReadBuffer(context->queue, params->error_buffer, CL_FALSE,
+  err |= clEnqueueReadBuffer(context->queue, conf->error_buffer, CL_FALSE,
                              0, sizeof(float), &error,
                              estimator->nr_of_dimensions + 1, events,
                              &(result_events[1]));
-  // Wait for everything to finish.
   err |= clWaitForEvents(2, result_events);
-  // All we have to do now is to normalize the error and the gradient.
-  error /= params->nr_of_observations;
-  fprintf(stderr, "\t>> grad:");
+  // Finally, cast back to double.
   for (i = 0; i<estimator->nr_of_dimensions; ++i) {
-    gradient[i] /= params->nr_of_observations;
-    // Apply a penalty for negative bandwidths.
-    error += 0.05*exp(-30 * current_bandwidth[i]);
-    gradient[i] -= 1.5*exp(-30 * current_bandwidth[i]);
-    fprintf(stderr, " %f", gradient[i]);
+    gradient[i] = tmp_gradient[i] / conf->nr_of_observations;
   }
-  fprintf(stderr, " - error: %f\n", error);
   // Ok, clean everything up.
   for (i=0; i<estimator->nr_of_dimensions; ++i) {
     clReleaseMemObject(sub_buffers[i]);
     clReleaseEvent(events[i]);
   }
+  pfree(tmp_gradient);
+  pfree(fbandwidth);
   pfree(events);
   pfree(sub_buffers);
   clReleaseEvent(input_transfer_event);
   clReleaseEvent(partial_gradient_event);
   clReleaseEvent(result_events[0]);
   clReleaseEvent(result_events[1]);
+  return error / conf->nr_of_observations;
+}
+
+
+/**
+ * Function to compute a penalized gradient of the objective function that adds
+ * a huge penalty to negative bandwidths. This is used to enforce the
+ * non-negativity constraint when using an unconstrained solver.
+ */
+static double computePenalizedGradient(void* params, const double* bandwidth,
+                                       double* gradient, const int n,
+                                       const double step) {
+  optimization_config_t* conf = (optimization_config_t*)params;
+  // Compute the unpenalized error..
+  double error = computeGradient(n, bandwidth, gradient, params);
+  // Add the penalty if the bandwidth is negative.
+  unsigned int i;
+  for (i = 0; i<conf->estimator->nr_of_dimensions; ++i) {
+    // Apply a penalty for negative bandwidths.
+    error += 0.05*exp(-30 * bandwidth[i]);
+    gradient[i] -= 1.5*exp(-30 * bandwidth[i]);
+  }
   return error;
 }
 
@@ -737,17 +767,19 @@ void ocl_runModelOptimization(ocl_estimator_t* estimator) {
       estimator, &device_ranges, &device_selectivites);
   if (feedback_records == 0) return;
 
-  // Now prepare the optimizer.
-  lbfgs_parameter_t optimizer_parameters;
-  lbfgs_parameter_init(&optimizer_parameters);
   // We need to transfer the bandwidth to the host.
-  float* host_bandwidth = lbfgs_malloc(estimator->nr_of_dimensions);
+  float* fbandwidth = palloc(sizeof(float) * estimator->nr_of_dimensions);
   ocl_context_t* context = ocl_getContext();
   clEnqueueReadBuffer(context->queue, estimator->bandwidth_buffer, CL_TRUE, 0,
                       sizeof(float) * estimator->nr_of_dimensions,
-                      host_bandwidth, 0, NULL, NULL);
+                      fbandwidth, 0, NULL, NULL);
+  // Cast to double (lbfgs operates on double.
+  double* bandwidth = lbfgs_malloc(estimator->nr_of_dimensions);
+  unsigned int i;
+  for (i=0; i<estimator->nr_of_dimensions; ++i)
+    bandwidth[i] = fbandwidth[i];
   // Package all required buffers.
-  optimization_payload_t params;
+  optimization_config_t params;
   params.estimator = estimator;
   params.nr_of_observations = feedback_records;
   params.observed_ranges = device_ranges;
@@ -778,30 +810,63 @@ void ocl_runModelOptimization(ocl_estimator_t* estimator) {
       estimator->nr_of_dimensions * sizeof(float), NULL, NULL);
   params.error_buffer = clCreateBuffer(
       context->context, CL_MEM_READ_WRITE, sizeof(float), NULL, NULL);
-  // Ok, we are prepared. Call bfgs to start the optimization.
-  fprintf(stderr, "> Starting numerical optimization of bandwidth ... ");
+  // Ok, we are prepared. Call the optimization routine.
   struct timeval start; gettimeofday(&start, NULL);
   evaluations = 0;
-  int err = lbfgs(estimator->nr_of_dimensions, host_bandwidth, NULL,
-        computeGradient, NULL, &params, &optimizer_parameters);
+  if (kde_bandwidth_optimization_strategy == UNCONSTRAINED_PENALIZED) {
+    // Use L-BFGS.
+    fprintf(stderr, "> Starting (unconstrained) numerical optimization of "
+        "bandwidth ... ");
+    lbfgs_parameter_t optimizer_parameters;
+    lbfgs_parameter_init(&optimizer_parameters);
+    if (lbfgs(estimator->nr_of_dimensions, bandwidth, NULL,
+              computePenalizedGradient, NULL, &params,
+              &optimizer_parameters) != 0) {
+      fprintf(stderr, "failed! ");
+    } else {
+      fprintf(stderr, "done! ");
+    }
+  } else if (kde_bandwidth_optimization_strategy == CONSTRAINED) {
+    fprintf(stderr, "> Starting (constrained) numerical optimization of "
+        "bandwidth ... ");
+    // Prepare the bound constraints.
+    double* lower_bounds = palloc(sizeof(double) * estimator->nr_of_dimensions);
+    for (i=0; i<estimator->nr_of_dimensions; ++i)
+      lower_bounds[i] = 0.00001f;
+    // Create the optimization parameter.
+    nlopt_opt optimizer_parameters = nlopt_create(
+        NLOPT_LD_MMA, estimator->nr_of_dimensions);
+    nlopt_set_lower_bounds(optimizer_parameters, lower_bounds);
+    nlopt_set_min_objective(optimizer_parameters, computeGradient, &params);
+    nlopt_set_ftol_rel(optimizer_parameters, 1e-4);
+    nlopt_set_ftol_abs(optimizer_parameters, 1e-6);
+    double tmp;
+    if (nlopt_optimize(optimizer_parameters, bandwidth, &tmp) < 0) {
+      fprintf(stderr, "failed! ");
+    } else {
+      fprintf(stderr, "done! ");
+    }
+    nlopt_destroy(optimizer_parameters);
+  }
   struct timeval now; gettimeofday(&now, NULL);
   long seconds = now.tv_sec - start.tv_sec;
   long useconds = now.tv_usec - start.tv_usec;
   long mtime = ((seconds) * 1000 + useconds/1000.0) + 0.5;
   // Ok, cool. Transfer the bandwidth back.
-  fprintf(stderr, "done! Took %ld ms and %i gradient evaluations. Error %i.\n",
-          mtime, evaluations, err);
+  fprintf(stderr, "(%ld ms and %i evaluations).\n",
+          mtime, evaluations);
   fprintf(stderr, "> Optimized bandwidth:");
-  unsigned int i;
   for (i=0; i<estimator->nr_of_dimensions; ++i) {
-      fprintf(stderr, " %f", host_bandwidth[i]);
+      fbandwidth[i] = bandwidth[i];
+      fprintf(stderr, " %f", fbandwidth[i]);
   }
   fprintf(stderr, "\n");
   clEnqueueWriteBuffer(context->queue, estimator->bandwidth_buffer, CL_TRUE, 0,
                        sizeof(float) * estimator->nr_of_dimensions,
-                       host_bandwidth, 0, NULL, NULL);
+                       fbandwidth, 0, NULL, NULL);
   // Clean up.
-  lbfgs_free(host_bandwidth);
+  pfree(fbandwidth);
+  lbfgs_free(bandwidth);
   clReleaseMemObject(device_ranges);
   clReleaseMemObject(device_selectivites);
   clReleaseMemObject(params.error_buffer);

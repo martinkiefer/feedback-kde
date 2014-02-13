@@ -37,7 +37,7 @@ extern "C" {
  * The default precision of floating point values is 64bit (double).
  */
 #ifndef LBFGS_FLOAT
-#define LBFGS_FLOAT     32    // Use float.
+#define LBFGS_FLOAT     64    // Use float.
 #endif/*LBFGS_FLOAT*/
 
 /*
