@@ -8,6 +8,18 @@ PSQL="/usr/local/pgsql/bin/psql"
 DATABASE=""
 USER=""
 
+#If the Covtype file is not set, pull it from the website.
+if [-z $COVTYPE_FILE ]; then
+	cd /tmp
+	wget http://kdd.ics.uci.edu/databases/covertype/covtype.data.gz
+	gunzip covtype.data.gz
+	COVTYPE_FILE=/tmp/covtype.data
+	cd -
+fi
+
+#Ensure that the database exists
+createdb $DATABASE
+
 #Extract first 10 columns
 cat $COVTYPE_FILE | cut -d , -f 1-10 > $COVTYPE_FILE.tmp
 
