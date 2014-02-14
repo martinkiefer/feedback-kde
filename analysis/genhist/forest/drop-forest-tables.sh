@@ -1,10 +1,9 @@
 #/usr/bin/bash
 #Destroys forest test tables
 #Needs information about postgresql 
+BASEDIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 
-PSQL="/usr/local/pgsql/bin/psql"
-DATABASE=""
-USER=""
+source $BASEDIR/../../conf.sh
 
 $PSQL $DATABASE $USER << EOF
  DROP TABLE FOREST10;

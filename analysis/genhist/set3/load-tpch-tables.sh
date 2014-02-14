@@ -1,21 +1,20 @@
 #/usr/bin/bash
 #Creates tpc-h testdata in postgresql
 #Needs information about postgresql and the folder containing the dbgen tool 
+BASEDIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 
-#/usr/bin/bash
-DBGEN_FOLDER=""
-PSQL="/usr/local/pgsql/bin/psql"
-DATABASE=""
-USER=""
+source $BASEDIR/../../conf.sh
+
+#Drop the existing tables.
+$BASEDIR/drop-tpch-tables.sh
 
 #Create tables
 cd $DBGEN_FOLDER
 ./dbgen -f -T S -s 0.167
 ./dbgen -f -T L -s 0.167
-
 sed 's/|$//' ./partsupp.tbl > ./partsupp_pq.tbl
 sed 's/|$//' ./lineitem.tbl > ./lineitem_pq.tbl
-
+cd -
 
 #PSQL_COMMAND 
 $PSQL $DATABASE $USER << EOF
@@ -65,5 +64,5 @@ INSERT INTO TPCH_DATA (c1,c2,c3,c4,c5) select L_QUANTITY,L_EXTENDEDPRICE,L_DISCO
 COMMIT;
 EOF
 
-rm ./partsupp_pq.tbl
-rm ./lineitem_pq.tbl
+rm $DBGEN_FOLDER/partsupp_pq.tbl
+rm $DBGEN_FOLDER/lineitem_pq.tbl

@@ -2,28 +2,27 @@
 #Creates forest cover testdata in postgresql
 #Needs information about postgresql and the file containing the forest cover dataset
 
-#/usr/bin/bash
-COVTYPE_FILE=""
-PSQL="/usr/local/pgsql/bin/psql"
-DATABASE=""
-USER=""
+BASEDIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+
+
+source $BASEDIR/../../conf.sh
 
 #If the Covtype file is not set, pull it from the website.
-if [-z $COVTYPE_FILE ]; then
+if [ -z $COVTYPE_FILE ]; then
 	cd /tmp
 	wget http://kdd.ics.uci.edu/databases/covertype/covtype.data.gz
-	gunzip covtype.data.gz
-	COVTYPE_FILE=/tmp/covtype.data
+	gunzip -f covtype.data.gz
+	COVTYPE_FILE="/tmp/covtype.data"
 	cd -
 fi
 
-#Ensure that the database exists
-createdb $DATABASE
+# Drop the existing tables.
+$BASEDIR/drop-forest-tables.sh
 
 #Extract first 10 columns
 cat $COVTYPE_FILE | cut -d , -f 1-10 > $COVTYPE_FILE.tmp
 
-#Put in temporary table and create permanent tables with noramlized values
+#Put in temporary table and create permanent tables with normalized values
 $PSQL $DATABASE $USER << EOF
 BEGIN;
 CREATE TEMPORARY TABLE T
