@@ -5,7 +5,7 @@ BASEDIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 source $BASEDIR/../../conf.sh
 
 cd /tmp
-#python $BASEDIR/generator1.py
+python $BASEDIR/generator1.py
 cd -
 
 #First drop the existing tables
