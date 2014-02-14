@@ -4,14 +4,6 @@ import random
 import sys
 import time
 
-def usage():
-    print "Usage flags: "
-    print "\t--output=<filename> / -o=<filename>"
-    print "\t\tName of the output sql file."
-    print "\t--algorithm=<random/binary/interpolation> / -a=<random/binary/interpolation>"
-    print "\t\tWhich algorithm should be used? (Default: random)"
-
-
 parser = argparse.ArgumentParser()
 parser.add_argument("--dbname", action="store", required=True, help="Database to which the script will connect.")
 parser.add_argument("--table", action="store", required=True, help="Table for which the query workload will be generated.")
@@ -104,8 +96,10 @@ while True:
       test_query = list(query)
       while (upper_bound - lower_bound > target_tolerance and (upper_bound_factor - lower_bound_factor) > 0.001 ):
         # Compute the projected factor.
-        test_factor = lower_bound_factor + (target - lower_bound) * float(upper_bound_factor - lower_bound_factor)/float(upper_bound - lower_bound)
-        #test_factor = 0.5 * (lower_bound_factor + upper_bound_factor)
+        if method == "binary":
+            test_factor = 0.5 * (lower_bound_factor + upper_bound_factor)
+        if method == "interpolation":
+            test_factor = lower_bound_factor + (target_selectivity - lower_bound) * float(upper_bound_factor - lower_bound_factor)/float(upper_bound - lower_bound)
         # Evaluate the selectivity
         for i in range(0, columns):
           test_query[2*i + 1] = query[2*i] + test_factor * (query[2*i + 1] - query[2*i])
@@ -125,9 +119,9 @@ while True:
     if (len(workload) == queries): 
       break
     if (time.time() - last_print_time >= 10):
-        print "%f queries / second" % ((len(workload_1) - last_len) / float(10))
+        print "%f queries / second" % ((len(workload) - last_len) / float(10))
         last_print_time = time.time()
-        last_len = len(workload_1)
+        last_len = len(workload)
 conn.close()
 
 # Prepare writing out the result to disk.
