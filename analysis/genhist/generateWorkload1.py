@@ -43,6 +43,7 @@ for i in range(0, columns):
     if i>0:
         template += "AND "
     template += "c%d>%%s AND c%d<%%s " % (i+1, i+1)
+    
 
 # Prepare container to store the queries for the different workload types.
 workload_1 = [] # Queries with selectivity ~ 1%
@@ -50,29 +51,30 @@ workload_1 = [] # Queries with selectivity ~ 1%
 last_len = 0
 last_print_time = time.time()
 
-tuple = [0] * (columns * 2)
+query = [0] * (columns * 2)
 while True:
     # Build a random range.
     for i in range(0, columns):
         a = ranges[i][0] + random.random()*(ranges[i][1] - ranges[i][0])
         b = ranges[i][0] + random.random()*(ranges[i][1] - ranges[i][0])
         #b = a + 0.2*random.random()*(ranges[i][1] - a)
-        tuple[2*i] = min(a, b)
-        tuple[2*i+1] = max(a, b)
-    cur.execute(template, tuple)
+        query[2*i] = min(a, b)
+        query[2*i+1] = max(a, b)
+    cur.execute(template, query)
     selectivity = cur.fetchone()[0] / float(rows)
     if (selectivity > 0.005 and selectivity < 0.015):
         # This is a workload 1 query.
-        workload_1.append(list(tuple))
-        if (len(workload_1) == 10): 
+        workload_1.append(list(query))
+        if (len(workload_1) == 10000): 
             break
     if (time.time() - last_print_time >= 5):
         print "%f queries per second" % ((len(workload_1) - last_len) / float(5))
         last_print_time = time.time()
         last_len = len(workload_1)
-
 conn.close()
 
+template = template.replace("%s", "%f")
+
 # Write out the resulting workload.
-for tuple in workload_1:
-    print template
+for query in workload_1:
+    print template % tuple(query)
