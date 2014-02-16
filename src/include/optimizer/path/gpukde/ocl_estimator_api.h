@@ -74,6 +74,12 @@ int ocl_estimateSelectivity(const ocl_estimator_request_t* estimation_request, S
 unsigned int ocl_maxSampleSize(unsigned int dimensionality);
 
 /*
+ * Functions to report estimation errors to a file.
+ */
+bool ocl_reportErrors();
+void ocl_reportErrorToLogFile(Oid relation, float actual, float expected);
+
+/*
  * Entry function for generating a KDE estimator
  */
 void ocl_constructEstimator(Relation rel, unsigned int rows_in_table,

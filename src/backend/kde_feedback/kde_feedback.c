@@ -33,7 +33,7 @@ typedef enum bound { HIGHBOUND, LOWBOUND, EQUALITY} bound_t;
 bool kde_collect_feedback = false;
 
 bool kde_feedback_use_collection() {
-    return kde_collect_feedback;
+    return ocl_reportErrors() || kde_collect_feedback;
 }
 
 // Helper function to materialize an RQlist to a buffer.
@@ -306,8 +306,6 @@ int kde_finish(PlanState *node){
 	    rtable=node->instrument->kde_rtable;
 	    rte = rt_fetch(((Scan *) node->plan)->scanrelid, rtable);
 	    
-	    
-	    
 	    MemSet(new_record, 0, sizeof(new_record));
 	    MemSet(new_record_nulls, false, sizeof(new_record_nulls));
 	    
@@ -328,6 +326,8 @@ int kde_finish(PlanState *node){
 	    
 	    // Notify the model maintenance of this observation.
 	    ocl_notifyModelMaintenanceOfSelectivity(rte->relid, qual_tuples / all_tuples);
+
+	    if (!kde_collect_feedback) return 1;
 
 	    pg_database_rel = heap_open(KdeFeedbackRelationID, RowExclusiveLock);
 	    index_state = CatalogOpenIndexes(pg_database_rel);

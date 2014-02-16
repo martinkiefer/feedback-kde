@@ -120,7 +120,11 @@ void assign_kde_estimation_quality_logfile_name(const char *newval, void *extra)
   fflush(estimation_quality_log_file);
 }
 
-static void ocl_reportErrorToLogFile(Oid relation, float actual, float expected) {
+bool ocl_reportErrors() {
+  return estimation_quality_log_file != NULL;
+}
+
+void ocl_reportErrorToLogFile(Oid relation, float actual, float expected) {
   if (estimation_quality_log_file == NULL) return;
   // Compute the estimation error for all metrics and write them to the file.
   unsigned int i;
