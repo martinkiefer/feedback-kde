@@ -32,8 +32,7 @@ CATALOG(pg_kdemodels,3780) BKI_WITHOUT_OIDS
 #ifdef CATALOG_VARLEN
   float8  scale_factors[1];
   float4  bandwidth[1];
-  bytea   sample;
-  bytea   sample_quality;
+  text    sample_file;
 #endif
 } FormData_pg_kdemodels;
 
@@ -48,7 +47,7 @@ typedef FormData_pg_kdemodels *Form_pg_kdemodels;
  *    compiler constants for pg_kdemodels
  * ----------------
  */
-#define Natts_pg_kdemodels                        9
+#define Natts_pg_kdemodels                        8
 #define Anum_pg_kdemodels_table                   1
 #define Anum_pg_kdemodels_columns                 2
 #define Anum_pg_kdemodels_rowcount_table          3
@@ -56,7 +55,6 @@ typedef FormData_pg_kdemodels *Form_pg_kdemodels;
 #define Anum_pg_kdemodels_sample_buffer_size      5
 #define Anum_pg_kdemodels_scale_factors           6
 #define Anum_pg_kdemodels_bandwidth               7
-#define Anum_pg_kdemodels_sample                  8
-#define Anum_pg_kdemodels_sample_quality          9
+#define Anum_pg_kdemodels_sample_file             8
 
 #endif /* PG_KDEMODELS_H_ */

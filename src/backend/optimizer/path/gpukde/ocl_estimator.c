@@ -28,6 +28,7 @@
 #include "storage/lock.h"
 #include "storage/ipc.h"
 #include "utils/array.h"
+#include "utils/builtins.h"
 #include "utils/fmgroids.h"
 #include "utils/rel.h"
 #include "utils/tqual.h"
@@ -234,46 +235,30 @@ static ocl_estimator_t* ocl_buildEstimatorFromCatalogEntry(Relation kde_rel,
                        (char*)ARR_DATA_PTR(array), 0, NULL, NULL);
 
   // >> Read the sample.
-  datum = heap_getattr(tuple, Anum_pg_kdemodels_sample,
+  datum = heap_getattr(tuple, Anum_pg_kdemodels_sample_file,
                        RelationGetDescr(kde_rel), &isNull);
-  byte_array = DatumGetByteaP(datum);
+  char* file_name = TextDatumGetCString(datum);
+  FILE* file = fopen(file_name, "r");
+  if (file == NULL) {
+    fprintf(stderr, "Error opening sample file %s\n", file_name);
+    return NULL;
+  }
+  float* host_buffer = palloc(
+      ocl_sizeOfSampleItem(descriptor) * descriptor->rows_in_sample);
+  fread(host_buffer, ocl_sizeOfSampleItem(descriptor),
+        descriptor->rows_in_sample, file);
+  fclose(file);
   descriptor->sample_buffer = clCreateBuffer(
       context->context, CL_MEM_READ_WRITE,
       descriptor->sample_buffer_size, NULL, NULL);
   clEnqueueWriteBuffer(
       context->queue, descriptor->sample_buffer, CL_FALSE, 0,
       ocl_sizeOfSampleItem(descriptor) * descriptor->rows_in_sample,
-      VARDATA(byte_array), 0, NULL, NULL);
-
-  // Dump the sample to disk for debugging purposes.
-  ocl_dumpBufferToFile("/tmp/sample.out", descriptor->sample_buffer,
-                       descriptor->nr_of_dimensions,
-                       descriptor->rows_in_sample);
-
-  // >> Read the sample quality buffers.
-  datum = heap_getattr(tuple, Anum_pg_kdemodels_sample_quality,
-                       RelationGetDescr(kde_rel), &isNull);
-  byte_array = DatumGetByteaP(datum);
-    // The byte array first contains the slopes ...
-  descriptor->sample_quality_slopes_buffer = clCreateBuffer(
-      context->context, CL_MEM_READ_WRITE,
-      ocl_maxRowsInSample(descriptor) * sizeof(float), NULL, NULL);
-  clEnqueueWriteBuffer(
-      context->queue, descriptor->sample_quality_slopes_buffer, CL_FALSE, 0,
-      sizeof(float) * descriptor->rows_in_sample, VARDATA(byte_array),
-      0, NULL, NULL);
-    // ... and then the intercepts.
-  descriptor->sample_quality_intercepts_buffer = clCreateBuffer(
-      context->context, CL_MEM_READ_WRITE,
-      ocl_maxRowsInSample(descriptor) * sizeof(float), NULL, NULL);
-  clEnqueueWriteBuffer(
-      context->queue, descriptor->sample_quality_intercepts_buffer, CL_FALSE, 0,
-      sizeof(float) * descriptor->rows_in_sample,
-      VARDATA(byte_array) + sizeof(float) * descriptor->rows_in_sample,
-      0, NULL, NULL);
+      host_buffer, 0, NULL, NULL);
 
   // Wait for all transfers to finish.
   clFinish(context->queue);
+  pfree(host_buffer);
   // We are done.
   return descriptor;
 }
@@ -333,40 +318,24 @@ static void ocl_updateEstimatorInCatalog(ocl_estimator_t* estimator) {
                           FLOAT4OID, sizeof(float), FLOAT4PASSBYVAL, 'i');
   values[Anum_pg_kdemodels_bandwidth-1] = PointerGetDatum(array);
 
-  // >> Write the sample.
-  bytea* host_sample = palloc(
-      ocl_sizeOfSampleItem(estimator) * estimator->rows_in_sample + VARHDRSZ);
+  // >> Write the sample to a file.
+  float* sample_buffer = palloc(
+      ocl_sizeOfSampleItem(estimator) * estimator->rows_in_sample);
   clEnqueueReadBuffer(
-      context->queue, estimator->sample_buffer, CL_FALSE, 0,
+      context->queue, estimator->sample_buffer, CL_TRUE, 0,
       ocl_sizeOfSampleItem(estimator) * estimator->rows_in_sample,
-      VARDATA(host_sample), 0, NULL, NULL);
-  SET_VARSIZE(
-      host_sample,
-      ocl_sizeOfSampleItem(estimator) * estimator->rows_in_sample + VARHDRSZ);
-  values[Anum_pg_kdemodels_sample-1] = PointerGetDatum(host_sample);
-
-  // >> Write the sample quality.
-  bytea* host_sample_quality = palloc(
-      2 * sizeof(float) * estimator->rows_in_sample + VARHDRSZ);
-    // First serialize the slopes ...
-  clEnqueueReadBuffer(
-      context->queue, estimator->sample_quality_slopes_buffer, CL_FALSE, 0,
-      sizeof(float) * estimator->rows_in_sample,
-      VARDATA(host_sample_quality), 0, NULL, NULL);
-    // ... and then the intercepts.
-  clEnqueueReadBuffer(
-      context->queue, estimator->sample_quality_intercepts_buffer, CL_FALSE, 0,
-      sizeof(float) * estimator->rows_in_sample,
-      VARDATA(host_sample_quality) + sizeof(float) * estimator->rows_in_sample,
-      0, NULL, NULL);
-  SET_VARSIZE(host_sample_quality,
-              2 * sizeof(float) * estimator->rows_in_sample + VARHDRSZ);
-  values[Anum_pg_kdemodels_sample_quality-1] = PointerGetDatum(host_sample_quality);
-  // Wait for the sample transfers to finish.
-  clFinish(context->queue);
+      sample_buffer, 0, NULL, NULL);
+  char sample_file_name[1024];
+  sprintf(sample_file_name, "/tmp/rel%i_kde.sample", estimator->table);
+  FILE* sample_file = fopen(sample_file_name, "w");
+  fwrite(sample_buffer, sizeof(float)*estimator->nr_of_dimensions,
+         estimator->rows_in_sample, sample_file);
+  fclose(sample_file);
+  pfree(sample_buffer);
+  values[Anum_pg_kdemodels_sample_file-1] = CStringGetTextDatum(sample_file_name);
 
   // Ok, we constructed the tuple. Now try to find whether the estimator is
-  // already present in the catalogue.
+  // already present in the catalog.
   Relation kdeRel = heap_open(KdeModelRelationID, RowExclusiveLock);
   ScanKeyData key[1];
   ScanKeyInit(&key[0], Anum_pg_kdemodels_table, BTEqualStrategyNumber, F_OIDEQ,
@@ -390,8 +359,6 @@ static void ocl_updateEstimatorInCatalog(ocl_estimator_t* estimator) {
 
   // Clean up.
   pfree(array_datums);
-  pfree(host_sample);
-  pfree(host_sample_quality);
 }
 
 /*
@@ -626,7 +593,7 @@ int ocl_estimateSelectivity(const ocl_estimator_request_t* request,
 }
 
 unsigned int ocl_maxSampleSize(unsigned int dimensionality) {
-	return (kde_samplesize*1024)/(dimensionality*sizeof(float));
+	return kde_samplesize;
 }
 
 void ocl_constructEstimator(
@@ -722,7 +689,7 @@ void ocl_constructEstimator(
     }
   }
   // Push the sample to the device.
-	estimator->sample_buffer_size = kde_samplesize * 1024;
+	estimator->sample_buffer_size = kde_samplesize * estimator->nr_of_dimensions * sizeof(float);
 	estimator->sample_buffer = clCreateBuffer(
 	    ctxt->context, CL_MEM_READ_WRITE, estimator->sample_buffer_size,
 	    NULL, NULL);
