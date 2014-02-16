@@ -4,16 +4,15 @@
 
 BASEDIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 
-
 source $BASEDIR/../../conf.sh
 
 #If the Covtype file is not set, pull it from the website.
 if [ -z $COVTYPE_FILE ]; then
-	cd /tmp
-	wget http://kdd.ics.uci.edu/databases/covertype/covtype.data.gz
-	gunzip -f covtype.data.gz
-	COVTYPE_FILE="/tmp/covtype.data"
-	cd -
+		cd /tmp
+		wget http://kdd.ics.uci.edu/databases/covertype/covtype.data.gz
+		gunzip -f covtype.data.gz
+		COVTYPE_FILE="/tmp/covtype.data"
+		cd -
 fi
 
 # Drop the existing tables.
@@ -23,9 +22,9 @@ $BASEDIR/drop-forest-tables.sh
 cat $COVTYPE_FILE | cut -d , -f 1-10 > $COVTYPE_FILE.tmp
 
 #Put in temporary table and create permanent tables with normalized values
-$PSQL $DATABASE $USER << EOF
+$PSQL $PGDATABASE $USER << EOF
 BEGIN;
-CREATE TEMPORARY TABLE T
+CREATE TABLE forest10
 (
  c1 double precision, 
  c2 double precision, 
@@ -38,134 +37,72 @@ CREATE TEMPORARY TABLE T
  c9 double precision, 
  c10 double precision
 );
-copy T from '$COVTYPE_FILE.tmp' DELIMITER',' CSV;
+copy forest10 from '$COVTYPE_FILE.tmp' DELIMITER',' CSV;
 
 SELECT
- (c1-c1min)/(c1max-c1min) as c1,
- (c2-c2min)/(c2max-c2min) as c2,
- (c3-c3min)/(c3max-c3min) as c3
+ c1 AS c1, c5 AS c2, c9 AS c3
  into forest3
- from T,
- (
-   SELECT
-   (SELECT min(c1) FROM T) AS c1min,
-   (SELECT max(c1) FROM T) AS c1max,
-   (SELECT min(c2) FROM T) AS c2min,
-   (SELECT max(c2) FROM T) AS c2max,
-   (SELECT min(c3) FROM T) AS c3min,
-   (SELECT max(c3) FROM T) AS c3max
- ) as minmax;
+ from forest10;
 
 SELECT
- (c1-c1min)/(c1max-c1min) as c1,
- (c2-c2min)/(c2max-c2min) as c2,
- (c3-c3min)/(c3max-c3min) as c3,
- (c4-c4min)/(c4max-c4min) as c4
+ c2 AS c1, c3 AS c2, c7 AS c3, c9 AS c4
  into forest4
- from T,
- (
-   SELECT
-   (SELECT min(c1) FROM T) AS c1min,
-   (SELECT max(c1) FROM T) AS c1max,
-   (SELECT min(c2) FROM T) AS c2min,
-   (SELECT max(c2) FROM T) AS c2max,
-   (SELECT min(c3) FROM T) AS c3min,
-   (SELECT max(c3) FROM T) AS c3max,
-   (SELECT min(c4) FROM T) AS c4min,
-   (SELECT max(c4) FROM T) AS c4max
- ) as minmax;
+ from forest10;
 
 SELECT
- (c1-c1min)/(c1max-c1min) as c1,
- (c2-c2min)/(c2max-c2min) as c2,
- (c3-c3min)/(c3max-c3min) as c3,
- (c4-c4min)/(c4max-c4min) as c4,
- (c5-c5min)/(c5max-c5min) as c5
+ c2 AS c1, c4 AS c2, c5 AS c3, c6 as c4, c8 AS c5
  into forest5
- from T,
- (
-   SELECT
-   (SELECT min(c1) FROM T) AS c1min,
-   (SELECT max(c1) FROM T) AS c1max,
-   (SELECT min(c2) FROM T) AS c2min,
-   (SELECT max(c2) FROM T) AS c2max,
-   (SELECT min(c3) FROM T) AS c3min,
-   (SELECT max(c3) FROM T) AS c3max,
-   (SELECT min(c4) FROM T) AS c4min,
-   (SELECT max(c4) FROM T) AS c4max,
-   (SELECT min(c5) FROM T) AS c5min,
-   (SELECT max(c5) FROM T) AS c5max
- ) as minmax;
+ from forest10;
 
 SELECT
- (c1-c1min)/(c1max-c1min) as c1,
- (c2-c2min)/(c2max-c2min) as c2,
- (c3-c3min)/(c3max-c3min) as c3,
- (c4-c4min)/(c4max-c4min) as c4,
- (c5-c5min)/(c5max-c5min) as c5,
- (c6-c6min)/(c6max-c6min) as c6,
- (c7-c7min)/(c7max-c7min) as c7,
- (c8-c8min)/(c8max-c8min) as c8
+ c1 AS c1, c2 AS c2, c4 AS c3, c5 as c4, c6 AS c5, c7 AS c6, c9 AS c7, c10 AS c8
  into forest8
- from T,
- (
-   SELECT
-   (SELECT min(c1) FROM T) AS c1min,
-   (SELECT max(c1) FROM T) AS c1max,
-   (SELECT min(c2) FROM T) AS c2min,
-   (SELECT max(c2) FROM T) AS c2max,
-   (SELECT min(c3) FROM T) AS c3min,
-   (SELECT max(c3) FROM T) AS c3max,
-   (SELECT min(c4) FROM T) AS c4min,
-   (SELECT max(c4) FROM T) AS c4max,
-   (SELECT min(c5) FROM T) AS c5min,
-   (SELECT max(c5) FROM T) AS c5max,
-   (SELECT min(c6) FROM T) AS c6min,
-   (SELECT max(c6) FROM T) AS c6max,
-   (SELECT min(c7) FROM T) AS c7min,
-   (SELECT max(c7) FROM T) AS c7max,
-   (SELECT min(c8) FROM T) AS c8min,
-   (SELECT max(c8) FROM T) AS c8max
- ) as minmax;
+ from forest10;
 
-
-SELECT
- (c1-c1min)/(c1max-c1min)*100 as c1,
- (c2-c2min)/(c2max-c2min)*100 as c2,
- (c3-c3min)/(c3max-c3min)*100 as c3,
- (c4-c4min)/(c4max-c4min)*100 as c4,
- (c5-c5min)/(c5max-c5min)*100 as c5,
- (c6-c6min)/(c6max-c6min)*100 as c6,
- (c7-c7min)/(c7max-c7min)*100 as c7,
- (c8-c8min)/(c8max-c8min)*100 as c8,
- (c9-c9min)/(c9max-c9min)*100 as c9,
- (c10-c10min)/(c10max-c10min)*100 as c10
- into forest10
- from T,
- (
-   SELECT
-   (SELECT min(c1) FROM T) AS c1min,
-   (SELECT max(c1) FROM T) AS c1max,
-   (SELECT min(c2) FROM T) AS c2min,
-   (SELECT max(c2) FROM T) AS c2max,
-   (SELECT min(c3) FROM T) AS c3min,
-   (SELECT max(c3) FROM T) AS c3max,
-   (SELECT min(c4) FROM T) AS c4min,
-   (SELECT max(c4) FROM T) AS c4max,
-   (SELECT min(c5) FROM T) AS c5min,
-   (SELECT max(c5) FROM T) AS c5max,
-   (SELECT min(c6) FROM T) AS c6min,
-   (SELECT max(c6) FROM T) AS c6max,
-   (SELECT min(c7) FROM T) AS c7min,
-   (SELECT max(c7) FROM T) AS c7max,
-   (SELECT min(c8) FROM T) AS c8min,
-   (SELECT max(c8) FROM T) AS c8max,
-   (SELECT min(c9) FROM T) AS c9min,
-   (SELECT max(c9) FROM T) AS c9max,
-   (SELECT min(c10) FROM T) AS c10min,
-   (SELECT max(c10) FROM T) AS c10max
- ) as minmax;
 COMMIT;
 EOF
+
+#MonetDB command
+if [ ! -z $MONETDATABASE ]; then
+	echo "CREATE TABLE forest10
+	(
+		c1 double precision, 
+		c2 double precision, 
+		c3 double precision, 
+		c4 double precision, 
+		c5 double precision, 
+		c6 double precision, 
+		c7 double precision, 
+		c8 double precision, 
+		c9 double precision, 
+		c10 double precision
+	);
+	COPY INTO forest10 FROM '$COVTYPE_FILE.tmp' USING DELIMITERS ',';
+
+	CREATE TABLE forest3 AS
+      SELECT
+         c1 AS c1, c5 AS c2, c9 AS c3
+         from forest10
+   WITH DATA;
+	
+   CREATE TABLE forest4 AS
+      SELECT
+         c2 AS c1, c3 AS c2, c7 AS c3, c9 AS c4
+         from forest10
+   WITH DATA;
+   
+   CREATE TABLE forest5 AS
+      SELECT
+         c2 AS c1, c4 AS c2, c5 AS c3, c6 as c4, c8 AS c5
+         from forest10
+   WITH DATA;
+   
+   CREATE TABLE forest8 AS
+      SELECT
+         c1 AS c1, c2 AS c2, c4 AS c3, c5 as c4, c6 AS c5, c7 AS c6, c9 AS c7, c10 AS c8
+         from forest10
+   WITH DATA;
+   " | mclient -lsql -d$MONETDATABASE 
+fi
 
 rm -f $COVTYPE_FILE.tmp
