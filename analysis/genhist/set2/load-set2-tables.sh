@@ -3,9 +3,13 @@ BASEDIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 
 source $BASEDIR/../../conf.sh
 
-cd /tmp
-python $BASEDIR/generator2.py
-cd -
+# Check if the tables folder exists and has all the files. If not, create them.
+if [ ! -e $BASEDIR/tables/data_gen2_d5.csv ]; then
+	mkdir -p $BASEDIR/tables
+	cd $BASEDIR/tables
+	python ../generator2.py
+	cd -
+fi
 
 #First drop the existing tables
 $BASEDIR/drop-set2-tables.sh
@@ -18,7 +22,7 @@ $PSQL $PGDATABASE $USER << EOF
 		c3 double precision,
 		c4 double precision,
 		c5 double precision);
-	COPY gen2_d5 FROM '/tmp/data_gen2_d5.csv' DELIMITER',';
+	COPY gen2_d5 FROM '$BASEDIR/tables/data_gen2_d5.csv' DELIMITER',';
 EOF
 
 #MonetDB command
@@ -33,5 +37,5 @@ echo "
 		c3 double precision,
 		c4 double precision,
 		c5 double precision);
-	COPY INTO gen2_d5 FROM '/tmp/data_gen2_d5.csv' USING DELIMITERS ',','\r\n';
+	COPY INTO gen2_d5 FROM '$BASEDIR/tables/data_gen2_d5.csv' USING DELIMITERS ',','\r\n';
 	" | mclient -lsql -d$MONETDATABASE
