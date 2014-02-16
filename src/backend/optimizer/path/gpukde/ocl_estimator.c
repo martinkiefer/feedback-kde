@@ -633,6 +633,10 @@ void ocl_constructEstimator(
     Relation rel, unsigned int rows_in_table, unsigned int dimensionality,
     AttrNumber* attributes, unsigned int sample_size, HeapTuple* sample) {
 	unsigned int i, j;
+	if (dimensionality > 10) {
+	  fprintf(stderr, "We only support models for up to 10 dimensions!\n");
+	  return;
+	}
 	// Make sure we have a context
 	ocl_context_t* ctxt = ocl_getContext();
 	if (ctxt == NULL)	return;

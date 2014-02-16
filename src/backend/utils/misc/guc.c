@@ -133,7 +133,7 @@ extern char *SSLCipherSuites;
 /* Flag to determine whether we should use the OpenCL KDE estimator or not. */
 extern bool kde_enable;
 extern void assign_kde_enable(bool newval, void *extra);
-/* Determines how big the sample should be that is used for kde.*/
+/* Determines how many rows should be kept in the KDE sample.*/
 extern int kde_samplesize;
 extern void assign_kde_samplesize(int newval, void *extra);
 /* Determines whether we use the GPU or the CPU for running KDE. */
@@ -2521,12 +2521,12 @@ static struct config_int ConfigureNamesInt[] =
 #ifdef USE_OPENCL
   {
     {"kde_samplesize", PGC_USERSET, DEVELOPER_OPTIONS,
-      gettext_noop("Sample size (in kB) that is used for the Kernel Density Estimator."),
+      gettext_noop("Sample size (in rows) that is used for the Kernel Density Estimator."),
       NULL,
       GUC_NOT_IN_SAMPLE
     },
     &kde_samplesize,
-    5*1024, 16, 1024*1024,
+    4300, 1, 1024*1024,
     NULL, assign_kde_samplesize, NULL
   },
   {

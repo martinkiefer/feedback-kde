@@ -96,8 +96,8 @@ void ocl_initialize(void) {
 	err |= clGetDeviceInfo(device, CL_DEVICE_MAX_COMPUTE_UNITS, sizeof(cl_uint), &(ctxt->max_compute_units), NULL);
 	err |= clGetDeviceInfo(device, CL_DEVICE_MEM_BASE_ADDR_ALIGN, sizeof(cl_uint), &(ctxt->required_mem_alignment), NULL);
 
-	/* Allocate a result buffer of kde_samplesize kB on the device buffer */
-	ctxt->result_buffer_size = kde_samplesize * 1024;
+	/* Allocate a result buffer to keep kde_samplesize samples from a 10-dimensional table on the device buffer */
+	ctxt->result_buffer_size = kde_samplesize * 10 * sizeof(float);
 	ctxt->result_buffer = clCreateBuffer(ctxt->context, CL_MEM_READ_WRITE,
 	                                     ctxt->result_buffer_size, NULL, &err);
 	if (err != CL_SUCCESS) {
