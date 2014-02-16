@@ -5,7 +5,7 @@ PSQL="psql"
 PGDATABASE="mheimel"
 
 # MonetDB specific variables:
-MONETDATABASE="test"
+MONETDATABASE=""
 
 # Variables for the Genhist forest dataset:
 COVTYPE_FILE=""	# Can be left empty (Script will download the data file instead.)

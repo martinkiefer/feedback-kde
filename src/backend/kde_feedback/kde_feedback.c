@@ -323,7 +323,7 @@ int kde_finish(PlanState *node){
 	      pfree(rq_buffer);
 	      return 1;
 	    }
-	    
+
 	    // Notify the model maintenance of this observation.
 	    ocl_notifyModelMaintenanceOfSelectivity(rte->relid, qual_tuples / all_tuples);
 

@@ -1,25 +1,34 @@
+#ifndef TYPE_DEFINED_
+  #if (TYPE == float)
+    typedef float T;
+  #elif (TYPE == double)
+    tpyedef double T;
+  #endif
+  #define TYPE_DEFINED_
+#endif /* TYPE_DEFINED */
+
 __kernel void sum_seq(
-   __global const float* const data,
+   __global const T* const data,
    const unsigned int data_offset,
    const unsigned int elements,
-   __global float* const result,
+   __global T* const result,
    const unsigned int result_offset
 ){
-   float agg = 0;
+   T agg = 0;
    for (unsigned i=0; i<elements; ++i)
       agg += data[data_offset + i];
    result[result_offset] = agg;
 }
 
 __kernel void sum_par(
-   __global const float* const data,
-   __global float* const result,
+   __global const T* const data,
+   __global T* const result,
    const unsigned int tuples_per_thread
 ){
    unsigned int local_id = get_local_id(0);
    unsigned int global_id = get_global_id(0);
    // Now each thread does a sequential aggregation within a register.
-   float agg = 0;
+   T agg = 0;
    #ifdef DEVICE_GPU
       // On the GPU we use a strided access pattern, so that the GPU
       // can coalesc memory access.
@@ -35,7 +44,7 @@ __kernel void sum_par(
 
    // Push the local result to the buffer, so we can aggregate recursively. Since the
    // kernel is very simplistic, we can safely assume that it is always run with MAXBLOCKSIZE.
-   __local float buffer[MAXBLOCKSIZE];
+   __local T buffer[MAXBLOCKSIZE];
    buffer[local_id] = agg;
    barrier(CLK_LOCAL_MEM_FENCE);
 

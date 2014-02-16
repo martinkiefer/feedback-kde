@@ -25,6 +25,11 @@
 #include <CL/cl.h>
 
 /*
+ * Define whether we use single or double precision.
+ */
+typedef float kde_float_t;
+
+/*
  * Struct defining the current OpenCL context
  */
 typedef struct {

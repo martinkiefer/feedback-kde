@@ -23,9 +23,9 @@
  */
 typedef struct ocl_colrange {
 	AttrNumber colno;
-	float lower_bound;
+	double lower_bound;
 	bool lower_included;
-	float upper_bound;
+	double upper_bound;
 	bool upper_included;
 } ocl_colrange_t;
 
@@ -61,7 +61,7 @@ typedef enum {
  * Function for updating a range request with new bounds on a given attribute.
  */
 extern int ocl_updateRequest(ocl_estimator_request_t* request, AttrNumber column,
-		float* lower_bound, bool lower_included, float* upper_bound, bool upper_included);
+		double* lower_bound, bool lower_included, double* upper_bound, bool upper_included);
 
 /*
  * Main entry function for the opencl selectivity estimator.
@@ -77,7 +77,7 @@ unsigned int ocl_maxSampleSize(unsigned int dimensionality);
  * Functions to report estimation errors to a file.
  */
 bool ocl_reportErrors();
-void ocl_reportErrorToLogFile(Oid relation, float actual, float expected);
+void ocl_reportErrorToLogFile(Oid relation, double actual, double expected);
 
 /*
  * Entry function for generating a KDE estimator
@@ -109,7 +109,7 @@ extern void ocl_notifySampleMaintenanceOfDeletion(Relation rel);
 /*
  * Propagate selectivity information to the model maintenance.
  */
-extern void ocl_notifyModelMaintenanceOfSelectivity(Oid rel, float selectivity);
+extern void ocl_notifyModelMaintenanceOfSelectivity(Oid rel, double selectivity);
 
 #endif /* USE_OPENCL */
 #endif /* OCL_ESTIMATOR_API_H_ */

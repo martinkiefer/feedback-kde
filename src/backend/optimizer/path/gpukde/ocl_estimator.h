@@ -32,9 +32,6 @@ typedef struct ocl_estimator {
   unsigned int rows_in_sample;  // Current number of tuples in the sample.
   size_t sample_buffer_size;      // Size of the sample buffer in bytes.
   cl_mem sample_buffer;           // Buffer that stores the data sample.
-  /* These two buffers are used to track a linear regression between sample contributions and the expected results */
-  cl_mem sample_quality_slopes_buffer;
-  cl_mem sample_quality_intercepts_buffer;
   /* Fields for tracking mini-batch gradient updates to the bandwidth. */
   cl_mem gradient_accumulator;
   unsigned int nr_of_accumulated_gradients;

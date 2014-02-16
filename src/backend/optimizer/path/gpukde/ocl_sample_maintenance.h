@@ -9,6 +9,6 @@
 #define OCL_SAMPLE_MAINTENANCE_H_
 
 void ocl_notifySampleMaintenanceOfSelectivity(ocl_estimator_t* estimator,
-                                              float actual_selectivity);
+                                              double actual_selectivity);
 
 #endif /* OCL_SAMPLE_MAINTENANCE_H_ */

@@ -97,7 +97,7 @@ void ocl_initialize(void) {
 	err |= clGetDeviceInfo(device, CL_DEVICE_MEM_BASE_ADDR_ALIGN, sizeof(cl_uint), &(ctxt->required_mem_alignment), NULL);
 
 	/* Allocate a result buffer to keep kde_samplesize samples from a 10-dimensional table on the device buffer */
-	ctxt->result_buffer_size = kde_samplesize * 10 * sizeof(float);
+	ctxt->result_buffer_size = kde_samplesize * 10 * sizeof(kde_float_t);
 	ctxt->result_buffer = clCreateBuffer(ctxt->context, CL_MEM_READ_WRITE,
 	                                     ctxt->result_buffer_size, NULL, &err);
 	if (err != CL_SUCCESS) {
@@ -106,7 +106,7 @@ void ocl_initialize(void) {
 	}
 
 	/* Allocate an input buffer for storing input requests */
-	ctxt->input_buffer_size = sizeof(float)*10*2;	/* Lower and Upper bound for 10 dimensions */
+	ctxt->input_buffer_size = sizeof(kde_float_t)*10*2;	/* Lower and Upper bound for 10 dimensions */
 	ctxt->input_buffer = clCreateBuffer(ctxt->context, CL_MEM_READ_WRITE, ctxt->input_buffer_size, NULL, &err);
 	if (err != CL_SUCCESS) {
 		fprintf(stderr, "\tError allocating OpenCL input buffer.\n");
@@ -203,6 +203,11 @@ static cl_program buildProgram(ocl_context_t* context, const char* build_params)
 	} else {
 		strcat(device_params, "-DDEVICE_CPU ");
 	}
+	if (sizeof(kde_float_t) == sizeof(double)) {
+	  strcat(device_params, "-DTYPE=double ");
+	} else if (sizeof(kde_float_t) == sizeof(float)) {
+	  strcat(device_params, "-DTYPE=float ");
+	}
 	strcat(device_params, build_params);
 	// Ok, build the program
 	cl_program program = clCreateProgramWithSource(
@@ -269,9 +274,9 @@ void ocl_dumpBufferToFile(const char* file, cl_mem buffer,
   clFinish(context->queue);
 
   // Fetch the buffer to disk.
-  float* host_buffer = palloc(sizeof(float) * dimensions * items);
+  kde_float_t* host_buffer = palloc(sizeof(kde_float_t) * dimensions * items);
   clEnqueueReadBuffer(context->queue, buffer, CL_TRUE,
-                      0, sizeof(float) * dimensions * items,
+                      0, sizeof(kde_float_t) * dimensions * items,
                       host_buffer, 0, NULL, NULL);
 
   FILE* f = fopen(file, "w");

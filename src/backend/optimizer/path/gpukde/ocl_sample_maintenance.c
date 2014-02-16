@@ -34,7 +34,7 @@ void ocl_notifySampleMaintenanceOfInsertion(Relation rel, HeapTuple new_tuple) {
     insert_position = random() % estimator->rows_in_sample;
   }
   // Finally, extract the item and send it to the sample.
-  float* item = palloc(ocl_sizeOfSampleItem(estimator));
+  kde_float_t* item = palloc(ocl_sizeOfSampleItem(estimator));
   ocl_extractSampleTuple(estimator, rel->rd_id, new_tuple, item);
   ocl_pushEntryToSampleBufer(estimator, insert_position, item);
   pfree(item);
@@ -47,24 +47,11 @@ void ocl_notifySampleMaintenanceOfDeletion(Relation rel) {
   estimator->rows_in_table--;
 }
 
-const float sample_match_learning_rate = 0.02f;
+const double sample_match_learning_rate = 0.02f;
 
 void ocl_notifySampleMaintenanceOfSelectivity(ocl_estimator_t* estimator,
-                                              float actual_selectivity) {
-  ocl_context_t* context = ocl_getContext();
-  cl_kernel kernel = ocl_getKernel("update_sample_quality_metrics", 0);
-  clSetKernelArg(kernel, 0, sizeof(cl_mem), &(context->result_buffer));
-  clSetKernelArg(kernel, 1, sizeof(cl_mem), &(estimator->sample_quality_slopes_buffer));
-  clSetKernelArg(kernel, 2, sizeof(cl_mem), &(estimator->sample_quality_intercepts_buffer));
-  clSetKernelArg(kernel, 3, sizeof(float), &actual_selectivity);
-  clSetKernelArg(kernel, 4, sizeof(float), &sample_match_learning_rate);
-  size_t global_size = estimator->rows_in_sample;
-  cl_int err = clEnqueueNDRangeKernel(context->queue, kernel, 1, NULL,
-                         &global_size, NULL, 0, NULL, NULL);
-  clFinish(context->queue);
-
-  // Cleanup.
-  clReleaseKernel(kernel);
+                                              double actual_selectivity) {
+  // Do nothing for now
 }
 
 #endif

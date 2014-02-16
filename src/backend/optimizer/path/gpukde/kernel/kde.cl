@@ -1,24 +1,33 @@
+#ifndef TYPE_DEFINED_
+  #if (TYPE == float)
+    typedef float T;
+  #elif (TYPE == double)
+    tpyedef double T;
+  #endif
+  #define TYPE_DEFINED_
+#endif /* TYPE_DEFINED */
+
 // Uses the Epanechnikov Kernel.
 __kernel void epanechnikov_kde(
-	__global const float* const data,
-	__global float* const result,
-	__global const float* const range,
-	__global const float* const bandwidth
+	__global const T* const data,
+	__global T* const result,
+	__global const T* const range,
+	__global const T* const bandwidth
 ) {
-	float res = 1.0f;
+	T res = 1.0f;
 	for (unsigned int i=0; i<D; ++i) {
 		// Fetch all required input data.
-		float val = data[D*get_global_id(0) + i];
-		float h = bandwidth[i];
-		float lo = range[2*i];
-		float up = range[2*i + 1];
+		T val = data[D*get_global_id(0) + i];
+		T h = bandwidth[i];
+		T lo = range[2*i];
+		T up = range[2*i + 1];
 		// If the support is completely contained in the query, the result is completely contained.
 		char is_complete = (lo <= (val-h)) && (up >= (val+h));
 		// Adjust the boundaries, so we only integrate over the defined area.
 		lo = max(lo, val-h);
 		up = min(val+h, up);
 		// ... and compute the local contribution from this dimension:
-		float local_result = (h*h - val*val)*(up - lo);
+		T local_result = (h*h - val*val)*(up - lo);
 		local_result += val * (up*up - lo*lo);
 		local_result -= (up*up*up - lo*lo*lo) / 3.0f; 
 		local_result /= h*h*h;
@@ -30,20 +39,20 @@ __kernel void epanechnikov_kde(
 
 // Uses the Gauss Kernel.
 __kernel void gauss_kde(
-	__global const float* const data,
-	__global float* const result,
-	__global const float* const range,
-	__global const float* const bandwidth
+	__global const T* const data,
+	__global T* const result,
+	__global const T* const range,
+	__global const T* const bandwidth
 ) {
-	float res = 1.0f;
+	T res = 1.0f;
 	for (unsigned int i=0; i<D; ++i) {
 		// Fetch all required input data.
-		float val = data[D*get_global_id(0) + i];
-		float h = sqrt(2*bandwidth[i]);
-		float lo = range[2*i];
-		float up = range[2*i + 1];
+		T val = data[D*get_global_id(0) + i];
+		T h = sqrt(2*bandwidth[i]);
+		T lo = range[2*i];
+		T up = range[2*i + 1];
 		// Now compute the local result.
-		float local_result = erf((up - val) / h);
+		T local_result = erf((up - val) / h);
 		local_result -= erf((lo - val) / h);
 		res *= local_result;
 	}

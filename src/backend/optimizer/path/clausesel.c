@@ -126,7 +126,7 @@ clauselist_selectivity(PlannerInfo *root,
         VariableStatData vardata;
         Node     *other;
         bool    varonleft;
-        float   constval;
+        double   constval;
         Oid     relation;
         AttrNumber  colno;
         char*   opname;
@@ -176,7 +176,7 @@ clauselist_selectivity(PlannerInfo *root,
         }
         // Extract the float value of the attribute.
         Datum2Double.orig = ((Const *) other)->constvalue;
-        constval = (float)Datum2Double.dval;
+        constval = Datum2Double.dval;
         // Extract the column number.
         colno = ((Var*)vardata.var)->varattno;
         // Now insert the range information

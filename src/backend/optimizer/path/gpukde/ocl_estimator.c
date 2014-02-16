@@ -37,7 +37,7 @@ extern bool ocl_use_gpu;
 extern bool kde_enable;
 extern int kde_samplesize;
 
-bool scale_to_unit_variance = false;
+bool scale_to_unit_variance = true;
 
 /*
  * SELECTOR FOR THE KERNEL TYPE.
@@ -66,7 +66,7 @@ static cl_kernel prepareKDEKernel(ocl_estimator_t* estimator,
   return kernel;
 }
 
-static float sumOfArray(cl_mem input_buffer, unsigned int elements, cl_event external_event) {
+static double sumOfArray(cl_mem input_buffer, unsigned int elements, cl_event external_event) {
   cl_int err = 0;
 	ocl_context_t* context = ocl_getContext();
 	cl_event init_event;
@@ -88,7 +88,7 @@ static float sumOfArray(cl_mem input_buffer, unsigned int elements, cl_event ext
 	unsigned int slow_kernel_elements = elements - slow_kernel_data_offset;
 	unsigned int slow_kernel_result_offset = processors;
   // Allocate a temporary result buffer.
-  cl_mem tmp_buffer = clCreateBuffer(context->context, CL_MEM_READ_WRITE, sizeof(float) * (processors + 1), NULL, NULL);
+  cl_mem tmp_buffer = clCreateBuffer(context->context, CL_MEM_READ_WRITE, sizeof(kde_float_t) * (processors + 1), NULL, NULL);
   err |= clSetKernelArg(init_buffer, 0, sizeof(cl_mem), &tmp_buffer);
   global_size = processors + 1;
   err |= clEnqueueNDRangeKernel(context->queue, init_buffer, 1, NULL, &global_size, NULL, 1, &external_event, &init_event);
@@ -125,9 +125,9 @@ static float sumOfArray(cl_mem input_buffer, unsigned int elements, cl_event ext
   cl_event finalize_event;
   err |= clEnqueueTask(context->queue, slow_sum, nr_of_events, events, &finalize_event);
   // Now transfer the final aggregate back.
-  float result;
+  kde_float_t result;
   err |= clEnqueueReadBuffer(context->queue, tmp_buffer, CL_TRUE, 0,
-                             sizeof(float), &result, 1, &finalize_event, NULL);
+                             sizeof(kde_float_t), &result, 1, &finalize_event, NULL);
 	// Clean up ...
 	clReleaseKernel(slow_sum);
 	clReleaseKernel(fast_sum);
@@ -144,10 +144,10 @@ static float sumOfArray(cl_mem input_buffer, unsigned int elements, cl_event ext
 	return result;
 }
 
-static float rangeKDE(ocl_context_t* ctxt, ocl_estimator_t* estimator) {
+static kde_float_t rangeKDE(ocl_context_t* ctxt, ocl_estimator_t* estimator) {
   // Select kernel and normalization factor based on the kernel type.
   cl_kernel kde_kernel;
-  float normalization_factor = 1.0f;
+  kde_float_t normalization_factor = 1.0f;
   if (global_kernel_type == EPANECHNIKOV) {
     // Epanechnikov.
     kde_kernel = prepareKDEKernel(estimator, "epanechnikov_kde");
@@ -164,7 +164,7 @@ static float rangeKDE(ocl_context_t* ctxt, ocl_estimator_t* estimator) {
   cl_event kde_event;
 	clEnqueueNDRangeKernel(ctxt->queue, kde_kernel, 1, NULL, &global_size,
 	                       NULL, 0, NULL, &kde_event);
-	float result = sumOfArray(ctxt->result_buffer, estimator->rows_in_sample, kde_event);
+	kde_float_t result = sumOfArray(ctxt->result_buffer, estimator->rows_in_sample, kde_event);
 	result *= normalization_factor / estimator->rows_in_sample;
 	clReleaseKernel(kde_kernel);
 	clReleaseEvent(kde_event);
@@ -176,7 +176,6 @@ static ocl_estimator_t* ocl_buildEstimatorFromCatalogEntry(Relation kde_rel,
   unsigned int i;
   Datum datum;
   ArrayType* array;
-  bytea* byte_array;
   bool isNull;
   ocl_context_t* context = ocl_getContext();
   ocl_estimator_t* descriptor = calloc(1, sizeof(ocl_estimator_t));
@@ -229,9 +228,9 @@ static ocl_estimator_t* ocl_buildEstimatorFromCatalogEntry(Relation kde_rel,
   array = DatumGetArrayTypeP(datum);
   descriptor->bandwidth_buffer = clCreateBuffer(
         context->context, CL_MEM_READ_WRITE,
-        sizeof(float)*descriptor->nr_of_dimensions, NULL, NULL);
+        sizeof(kde_float_t)*descriptor->nr_of_dimensions, NULL, NULL);
   clEnqueueWriteBuffer(context->queue, descriptor->bandwidth_buffer, CL_FALSE,
-                       0, sizeof(float)*descriptor->nr_of_dimensions,
+                       0, sizeof(kde_float_t)*descriptor->nr_of_dimensions,
                        (char*)ARR_DATA_PTR(array), 0, NULL, NULL);
 
   // >> Read the sample.
@@ -243,7 +242,7 @@ static ocl_estimator_t* ocl_buildEstimatorFromCatalogEntry(Relation kde_rel,
     fprintf(stderr, "Error opening sample file %s\n", file_name);
     return NULL;
   }
-  float* host_buffer = palloc(
+  kde_float_t* host_buffer = palloc(
       ocl_sizeOfSampleItem(descriptor) * descriptor->rows_in_sample);
   fread(host_buffer, ocl_sizeOfSampleItem(descriptor),
         descriptor->rows_in_sample, file);
@@ -305,21 +304,22 @@ static void ocl_updateEstimatorInCatalog(ocl_estimator_t* estimator) {
   values[Anum_pg_kdemodels_scale_factors-1] = PointerGetDatum(array);
 
   // >> Write the bandwidth.
-  float* host_bandwidth = palloc(estimator->nr_of_dimensions * sizeof(float));
+  kde_float_t* host_bandwidth = palloc(
+      estimator->nr_of_dimensions * sizeof(kde_float_t));
   clEnqueueReadBuffer(
       context->queue, estimator->bandwidth_buffer, CL_TRUE, 0,
-      estimator->nr_of_dimensions * sizeof(float), host_bandwidth,
+      estimator->nr_of_dimensions * sizeof(kde_float_t), host_bandwidth,
       0, NULL, NULL);
   for (i = 0; i < estimator->nr_of_dimensions; ++i) {
     array_datums[i] = Float4GetDatum(host_bandwidth[i]);
   }
   pfree(host_bandwidth);
   array = construct_array(array_datums, estimator->nr_of_dimensions,
-                          FLOAT4OID, sizeof(float), FLOAT4PASSBYVAL, 'i');
+                          FLOAT4OID, sizeof(kde_float_t), FLOAT4PASSBYVAL, 'i');
   values[Anum_pg_kdemodels_bandwidth-1] = PointerGetDatum(array);
 
   // >> Write the sample to a file.
-  float* sample_buffer = palloc(
+  kde_float_t* sample_buffer = palloc(
       ocl_sizeOfSampleItem(estimator) * estimator->rows_in_sample);
   clEnqueueReadBuffer(
       context->queue, estimator->sample_buffer, CL_TRUE, 0,
@@ -328,7 +328,7 @@ static void ocl_updateEstimatorInCatalog(ocl_estimator_t* estimator) {
   char sample_file_name[1024];
   sprintf(sample_file_name, "/tmp/rel%i_kde.sample", estimator->table);
   FILE* sample_file = fopen(sample_file_name, "w");
-  fwrite(sample_buffer, sizeof(float)*estimator->nr_of_dimensions,
+  fwrite(sample_buffer, sizeof(kde_float_t)*estimator->nr_of_dimensions,
          estimator->rows_in_sample, sample_file);
   fclose(sample_file);
   pfree(sample_buffer);
@@ -375,10 +375,6 @@ static void ocl_freeEstimator(ocl_estimator_t* estimator, bool materialize) {
     free(estimator->scale_factors);
   if (estimator->sample_buffer)
     clReleaseMemObject(estimator->sample_buffer);
-  if (estimator->sample_quality_intercepts_buffer)
-    clReleaseMemObject(estimator->sample_quality_intercepts_buffer);
-  if (estimator->sample_quality_slopes_buffer)
-    clReleaseMemObject(estimator->sample_quality_slopes_buffer);
   if (estimator->bandwidth_buffer)
     clReleaseMemObject(estimator->bandwidth_buffer);
   if (estimator->gradient_accumulator)
@@ -477,8 +473,8 @@ static void ocl_dumpRequest(const ocl_estimator_request_t* request) {
 }
 
 int ocl_updateRequest(ocl_estimator_request_t* request,
-		AttrNumber colno, float* lower_bound, bool lower_included,
-		float* upper_bound, bool upper_included) {
+		AttrNumber colno, double* lower_bound, bool lower_included,
+		double* upper_bound, bool upper_included) {
 	/*
 	 * First, make sure to find the range entry for the given column.
 	 * If no column exists, insert a new one.
@@ -558,7 +554,7 @@ int ocl_estimateSelectivity(const ocl_estimator_request_t* request,
 	}
 	if ((estimator->columns | request_columns) != estimator->columns) return 0;
 	// Cool, prepare a request to the estimator
-	float* row_ranges = (float*)malloc(2*sizeof(float)*estimator->nr_of_dimensions);
+	kde_float_t* row_ranges = (float*)malloc(2*sizeof(kde_float_t)*estimator->nr_of_dimensions);
 	for (i = 0; i < estimator->nr_of_dimensions; ++i) {
 		row_ranges[2*i] = -1.0f * INFINITY;
 		row_ranges[2*i+1] = INFINITY;
@@ -576,7 +572,7 @@ int ocl_estimateSelectivity(const ocl_estimator_request_t* request,
   }
   // Prepare the reqeust
   clEnqueueWriteBuffer(ctxt->queue, ctxt->input_buffer, CL_TRUE, 0,
-               2*estimator->nr_of_dimensions*sizeof(float), row_ranges, 
+               2*estimator->nr_of_dimensions*sizeof(kde_float_t), row_ranges,
                0, NULL, NULL);
   *selectivity = rangeKDE(ctxt, estimator);
   estimator->last_selectivity = *selectivity;
@@ -640,7 +636,7 @@ void ocl_constructEstimator(
     * While preparing the sample, we compute the variance for each column on the fly.
  	 * The variance is then used to normalize the data to unit variance in each dimension.
     */
-	float* host_buffer = (float*)malloc(
+	kde_float_t* host_buffer = (kde_float_t*)malloc(
 	    ocl_sizeOfSampleItem(estimator) * sample_size);
 	double* mean = (double*)calloc(1, sizeof(double) * dimensionality);
 	double* M2 = (double*)calloc(1, sizeof(double) * dimensionality);
@@ -650,7 +646,7 @@ void ocl_constructEstimator(
 	                         &(host_buffer[i*estimator->nr_of_dimensions]));
 	  // And update the attributes.
 	  for ( j = 0; j < estimator->nr_of_dimensions; ++j) {
-	    float delta = host_buffer[i*estimator->nr_of_dimensions + j] - mean[j];
+	    double delta = host_buffer[i*estimator->nr_of_dimensions + j] - mean[j];
 	    mean[j] = mean[j] + delta / (i + 1);
 	    M2[j] += delta * (host_buffer[i*estimator->nr_of_dimensions + j] - mean[j]);
 	  }
@@ -663,19 +659,21 @@ void ocl_constructEstimator(
 	  estimator->scale_factors[i] = sqrt(estimator->scale_factors[i]);
 	}
 	// Compute an initial bandwidth estimate using Scott's rule.
-	float* bandwidth = (float*)malloc(sizeof(float)*dimensionality);
+	kde_float_t* bandwidth = (float*)malloc(sizeof(kde_float_t)*dimensionality);
 	for ( i = 0; i < dimensionality; ++i) {
 		bandwidth[i] = estimator->scale_factors[i] *
-		    pow(sample_size, -1.0f/(float)(dimensionality + 4));
+		    pow(sample_size, -1.0f/(double)(dimensionality + 4));
+		if (global_kernel_type == EPANECHNIKOV)
+		  bandwidth[i] *= sqrt(5);
 		// If data scaling is deactivated, set the scale factor to unity.
 		if (!scale_to_unit_variance) estimator->scale_factors[i] = 1.0f;
 	}
 	estimator->bandwidth_buffer = clCreateBuffer(
-	    ctxt->context, CL_MEM_READ_WRITE, sizeof(float) * dimensionality,
+	    ctxt->context, CL_MEM_READ_WRITE, sizeof(kde_float_t) * dimensionality,
 	    NULL, NULL);
   clEnqueueWriteBuffer(
       ctxt->queue, estimator->bandwidth_buffer, CL_TRUE, 0,
-      sizeof(float) * dimensionality, bandwidth, 0, NULL, NULL);
+      sizeof(kde_float_t) * dimensionality, bandwidth, 0, NULL, NULL);
 	// Print some debug info.
 	fprintf(stderr, "\tInitial bandwidth guess:");
 	for ( i = 0; i < dimensionality ; ++i)
@@ -689,7 +687,7 @@ void ocl_constructEstimator(
     }
   }
   // Push the sample to the device.
-	estimator->sample_buffer_size = kde_samplesize * estimator->nr_of_dimensions * sizeof(float);
+	estimator->sample_buffer_size = kde_samplesize * estimator->nr_of_dimensions * sizeof(kde_float_t);
 	estimator->sample_buffer = clCreateBuffer(
 	    ctxt->context, CL_MEM_READ_WRITE, estimator->sample_buffer_size,
 	    NULL, NULL);
@@ -699,29 +697,6 @@ void ocl_constructEstimator(
 	    0, NULL, NULL);
   free(host_buffer);
 
-  // Prepare the buffers for storing the linear regression variables between
-  // sample output expected result. We initialize each regression function as 1*x.
-  size_t global_size = ocl_maxRowsInSample(estimator);
-    // Initialize the intercept to 0.
-  estimator->sample_quality_intercepts_buffer = clCreateBuffer(
-      ctxt->context, CL_MEM_READ_WRITE,
-      ocl_maxRowsInSample(estimator) * sizeof(float), NULL, NULL);
-  cl_kernel init_zero = ocl_getKernel("init_zero", 0);
-  clSetKernelArg(init_zero, 0, sizeof(cl_mem),
-                 &(estimator->sample_quality_intercepts_buffer));
-  clEnqueueNDRangeKernel(ocl_getContext()->queue, init_zero, 1, NULL,
-                         &global_size, NULL, 0, NULL, NULL);
-  clReleaseKernel(init_zero);
-    // Initialize the slope to 1.
-  estimator->sample_quality_slopes_buffer = clCreateBuffer(
-        ctxt->context, CL_MEM_READ_WRITE,
-        ocl_maxRowsInSample(estimator) * sizeof(float), NULL, NULL);
-  cl_kernel init_one = ocl_getKernel("init_one", 0);
-  clSetKernelArg(init_one, 0, sizeof(cl_mem),
-                 &(estimator->sample_quality_slopes_buffer));
-  clEnqueueNDRangeKernel(ocl_getContext()->queue, init_one, 1, NULL,
-                         &global_size, NULL, 0, NULL, NULL);
-  clReleaseKernel(init_one);
     // Wait for the initialization to finish.
   clFinish(ocl_getContext()->queue);
 
@@ -767,7 +742,7 @@ ocl_estimator_t* ocl_getEstimator(Oid relation) {
 }
 
 size_t ocl_sizeOfSampleItem(ocl_estimator_t* estimator) {
-  return estimator->nr_of_dimensions * sizeof(float);
+  return estimator->nr_of_dimensions * sizeof(kde_float_t);
 }
 
 unsigned int ocl_maxRowsInSample(ocl_estimator_t* estimator) {
@@ -776,26 +751,17 @@ unsigned int ocl_maxRowsInSample(ocl_estimator_t* estimator) {
 
 
 void ocl_pushEntryToSampleBufer(ocl_estimator_t* estimator, int position,
-                                float* data_item) {
+                                kde_float_t* data_item) {
   ocl_context_t* context = ocl_getContext();
   size_t transfer_size = ocl_sizeOfSampleItem(estimator);
   size_t offset = position * transfer_size;
   clEnqueueWriteBuffer(context->queue, estimator->sample_buffer, CL_FALSE,
                        offset, transfer_size, data_item, 0, NULL, NULL);
-  // Also initialize out the linear regression parameters.
-  float zero = 0.0f;
-  float one = 1.0f;
-  clEnqueueWriteBuffer(context->queue, estimator->sample_quality_intercepts_buffer,
-                       CL_FALSE, position * sizeof(float), sizeof(float),
-                       &zero, 0, NULL, NULL);
-  clEnqueueWriteBuffer(context->queue, estimator->sample_quality_slopes_buffer,
-                       CL_FALSE, position * sizeof(float), sizeof(float),
-                       &one, 0, NULL, NULL);
   clFinish(context->queue);
 }
 
 void ocl_extractSampleTuple(ocl_estimator_t* estimator, Relation rel,
-                            HeapTuple tuple, float* target) {
+                            HeapTuple tuple, kde_float_t* target) {
   unsigned int i;
   for (i=0; i<rel->rd_att->natts; ++i) {
     // Check if this column is contained in the estimator.
