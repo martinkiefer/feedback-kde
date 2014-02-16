@@ -7,19 +7,18 @@ BASEDIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 source $BASEDIR/../../conf.sh
 
 #If the Covtype file is not set, pull it from the website.
-if [ -z $COVTYPE_FILE ]; then
-		cd /tmp
+if [ ! -e $BASEDIR/raw/covtype.csv ]; then
+		cd $BASEDIR
+		mkdir -p raw
 		wget http://kdd.ics.uci.edu/databases/covertype/covtype.data.gz
 		gunzip -f covtype.data.gz
-		COVTYPE_FILE="/tmp/covtype.data"
+		#Extract first 10 columns
+		cat covtype.data | cut -d , -f 1-10 > covtype.csvp
 		cd -
 fi
 
 # Drop the existing tables.
 $BASEDIR/drop-forest-tables.sh
-
-#Extract first 10 columns
-cat $COVTYPE_FILE | cut -d , -f 1-10 > $COVTYPE_FILE.tmp
 
 #Put in temporary table and create permanent tables with normalized values
 $PSQL $PGDATABASE $USER << EOF
@@ -37,7 +36,7 @@ CREATE TABLE forest10
  c9 double precision, 
  c10 double precision
 );
-copy forest10 from '$COVTYPE_FILE.tmp' DELIMITER',' CSV;
+copy forest10 from '$BASEDIR/raw/covtype.csv' DELIMITER',' CSV;
 
 SELECT
  c1 AS c1, c5 AS c2, c9 AS c3
@@ -77,7 +76,7 @@ if [ ! -z $MONETDATABASE ]; then
 		c9 double precision, 
 		c10 double precision
 	);
-	COPY INTO forest10 FROM '$COVTYPE_FILE.tmp' USING DELIMITERS ',';
+	COPY INTO forest10 FROM '$BASEDIR/raw/covtype.csv' USING DELIMITERS ',';
 
 	CREATE TABLE forest3 AS
       SELECT
