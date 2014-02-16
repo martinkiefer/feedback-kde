@@ -15,7 +15,7 @@ mkdir -p $BASEDIR/queries
 
 # Create the different query workloads.
 
-workload_1_tables=("")
+workload_1_tables=()
 workload_2_tables=("tpch_data")
 workload_3_tables=("tpch_data")
 workload_4_tables=()
