@@ -25,6 +25,7 @@ __kernel void computeSingleGradient(
   for (unsigned int i=0; i<D; ++i) {
     T val = data[D*get_global_id(0) + i];
     T h = bandwidth[i];
+    h = h <= 0 ? 0.0001f : h;
     T lo = range[2*i] - val;
     T up = range[2*i + 1] - val;
 
@@ -45,17 +46,22 @@ __kernel void computeSingleGradient(
   }
 }
 
+__kernel void accumulateGradient(
+    __global T* gradient_accumulator,
+    __global const T* gradient_contribution,
+    T factor) {
+  gradient_accumulator[get_global_id(0)] += factor * gradient_contribution[get_global_id(0)];
+}
+
 __kernel void applyGradient(
 	__global T* bandwidth,
 	__global const T* gradient,
-	char cap_to_positive,
 	T factor
 	) {
 	T tmp = bandwidth[get_global_id(0)];
-	tmp += factor * gradient[get_global_id(0)];
-	// If cap_to_positive is set, we do not allow non-positive values.
-	tmp = cap_to_positive ? max(tmp, 0.00001f) : tmp;
-	bandwidth[get_global_id(0)] = tmp;
+	tmp -= factor * gradient[get_global_id(0)];
+	// Ensure we never move into negative bandwidths.
+	bandwidth[get_global_id(0)] = max(tmp, 0.0001f);
 }
 
 // KERNELS FOR BATCH GRADIENT COMPUTATION

@@ -3495,7 +3495,7 @@ static struct config_enum ConfigureNamesEnum[] =
       NULL
     },
     &kde_bandwidth_optimization_strategy,
-    UNCONSTRAINED_PENALIZED, kde_bandwidth_optimization_strategy_options,
+    CONSTRAINED, kde_bandwidth_optimization_strategy_options,
     NULL, NULL, NULL
   },
 #endif

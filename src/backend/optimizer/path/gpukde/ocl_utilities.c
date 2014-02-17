@@ -184,6 +184,26 @@ static const char *kernel_names[] = {
 };
 static const unsigned int nr_of_kernels = 5;
 
+static void concatFiles(unsigned int nr_of_files,
+                        char** file_buffers, size_t* file_lengths,
+                        char** result_file, size_t* result_file_length) {
+  unsigned int i;
+  unsigned int wpos;
+  // Compute the total length.
+  *result_file_length = 0;
+  for (i=0; i<nr_of_files; ++i)
+    *result_file_length += file_lengths[i];
+  *result_file_length += nr_of_files;
+  // Allocate a new buffer.
+  *result_file = malloc(*result_file_length);
+  wpos = 0;
+  for (i=0; i<nr_of_files; ++i) {
+    memcpy((*result_file) + wpos, file_buffers[i], file_lengths[i]);
+    wpos += file_lengths[i];
+    (*result_file)[wpos++] = '\n';
+  }
+}
+
 // Helper function to build a program from all kernel files using the given build params
 static cl_program buildProgram(ocl_context_t* context, const char* build_params) {
 	unsigned int i;
@@ -195,8 +215,16 @@ static cl_program buildProgram(ocl_context_t* context, const char* build_params)
 		readFile(f, &(file_buffers[i]), &(file_lengths[i]));
 		fclose(f);
 	}
+	// Concatenate all kernels into a single file.
+	char* kernel_file;
+	size_t kernel_file_length;
+	concatFiles(nr_of_kernels, file_buffers, file_lengths, &kernel_file, &kernel_file_length);
+	FILE* f = fopen("/tmp/kernel.cl", "w");
+	fwrite(kernel_file, kernel_file_length, 1, f);
+	fclose(f);
+
 	// Construct the device-specific build parameters.
-	char device_params[2048];
+	char device_params[1024];
 	sprintf(device_params, "-DMAXBLOCKSIZE=%i ", (int)(context->max_workgroup_size));
 	if (context->is_gpu) {
 		strcat(device_params, "-DDEVICE_GPU ");
@@ -208,11 +236,11 @@ static cl_program buildProgram(ocl_context_t* context, const char* build_params)
 	} else if (sizeof(kde_float_t) == sizeof(float)) {
 	  strcat(device_params, "-DTYPE=float ");
 	}
+	strcat(device_params, "-g -s \"/tmp/kernel.cl\" ");
 	strcat(device_params, build_params);
 	// Ok, build the program
 	cl_program program = clCreateProgramWithSource(
-	    context->context, nr_of_kernels,
-	    (const char**)file_buffers, (const size_t*)file_lengths, NULL);
+	    context->context, 1, &kernel_file, &kernel_file_length, NULL);
 	fprintf(stderr, "Compiling OpenCL kernels: %s\n", device_params);
 	cl_int err = clBuildProgram(program, 1, &(context->device), device_params, NULL, NULL);
 	if (err != CL_SUCCESS) {

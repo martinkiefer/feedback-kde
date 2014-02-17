@@ -76,7 +76,7 @@ unsigned int ocl_maxSampleSize(unsigned int dimensionality);
 /*
  * Functions to report estimation errors to a file.
  */
-bool ocl_reportErrors();
+bool ocl_reportErrors(void);
 void ocl_reportErrorToLogFile(Oid relation, double actual, double expected);
 
 /*

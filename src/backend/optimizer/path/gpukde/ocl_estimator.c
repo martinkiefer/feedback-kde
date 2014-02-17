@@ -13,6 +13,7 @@
 
 #ifdef USE_OPENCL
 
+#include <assert.h>
 #include <float.h>
 #include <math.h>
 #include <stdlib.h>
@@ -144,7 +145,7 @@ static double sumOfArray(cl_mem input_buffer, unsigned int elements, cl_event ex
 	return result;
 }
 
-static kde_float_t rangeKDE(ocl_context_t* ctxt, ocl_estimator_t* estimator) {
+static double rangeKDE(ocl_context_t* ctxt, ocl_estimator_t* estimator) {
   // Select kernel and normalization factor based on the kernel type.
   cl_kernel kde_kernel;
   kde_float_t normalization_factor = 1.0f;
@@ -168,6 +169,19 @@ static kde_float_t rangeKDE(ocl_context_t* ctxt, ocl_estimator_t* estimator) {
 	result *= normalization_factor / estimator->rows_in_sample;
 	clReleaseKernel(kde_kernel);
 	clReleaseEvent(kde_event);
+	if (isnan(result)) {
+	  fprintf(stderr, ">>>>>>>>>>> NAN RESULT!!! <<<<<<<<<<<<<<\n");
+	}
+	// Fetch the current bandwidth.
+	kde_float_t* fb = palloc(sizeof(kde_float_t) * estimator->nr_of_dimensions);
+	clEnqueueReadBuffer(ocl_getContext()->queue, estimator->bandwidth_buffer, CL_TRUE, 0, sizeof(kde_float_t)*estimator->nr_of_dimensions, fb, 0, NULL, NULL);
+	unsigned int i;
+	fprintf(stderr, "\t Current Bandwidth: ");
+	for (i=0; i<estimator->nr_of_dimensions; ++i) {
+	  fprintf(stderr, "%f ", fb[i]);
+	}
+	fprintf(stderr, "\n");
+	pfree(fb);
 	return result;
 }
 
@@ -315,7 +329,7 @@ static void ocl_updateEstimatorInCatalog(ocl_estimator_t* estimator) {
   }
   pfree(host_bandwidth);
   array = construct_array(array_datums, estimator->nr_of_dimensions,
-                          FLOAT4OID, sizeof(kde_float_t), FLOAT4PASSBYVAL, 'i');
+                          FLOAT4OID, sizeof(float4), FLOAT4PASSBYVAL, 'i');
   values[Anum_pg_kdemodels_bandwidth-1] = PointerGetDatum(array);
 
   // >> Write the sample to a file.
@@ -554,7 +568,8 @@ int ocl_estimateSelectivity(const ocl_estimator_request_t* request,
 	}
 	if ((estimator->columns | request_columns) != estimator->columns) return 0;
 	// Cool, prepare a request to the estimator
-	kde_float_t* row_ranges = (float*)malloc(2*sizeof(kde_float_t)*estimator->nr_of_dimensions);
+	kde_float_t* row_ranges = (kde_float_t*)malloc(
+	    2*sizeof(kde_float_t)*estimator->nr_of_dimensions);
 	for (i = 0; i < estimator->nr_of_dimensions; ++i) {
 		row_ranges[2*i] = -1.0f * INFINITY;
 		row_ranges[2*i+1] = INFINITY;
@@ -570,7 +585,7 @@ int ocl_estimateSelectivity(const ocl_estimator_request_t* request,
     if (request->ranges[i].upper_included)
       row_ranges[2*range_pos + 1] += 0.001f;
   }
-  // Prepare the reqeust
+  // Prepare the request.
   clEnqueueWriteBuffer(ctxt->queue, ctxt->input_buffer, CL_TRUE, 0,
                2*estimator->nr_of_dimensions*sizeof(kde_float_t), row_ranges,
                0, NULL, NULL);
@@ -659,7 +674,8 @@ void ocl_constructEstimator(
 	  estimator->scale_factors[i] = sqrt(estimator->scale_factors[i]);
 	}
 	// Compute an initial bandwidth estimate using Scott's rule.
-	kde_float_t* bandwidth = (float*)malloc(sizeof(kde_float_t)*dimensionality);
+	kde_float_t* bandwidth = (kde_float_t*)malloc(
+	    sizeof(kde_float_t)*dimensionality);
 	for ( i = 0; i < dimensionality; ++i) {
 		bandwidth[i] = estimator->scale_factors[i] *
 		    pow(sample_size, -1.0f/(double)(dimensionality + 4));

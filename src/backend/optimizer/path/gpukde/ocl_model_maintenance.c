@@ -22,6 +22,7 @@
 
 #include "catalog/pg_kdefeedback.h"
 #include "executor/spi.h"
+#include "optimizer/path/gpukde/ocl_estimator_api.h"
 #include "storage/lock.h"
 
 // Global GUC variables
@@ -66,6 +67,8 @@ static double AbsoluteError(double actual, double expected) {
 static double AbsoluteErrorGradientFactor(double actual, double expected) {
   if (actual > expected) {
     return 1;
+  } else if (actual == expected) {
+    return 0;
   } else {
     return -1;
   }
@@ -77,6 +80,8 @@ static double RelativeError(double actual, double expected) {
 static double RelativeErrorGradientFactor(double actual, double expected) {
   if (actual > expected) {
     return 1.0f / (0.0001f + expected);
+  } else if (actual == expected) {
+    return 0;
   } else {
     return -1.0f / (0.0001f + expected);
   }
@@ -121,7 +126,7 @@ void assign_kde_estimation_quality_logfile_name(const char *newval, void *extra)
   fflush(estimation_quality_log_file);
 }
 
-bool ocl_reportErrors() {
+bool ocl_reportErrors(void) {
   return estimation_quality_log_file != NULL;
 }
 
@@ -225,7 +230,7 @@ static cl_event sumOfArray(cl_mem input_buffer, unsigned int elements,
   return finalize_event;
 }
 
-const double learning_rate = 0.0005f;
+const double learning_rate = 0.1f;
 
 // ############################################################
 // # Code for adaptive bandwidth optimization (online learning).
@@ -246,6 +251,13 @@ static void ocl_runOnlineLearningStep(ocl_estimator_t* estimator,
     estimator->gradient_accumulator = clCreateBuffer(
         context->context, CL_MEM_READ_WRITE,
         sizeof(kde_float_t) * estimator->nr_of_dimensions, NULL, NULL);
+    // Initialize the gradient accumulator buffer with zero.
+    cl_kernel init_zero = ocl_getKernel("init_zero", 0);
+    clSetKernelArg(init_zero, 0, sizeof(cl_mem), &(estimator->gradient_accumulator));
+    size_t global_size = estimator->nr_of_dimensions;
+    clEnqueueNDRangeKernel(context->queue, init_zero, 1, NULL, &global_size, NULL, 0, NULL, NULL);
+    clFinish(context->queue);
+    clReleaseKernel(init_zero);
   }
 
   struct timeval start; gettimeofday(&start, NULL);
@@ -253,7 +265,7 @@ static void ocl_runOnlineLearningStep(ocl_estimator_t* estimator,
   // Allocate a buffer to hold the temporary gradient contributions.
   size_t stride_size = sizeof(kde_float_t) * estimator->rows_in_sample;
   if ((stride_size * 8) % context->required_mem_alignment) {
-    // The stride size is misaligned, add some padding.
+    // The stride size is not aligned, add some padding.
     stride_size *= 8;
     stride_size = (1 + stride_size / context->required_mem_alignment)
                 * context->required_mem_alignment;
@@ -338,58 +350,69 @@ static void ocl_runOnlineLearningStep(ocl_estimator_t* estimator,
   scale_factor *= (*(error_metrics[kde_error_metric].gradient_factor))(
       estimator->last_selectivity, selectivity);
 
-  // Now accumulate the bandwidth.
-  cl_kernel applyGradient = ocl_getKernel("applyGradient", 0);
-  bool cap_to_positive;
   if (kde_adaptive_bandwidth_minibatch_size == 1) {
-    // We use online learning, directly apply the gradient to the bandwidth.
+    // Directly apply the gradient to the bandwidth.
+    cl_kernel applyGradient = ocl_getKernel("applyGradient", 0);
     err |= clSetKernelArg(applyGradient, 0, sizeof(cl_mem),
                           &(estimator->bandwidth_buffer));
-    scale_factor *= learning_rate;
-    cap_to_positive = true; // Never allow negative bandwidths.
+    err |= clSetKernelArg(applyGradient, 1, sizeof(cl_mem), &gradient);
+    kde_float_t scale_factor_tmp = scale_factor * learning_rate;
+    err |= clSetKernelArg(applyGradient, 2, sizeof(kde_float_t),
+                          &scale_factor_tmp);
+    global_size = estimator->nr_of_dimensions;
+    err |= clEnqueueNDRangeKernel(context->queue, applyGradient, 1, NULL,
+                                  &global_size, NULL,
+                                  estimator->nr_of_dimensions, events, NULL);
+    clFinish(context->queue);
+    clReleaseKernel(applyGradient);
   } else {
-    // We use mini-batch learning, accumulate the gradient.
-    err |= clSetKernelArg(applyGradient, 0, sizeof(cl_mem),
+    // Accumulate the single gradient in the accumulator buffer.
+    cl_kernel accumulateGradient = ocl_getKernel("accumulateGradient", 0);
+    err |= clSetKernelArg(accumulateGradient, 0, sizeof(cl_mem),
                           &(estimator->gradient_accumulator));
-    cap_to_positive = false;  // But allow negative gradients.
-  }
-  err |= clSetKernelArg(applyGradient, 1, sizeof(cl_mem), &gradient);
-  err |= clSetKernelArg(applyGradient, 2, sizeof(bool), &cap_to_positive);
-  kde_float_t scale_factor_tmp = scale_factor;
-  err |= clSetKernelArg(applyGradient, 3, sizeof(kde_float_t), &scale_factor_tmp);
-  global_size = estimator->nr_of_dimensions;
-  cl_event apply_event;
-  err |= clEnqueueNDRangeKernel(context->queue, applyGradient, 1, NULL,
-                                &global_size, NULL, estimator->nr_of_dimensions,
-                                events, &apply_event);
-
-  // If we use mini-batch learning, we may need to apply the accumulated gradient to the bandwidth.
-  if (kde_adaptive_bandwidth_minibatch_size > 1) {
+    err |= clSetKernelArg(accumulateGradient, 1, sizeof(cl_mem), &gradient);
+    kde_float_t scale_factor_tmp = scale_factor * learning_rate;
+    err |= clSetKernelArg(accumulateGradient, 2, sizeof(kde_float_t),
+                          &scale_factor_tmp);
+    cl_event accumulateGradientEvent;
+    global_size = estimator->nr_of_dimensions;
+    err |= clEnqueueNDRangeKernel(context->queue, accumulateGradient, 1, NULL,
+                                  &global_size, NULL,
+                                  estimator->nr_of_dimensions, events,
+                                  &accumulateGradientEvent);
     estimator->nr_of_accumulated_gradients++;
+    // Check if we have a full mini-batch.
     if (estimator->nr_of_accumulated_gradients >= kde_adaptive_bandwidth_minibatch_size) {
-      // We have filled a mini-batch, apply the gradient.
-      scale_factor = learning_rate / estimator->nr_of_accumulated_gradients;
-      cap_to_positive = true; // Never allow negative bandwidths.
+      // Apply it to the bandwidth.
+      cl_kernel applyGradient = ocl_getKernel("applyGradient", 0);
       err |= clSetKernelArg(applyGradient, 0, sizeof(cl_mem),
                             &(estimator->bandwidth_buffer));
       err |= clSetKernelArg(applyGradient, 1, sizeof(cl_mem),
                             &(estimator->gradient_accumulator));
-      err |= clSetKernelArg(applyGradient, 2, sizeof(bool), &cap_to_positive);
-      err |= clSetKernelArg(applyGradient, 3, sizeof(kde_float_t), &scale_factor);
-      cl_event mini_batch_apply_event;
+      kde_float_t scale_factor_tmp = learning_rate / estimator->nr_of_accumulated_gradients;
+      err |= clSetKernelArg(applyGradient, 2, sizeof(kde_float_t),
+                            &scale_factor_tmp);
+      cl_event applyGradientEvent;
       err |= clEnqueueNDRangeKernel(context->queue, applyGradient, 1, NULL,
-                                    &global_size, NULL, 1, &apply_event,
-                                    &mini_batch_apply_event);
+                                    &global_size, NULL,
+                                    1, &accumulateGradientEvent,
+                                    &applyGradientEvent);
       // Zero out the accumulation buffer.
       cl_kernel init_zero = ocl_getKernel("init_zero", 0);
       err |= clSetKernelArg(init_zero, 0, sizeof(cl_mem),
                             &(estimator->gradient_accumulator));
       err |= clEnqueueNDRangeKernel(context->queue, init_zero, 1, NULL,
                                     &global_size, NULL, 1,
-                                    &mini_batch_apply_event, NULL);
-      clReleaseEvent(mini_batch_apply_event);
+                                    &applyGradientEvent, NULL);
+      estimator->nr_of_accumulated_gradients = 0;
+
       clReleaseKernel(init_zero);
+      clReleaseKernel(applyGradient);
+      clReleaseEvent(applyGradientEvent);
     }
+    clFinish(context->queue);
+    clReleaseEvent(accumulateGradientEvent);
+    clReleaseKernel(accumulateGradient);
   }
 
   // Clean up.
@@ -400,7 +423,6 @@ static void ocl_runOnlineLearningStep(ocl_estimator_t* estimator,
   }
   clReleaseMemObject(gradient_buffer);
   clReleaseEvent(gradient_event);
-  clReleaseEvent(apply_event);
   pfree(events);
   pfree(sub_buffers);
 
@@ -677,11 +699,11 @@ static double computeGradient(unsigned n, const double* bandwidth,
   err |= clSetKernelArg(gradient_kernel, 5, sizeof(cl_mem),
                         &(estimator->bandwidth_buffer));
   err |= clSetKernelArg(gradient_kernel, 6,
-                        sizeof(kde_float_t) * estimator->nr_of_dimensions, NULL);
+                        local_size * sizeof(kde_float_t) * estimator->nr_of_dimensions, NULL);
   err |= clSetKernelArg(gradient_kernel, 7,
-                        sizeof(kde_float_t) * estimator->nr_of_dimensions, NULL);
+                        local_size * sizeof(kde_float_t) * estimator->nr_of_dimensions, NULL);
   err |= clSetKernelArg(gradient_kernel, 8,
-                        sizeof(kde_float_t) * estimator->nr_of_dimensions, NULL);
+                        local_size * sizeof(kde_float_t) * estimator->nr_of_dimensions, NULL);
   err |= clSetKernelArg(gradient_kernel, 9, sizeof(cl_mem),
                         &(conf->error_accumulator_buffer));
   err |= clSetKernelArg(gradient_kernel, 10, sizeof(cl_mem),

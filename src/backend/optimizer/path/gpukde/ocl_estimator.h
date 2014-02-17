@@ -82,7 +82,7 @@ unsigned int ocl_maxRowsInSample(ocl_estimator_t* estimator);
  * and writes them into the target buffer.
  */
 void ocl_extractSampleTuple(ocl_estimator_t* estimator, Relation rel,
-                            HeapTuple tuple, float* target);
+                            HeapTuple tuple, kde_float_t* target);
 
 /*
  * pushEntryToSampleBuffer
@@ -91,7 +91,7 @@ void ocl_extractSampleTuple(ocl_estimator_t* estimator, Relation rel,
  * sample buffer.
  */
 void ocl_pushEntryToSampleBufer(ocl_estimator_t* estimator, int position,
-                                float* data_item);
+                                kde_float_t* data_item);
 
 #endif /* USE_OPENCL */
 #endif /* ESTIMATOR_H_ */
