@@ -1,8 +1,8 @@
 #ifndef TYPE_DEFINED_
-  #if (TYPE == float)
+  #if (TYPE == 4)
     typedef float T;
-  #elif (TYPE == double)
-    tpyedef double T;
+  #elif (TYPE == 8)
+    typedef double T;
   #endif
   #define TYPE_DEFINED_
 #endif /* TYPE_DEFINED */
@@ -14,7 +14,7 @@ __kernel void epanechnikov_kde(
 	__global const T* const range,
 	__global const T* const bandwidth
 ) {
-	T res = 1.0f;
+	T res = 1.0;
 	for (unsigned int i=0; i<D; ++i) {
 		// Fetch all required input data.
 		T val = data[D*get_global_id(0) + i];
@@ -29,10 +29,10 @@ __kernel void epanechnikov_kde(
 		// ... and compute the local contribution from this dimension:
 		T local_result = (h*h - val*val)*(up - lo);
 		local_result += val * (up*up - lo*lo);
-		local_result -= (up*up*up - lo*lo*lo) / 3.0f; 
+		local_result -= (up*up*up - lo*lo*lo) / 3.0;
 		local_result /= h*h*h;
 		// Apply the boundary cases: 
-		res *= is_complete ? (4.0f / 3.0f) : (lo < up)*local_result;
+		res *= is_complete ? (4.0 / 3.0) : (lo < up)*local_result;
 	}
 	result[get_global_id(0)] = res;
 }
@@ -44,7 +44,7 @@ __kernel void gauss_kde(
 	__global const T* const range,
 	__global const T* const bandwidth
 ) {
-	T res = 1.0f;
+	T res = 1.0;
 	for (unsigned int i=0; i<D; ++i) {
 		// Fetch all required input data.
 		T val = data[D*get_global_id(0) + i];

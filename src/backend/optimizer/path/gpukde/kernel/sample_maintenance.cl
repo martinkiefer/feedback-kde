@@ -1,8 +1,8 @@
 #ifndef TYPE_DEFINED_
-  #if (TYPE == float)
+  #if (TYPE == 4)
     typedef float T;
-  #elif (TYPE == double)
-    tpyedef double T;
+  #elif (TYPE == 8)
+    typedef double T;
   #endif
   #define TYPE_DEFINED_
 #endif /* TYPE_DEFINED */

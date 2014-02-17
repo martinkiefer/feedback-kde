@@ -1,8 +1,8 @@
 #ifndef TYPE_DEFINED_
-  #if (TYPE == float)
+  #if (TYPE == 4)
     typedef float T;
-  #elif (TYPE == double)
-    tpyedef double T;
+  #elif (TYPE == 8)
+    typedef double T;
   #endif
   #define TYPE_DEFINED_
 #endif /* TYPE_DEFINED */
@@ -22,12 +22,13 @@ __kernel void sum_seq(
 
 __kernel void sum_par(
    __global const T* const data,
+   __local T* buffer,
    __global T* const result,
    const unsigned int tuples_per_thread
 ){
    unsigned int local_id = get_local_id(0);
    unsigned int global_id = get_global_id(0);
-   // Now each thread does a sequential aggregation within a register.
+   // Each thread first does a sequential aggregation within a register.
    T agg = 0;
    #ifdef DEVICE_GPU
       // On the GPU we use a strided access pattern, so that the GPU
@@ -42,38 +43,48 @@ __kernel void sum_par(
          agg += data[tuples_per_thread*global_id + i];
    #endif
 
-   // Push the local result to the buffer, so we can aggregate recursively. Since the
-   // kernel is very simplistic, we can safely assume that it is always run with MAXBLOCKSIZE.
-   __local T buffer[MAXBLOCKSIZE];
+   // Push the local result to the local buffer, so we can aggregate the remainder
+   // recursively.
    buffer[local_id] = agg;
    barrier(CLK_LOCAL_MEM_FENCE);
 
    // Recursively aggregate the tuples in memory.
-   #if (MAXBLOCKSIZE >= 1024)
+   if (get_local_size(0) >= 4096) {
+      if (local_id < 2048)
+         buffer[local_id] += buffer[local_id + 2048];
+      barrier(CLK_LOCAL_MEM_FENCE);
+   }
+
+   if (get_local_size(0) >= 2048) {
+      if (local_id < 1024)
+         buffer[local_id] += buffer[local_id + 1024];
+      barrier(CLK_LOCAL_MEM_FENCE);
+   }
+
+   if (get_local_size(0) >= 1024) {
       if (local_id < 512)
          buffer[local_id] += buffer[local_id + 512];
       barrier(CLK_LOCAL_MEM_FENCE);
-   #endif
+   }
 
-   #if (MAXBLOCKSIZE >= 512)
+   if (get_local_size(0) >= 512) {
       if (local_id < 256)
          buffer[local_id] += buffer[local_id + 256];
       barrier(CLK_LOCAL_MEM_FENCE);
-   #endif
+   }
 
-   #if (MAXBLOCKSIZE >= 256)
-   if (local_id < 128)
+   if (get_local_size(0) >= 256) {
+     if (local_id < 128)
          buffer[local_id] += buffer[local_id + 128];
-      barrier(CLK_LOCAL_MEM_FENCE);
-   #endif
+     barrier(CLK_LOCAL_MEM_FENCE);
+   }
 
-   #if (MAXBLOCKSIZE >= 128)
+   if (get_local_size(0) >= 128) {
       if (local_id < 64)
          buffer[local_id] += buffer[local_id + 64];
       barrier(CLK_LOCAL_MEM_FENCE);
-   #endif
+   }
 
-   // We assume there is a minimum blocksize of 128 threads.
    if (local_id < 32)
       buffer[local_id] += buffer[local_id + 32];
    barrier(CLK_LOCAL_MEM_FENCE);

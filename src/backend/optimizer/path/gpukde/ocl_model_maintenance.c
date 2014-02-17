@@ -164,29 +164,41 @@ static cl_event sumOfArray(cl_mem input_buffer, unsigned int elements,
   cl_kernel fast_sum = ocl_getKernel("sum_par", 0);
   cl_kernel slow_sum = ocl_getKernel("sum_seq", 0);
   struct timeval start; gettimeofday(&start, NULL);
-  // Determine the kernel parameters:
-  size_t global_size = 0;
-  size_t local_size = context->max_workgroup_size;
+
+  // Determine the optimal local size.
+  size_t local_size;
+  clGetKernelWorkGroupInfo(fast_sum, context->device, CL_KERNEL_WORK_GROUP_SIZE,
+                           sizeof(size_t), &local_size, NULL);
+  // Truncate to local memory requirements.
+  local_size = Min(
+      local_size,
+      context->local_mem_size / sizeof(kde_float_t));
+  // And truncate to the next power of two.
+  local_size = (size_t)0x1 << (int)(log2((double)local_size));
+
   size_t processors = context->max_compute_units;
+
   // Figure out how many elements we can aggregate per thread in the parallel part:
   unsigned int tuples_per_thread = elements / (processors * local_size);
   // Now compute the configuration of the sequential kernel:
   unsigned int slow_kernel_data_offset = processors * tuples_per_thread * local_size;
   unsigned int slow_kernel_elements = elements - slow_kernel_data_offset;
   unsigned int slow_kernel_result_offset = processors;
+
   // Allocate a temporary result buffer.
   cl_mem tmp_buffer = clCreateBuffer(
       context->context, CL_MEM_READ_WRITE,
       sizeof(kde_float_t) * (processors + 1), NULL, NULL);
   err |= clSetKernelArg(init_buffer, 0, sizeof(cl_mem), &tmp_buffer);
-  global_size = processors + 1;
+  size_t global_size = processors + 1;
   err |= clEnqueueNDRangeKernel(
       context->queue, init_buffer, 1, NULL, &global_size,
       NULL, 1, &external_event, &init_event);
   // Ok, we selected the correct kernel and parameters. Now prepare the arguments.
   err |= clSetKernelArg(fast_sum, 0, sizeof(cl_mem), &input_buffer);
-  err |= clSetKernelArg(fast_sum, 1, sizeof(cl_mem), &tmp_buffer);
-  err |= clSetKernelArg(fast_sum, 2, sizeof(unsigned int), &tuples_per_thread);
+  err |= clSetKernelArg(fast_sum, 1, sizeof(kde_float_t) * local_size, NULL);
+  err |= clSetKernelArg(fast_sum, 2, sizeof(cl_mem), &tmp_buffer);
+  err |= clSetKernelArg(fast_sum, 3, sizeof(unsigned int), &tuples_per_thread);
   err |= clSetKernelArg(slow_sum, 0, sizeof(cl_mem), &input_buffer);
   err |= clSetKernelArg(slow_sum, 1, sizeof(unsigned int), &slow_kernel_data_offset);
   err |= clSetKernelArg(slow_sum, 2, sizeof(unsigned int), &slow_kernel_elements);
@@ -641,6 +653,11 @@ static double computeGradient(unsigned n, const double* bandwidth,
 
   evaluations++;
 
+  fprintf(stderr, ">>> Evaluation %i:\n\tCurrent bandwidth:", evaluations);
+  for (i=0; i<n; ++i)
+    fprintf(stderr, " %f", bandwidth[i]);
+  fprintf(stderr, "\n");
+
   // First, transfer the current bandwidth to the device. Note that we might
   // need to cast the bandwidth to float first.
   kde_float_t* fbandwidth = NULL;
@@ -751,6 +768,11 @@ static double computeGradient(unsigned n, const double* bandwidth,
   for (i = 0; i<estimator->nr_of_dimensions; ++i) {
     gradient[i] = tmp_gradient[i] / conf->nr_of_observations;
   }
+  fprintf(stderr, "\tGradient:");
+  for (i=0; i<n; ++i)
+    fprintf(stderr, " %f", gradient[i]);
+  fprintf(stderr, " (%f)\n", error);
+
   // Ok, clean everything up.
   for (i=0; i<estimator->nr_of_dimensions; ++i) {
     clReleaseMemObject(sub_buffers[i]);
@@ -803,7 +825,8 @@ void ocl_runModelOptimization(ocl_estimator_t* estimator) {
   if (feedback_records == 0) return;
 
   // We need to transfer the bandwidth to the host.
-  kde_float_t* fbandwidth = palloc(sizeof(kde_float_t) * estimator->nr_of_dimensions);
+  kde_float_t* fbandwidth = palloc(
+      sizeof(kde_float_t) * estimator->nr_of_dimensions);
   ocl_context_t* context = ocl_getContext();
   clEnqueueReadBuffer(context->queue, estimator->bandwidth_buffer, CL_TRUE, 0,
                       sizeof(kde_float_t) * estimator->nr_of_dimensions,
@@ -811,8 +834,7 @@ void ocl_runModelOptimization(ocl_estimator_t* estimator) {
   // Cast to double (lbfgs operates on double.
   double* bandwidth = lbfgs_malloc(estimator->nr_of_dimensions);
   unsigned int i;
-  for (i=0; i<estimator->nr_of_dimensions; ++i)
-    bandwidth[i] = fbandwidth[i];
+  for (i=0; i<estimator->nr_of_dimensions; ++i) bandwidth[i] = fbandwidth[i];
   // Package all required buffers.
   optimization_config_t params;
   params.estimator = estimator;
@@ -820,8 +842,8 @@ void ocl_runModelOptimization(ocl_estimator_t* estimator) {
   params.observed_ranges = device_ranges;
   params.observed_selectivities = device_selectivites;
   params.error_accumulator_buffer = clCreateBuffer(
-      context->context, CL_MEM_READ_WRITE, sizeof(kde_float_t) * feedback_records,
-      NULL, NULL);
+      context->context, CL_MEM_READ_WRITE,
+      sizeof(kde_float_t) * feedback_records, NULL, NULL);
   // Allocate a buffer to hold temporary gradient contributions. This buffer
   // will keep D contributions per observation. We store all contributions
   // consecutively (i.e. 111222333444). For optimal performance, we therefore
@@ -867,14 +889,14 @@ void ocl_runModelOptimization(ocl_estimator_t* estimator) {
     // Prepare the bound constraints.
     double* lower_bounds = palloc(sizeof(double) * estimator->nr_of_dimensions);
     for (i=0; i<estimator->nr_of_dimensions; ++i)
-      lower_bounds[i] = 0.00001f;
+      lower_bounds[i] = 1e-10;
     // Create the optimization parameter.
     nlopt_opt optimizer_parameters = nlopt_create(
         NLOPT_LD_MMA, estimator->nr_of_dimensions);
     nlopt_set_lower_bounds(optimizer_parameters, lower_bounds);
     nlopt_set_min_objective(optimizer_parameters, computeGradient, &params);
-    nlopt_set_ftol_rel(optimizer_parameters, 1e-4);
-    nlopt_set_ftol_abs(optimizer_parameters, 1e-6);
+    nlopt_set_ftol_rel(optimizer_parameters, 1e-5);
+    nlopt_set_ftol_abs(optimizer_parameters, 1e-8);
     double tmp;
     if (nlopt_optimize(optimizer_parameters, bandwidth, &tmp) < 0) {
       fprintf(stderr, "failed! ");

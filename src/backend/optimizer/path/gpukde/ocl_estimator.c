@@ -78,10 +78,19 @@ static double sumOfArray(cl_mem input_buffer, unsigned int elements, cl_event ex
 	cl_kernel fast_sum = ocl_getKernel("sum_par", 0);
 	cl_kernel slow_sum = ocl_getKernel("sum_seq", 0);
 	struct timeval start; gettimeofday(&start, NULL);
-	// Determine the kernel parameters:
-	size_t global_size = 0;
-	size_t local_size = context->max_workgroup_size;
-	size_t processors = context->max_compute_units;
+
+	// Determine the optimal local size.
+	size_t local_size;
+	clGetKernelWorkGroupInfo(fast_sum, context->device, CL_KERNEL_WORK_GROUP_SIZE,
+	                         sizeof(size_t), &local_size, NULL);
+	// Truncate to local memory requirements.
+	local_size = Min(local_size,
+	                 context->local_mem_size / sizeof(kde_float_t));
+	// And truncate to the next power of two.
+	local_size = (size_t)0x1 << (int)(log2((double)local_size));
+
+  size_t processors = context->max_compute_units;
+
 	// Figure out how many elements we can aggregate per thread in the parallel part:
 	unsigned int tuples_per_thread = elements / (processors * local_size);
 	// Now compute the configuration of the sequential kernel:
@@ -91,12 +100,13 @@ static double sumOfArray(cl_mem input_buffer, unsigned int elements, cl_event ex
   // Allocate a temporary result buffer.
   cl_mem tmp_buffer = clCreateBuffer(context->context, CL_MEM_READ_WRITE, sizeof(kde_float_t) * (processors + 1), NULL, NULL);
   err |= clSetKernelArg(init_buffer, 0, sizeof(cl_mem), &tmp_buffer);
-  global_size = processors + 1;
+  size_t global_size = processors + 1;
   err |= clEnqueueNDRangeKernel(context->queue, init_buffer, 1, NULL, &global_size, NULL, 1, &external_event, &init_event);
 	// Ok, we selected the correct kernel and parameters. Now prepare the arguments.
 	err |= clSetKernelArg(fast_sum, 0, sizeof(cl_mem), &input_buffer);
-	err |= clSetKernelArg(fast_sum, 1, sizeof(cl_mem), &tmp_buffer);
-	err |= clSetKernelArg(fast_sum, 2, sizeof(unsigned int), &tuples_per_thread);
+	err |= clSetKernelArg(fast_sum, 1, sizeof(kde_float_t) * local_size, NULL);
+	err |= clSetKernelArg(fast_sum, 2, sizeof(cl_mem), &tmp_buffer);
+	err |= clSetKernelArg(fast_sum, 3, sizeof(unsigned int), &tuples_per_thread);
 	err |= clSetKernelArg(slow_sum, 0, sizeof(cl_mem), &input_buffer);
 	err |= clSetKernelArg(slow_sum, 1, sizeof(unsigned int), &slow_kernel_data_offset);
 	err |= clSetKernelArg(slow_sum, 2, sizeof(unsigned int), &slow_kernel_elements);
@@ -157,7 +167,7 @@ static double rangeKDE(ocl_context_t* ctxt, ocl_estimator_t* estimator) {
   } else {
     // Gauss.
     kde_kernel = prepareKDEKernel(estimator, "gauss_kde");
-    // (2 * pi)^(-d/2)
+    // (1/2)^d
     normalization_factor = pow(0.5, estimator->nr_of_dimensions);
   }
   // Now run the actual computation.
@@ -165,23 +175,11 @@ static double rangeKDE(ocl_context_t* ctxt, ocl_estimator_t* estimator) {
   cl_event kde_event;
 	clEnqueueNDRangeKernel(ctxt->queue, kde_kernel, 1, NULL, &global_size,
 	                       NULL, 0, NULL, &kde_event);
-	kde_float_t result = sumOfArray(ctxt->result_buffer, estimator->rows_in_sample, kde_event);
+	kde_float_t result = sumOfArray(
+	    ctxt->result_buffer, estimator->rows_in_sample, kde_event);
 	result *= normalization_factor / estimator->rows_in_sample;
 	clReleaseKernel(kde_kernel);
 	clReleaseEvent(kde_event);
-	if (isnan(result)) {
-	  fprintf(stderr, ">>>>>>>>>>> NAN RESULT!!! <<<<<<<<<<<<<<\n");
-	}
-	// Fetch the current bandwidth.
-	kde_float_t* fb = palloc(sizeof(kde_float_t) * estimator->nr_of_dimensions);
-	clEnqueueReadBuffer(ocl_getContext()->queue, estimator->bandwidth_buffer, CL_TRUE, 0, sizeof(kde_float_t)*estimator->nr_of_dimensions, fb, 0, NULL, NULL);
-	unsigned int i;
-	fprintf(stderr, "\t Current Bandwidth: ");
-	for (i=0; i<estimator->nr_of_dimensions; ++i) {
-	  fprintf(stderr, "%f ", fb[i]);
-	}
-	fprintf(stderr, "\n");
-	pfree(fb);
 	return result;
 }
 

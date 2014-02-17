@@ -232,9 +232,9 @@ static cl_program buildProgram(ocl_context_t* context, const char* build_params)
 		strcat(device_params, "-DDEVICE_CPU ");
 	}
 	if (sizeof(kde_float_t) == sizeof(double)) {
-	  strcat(device_params, "-DTYPE=double ");
+	  strcat(device_params, "-DTYPE=8 ");
 	} else if (sizeof(kde_float_t) == sizeof(float)) {
-	  strcat(device_params, "-DTYPE=float ");
+	  strcat(device_params, "-DTYPE=4 ");
 	}
 	strcat(device_params, "-g -s \"/tmp/kernel.cl\" ");
 	strcat(device_params, build_params);
