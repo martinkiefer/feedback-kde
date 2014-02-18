@@ -519,6 +519,7 @@ do_analyze_rel(Relation onerel, VacuumStmt *vacstmt,
         ocl_constructEstimator(onerel, (unsigned int)total_rows, float_columns,
                                attributes, sample_size, sample);
       pfree(sample);
+      free(attributes);
     }
   }
 #endif /* USE_OPENCL */
