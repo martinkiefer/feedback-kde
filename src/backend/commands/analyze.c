@@ -496,7 +496,7 @@ do_analyze_rel(Relation onerel, VacuumStmt *vacstmt,
       if (vacattrstats[i]->attrtypid == FLOAT4OID || vacattrstats[i]->attrtypid == FLOAT8OID)
         float_columns++;
     }
-    if (float_columns > 0 && float_columns <= 6) {
+    if (float_columns > 0 && float_columns <= 10) {
       /*
        * We build an estimator! Extract the actual attributes.
        */
