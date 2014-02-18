@@ -79,11 +79,11 @@ static double RelativeError(double actual, double expected) {
 }
 static double RelativeErrorGradientFactor(double actual, double expected) {
   if (actual > expected) {
-    return 1.0f / (0.0001f + expected);
+    return 1.0 / (0.0001 + expected);
   } else if (actual == expected) {
     return 0;
   } else {
-    return -1.0f / (0.0001f + expected);
+    return -1.0 / (0.0001 + expected);
   }
 }
 
@@ -357,8 +357,8 @@ static void ocl_runOnlineLearningStep(ocl_estimator_t* estimator,
                            gradient, i, gradient_event);
   }
   // Finally, compute the gradient scaling factor.
-  double scale_factor = 1.0f
-      / (pow(2.0f, estimator->nr_of_dimensions) * estimator->rows_in_sample);
+  double scale_factor = 1.0
+      / (pow(2.0, estimator->nr_of_dimensions) * estimator->rows_in_sample);
   scale_factor *= (*(error_metrics[kde_error_metric].gradient_factor))(
       estimator->last_selectivity, selectivity);
 
@@ -508,7 +508,7 @@ static unsigned int ocl_extractLatestFeedbackRecordsFromCatalog(
     // This is a valid record, initialize the range buffer.
     unsigned int pos = current_tuple * 2 * estimator->nr_of_dimensions;
     for (j=0; j<estimator->nr_of_dimensions; ++j) {
-      range_buffer[pos + 2*j] = -1.0f * INFINITY;
+      range_buffer[pos + 2*j] = -1.0 * INFINITY;
       range_buffer[pos + 2*j + 1] = INFINITY;
     }
     // Now extract all clauses and isert them into the range buffer.
@@ -519,10 +519,10 @@ static unsigned int ocl_extractLatestFeedbackRecordsFromCatalog(
       // First, locate the correct column position in the estimator.
       int column_in_estimator = estimator->column_order[clauses[j].var];
       // Re-Scale the bounds, add potential padding and write them to their position.
-      float8 lo = clauses[j].lobound / estimator->scale_factors[column_in_estimator];
-      if (clauses[j].loinclusive != EX) lo -= 0.001f;
-      float8 hi = clauses[j].hibound / estimator->scale_factors[column_in_estimator];
-      if (clauses[j].hiinclusive != EX) hi += 0.001f;
+      float8 lo = clauses[j].lobound * estimator->scale_factors[column_in_estimator];
+      if (clauses[j].loinclusive != EX) lo -= 0.001;
+      float8 hi = clauses[j].hibound * estimator->scale_factors[column_in_estimator];
+      if (clauses[j].hiinclusive != EX) hi += 0.001;
       range_buffer[pos + 2*column_in_estimator] = lo;
       range_buffer[pos + 2*column_in_estimator + 1] = hi;
     }

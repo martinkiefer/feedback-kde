@@ -5426,7 +5426,7 @@ create pg_kdemodels 3780 without_oids
  rowcount_sample = int4 ,
  sample_buffer_size = int4 ,
  scale_factors = float8[] ,
- bandwidth = float4[] ,
+ bandwidth = float8[] ,
  sample_file = text
  )
 open pg_kdemodels

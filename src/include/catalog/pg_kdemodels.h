@@ -31,7 +31,7 @@ CATALOG(pg_kdemodels,3780) BKI_WITHOUT_OIDS
   int32   sample_buffer_size;
 #ifdef CATALOG_VARLEN
   float8  scale_factors[1];
-  float4  bandwidth[1];
+  float8  bandwidth[1];
   text    sample_file;
 #endif
 } FormData_pg_kdemodels;
