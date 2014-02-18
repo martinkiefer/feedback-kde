@@ -8,12 +8,12 @@ source $BASEDIR/../../conf.sh
 
 #If the Covtype file is not set, pull it from the website.
 if [ ! -e $BASEDIR/raw/covtype.csv ]; then
-		cd $BASEDIR
-		mkdir -p raw
+		mkdir -p $BASEDIR/raw
+		cd $BASEDIR/raw
 		wget http://kdd.ics.uci.edu/databases/covertype/covtype.data.gz
 		gunzip -f covtype.data.gz
-		#Extract first 10 columns
-		cat covtype.data | cut -d , -f 1-10 > covtype.csvp
+		# Extract first 10 columns
+		cat covtype.data | cut -d , -f 1-10 > covtype.csv
 		cd -
 fi
 
