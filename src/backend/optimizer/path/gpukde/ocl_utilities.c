@@ -359,7 +359,7 @@ void ocl_printBuffer(const char* message, cl_mem buffer, int dimensions, int ite
       fprintf(stderr, "\n\t");
     }
   }
-
+  fprintf(stderr, "\n");
   pfree(host_buffer);
 }
 
