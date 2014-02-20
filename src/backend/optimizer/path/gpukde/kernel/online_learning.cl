@@ -65,7 +65,7 @@ __kernel void accumulateOnlineBuffers(
     __global T* gradient_accumulator,
     __global T* squared_gradient_accumulator,
     __global T* hessian_accumulator,
-    __global T* squared_hessian_accumulator,
+    __global T* squared_hessian_accumulator
     ) {
   unsigned int i = get_global_id(0);
   T grad = gradient_factor * gradient[i];
@@ -85,7 +85,7 @@ __kernel void initializeOnlineEstimate(
     __global T* running_squared_gradient_average,
     __global T* running_hessian_average,
     __global T* running_squared_hessian_average,
-    unsigned int mini_batch_size,
+    unsigned int mini_batch_size
     ) {
   unsigned int i = get_global_id(0);
 
@@ -119,7 +119,7 @@ __kernel void updateOnlineEstimate(
     __global T* running_squared_hessian_average,
     __global T* current_time_factor,
     __global T* bandwidth,
-    unsigned int mini_batch_size,
+    unsigned int mini_batch_size
     ) {
   unsigned int i = get_global_id(0);
 
@@ -158,7 +158,7 @@ __kernel void updateOnlineEstimate(
   hs_ = max(1e-4, hs_);
 
   // Estimate the learning rate.
-  T learning_rate = (h_ / hs_) * (sample_size * g_ * g_) / (gs_ + (sample_size - 1) * g_ * g_);
+  T learning_rate = (h_ / hs_) * (mini_batch_size * g_ * g_) / (gs_ + (mini_batch_size - 1) * g_ * g_);
 
   // Update the time factor.
   t = (1 - g_ * g_ / gs_) * t + 1;

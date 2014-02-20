@@ -376,6 +376,7 @@ void ocl_runOnlineLearningStep(ocl_estimator_t* estimator,
           context->queue, initModel, 1, NULL, &global_size, NULL, 1,
           &accumulator_event, NULL);
       clReleaseKernel(initModel);
+      estimator->online_learning_initialized = true;
     }
   }
 
