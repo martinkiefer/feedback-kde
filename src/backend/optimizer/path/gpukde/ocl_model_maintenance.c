@@ -245,10 +245,11 @@ static double computeGradient(unsigned n, const double* bandwidth,
 
   evaluations++;
 
-  fprintf(stderr, ">>> Evaluation %i:\n\tCurrent bandwidth:", evaluations);
-  for (i=0; i<n; ++i)
-    fprintf(stderr, " %f", bandwidth[i]);
-  fprintf(stderr, "\n");
+  if (ocl_isDebug()) {
+    fprintf(stderr, ">>> Gradient evaluation %i:\n\tCurrent bandwidth:", evaluations);
+    for (i=0; i<n; ++i) fprintf(stderr, " %f", bandwidth[i]);
+    fprintf(stderr, "\n");
+  }
 
   // First, transfer the current bandwidth to the device. Note that we might
   // need to cast the bandwidth to float first.
@@ -362,11 +363,11 @@ static double computeGradient(unsigned n, const double* bandwidth,
   for (i = 0; i<estimator->nr_of_dimensions; ++i) {
     gradient[i] = tmp_gradient[i] / conf->nr_of_observations;
   }
-  fprintf(stderr, "\tGradient:");
-  for (i=0; i<n; ++i)
-    fprintf(stderr, " %f", gradient[i]);
-  fprintf(stderr, " (%f)\n", error);
-
+  if (ocl_isDebug()) {
+    fprintf(stderr, "\tGradient:");
+    for (i=0; i<n; ++i) fprintf(stderr, " %f", gradient[i]);
+    fprintf(stderr, " (%f)\n", error);
+  }
   // Ok, clean everything up.
   for (i=0; i<estimator->nr_of_dimensions; ++i) {
     clReleaseMemObject(sub_buffers[i]);
