@@ -66,6 +66,8 @@ typedef struct {
  */
 void ocl_dumpBufferToFile(const char* file, cl_mem buffer, int dimensions, int items);
 
+void ocl_printBuffer(const char* message, cl_mem buffer, int dimensions, int items);
+
 // #########################################################################
 // ################## FUNCTIONS FOR OCL CONTEXT MANAGEMENT #################
 

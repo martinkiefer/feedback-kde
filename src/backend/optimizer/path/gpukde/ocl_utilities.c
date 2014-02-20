@@ -303,9 +303,7 @@ cl_kernel ocl_getKernel(const char* kernel_name, int dimensions) {
 void ocl_dumpBufferToFile(const char* file, cl_mem buffer,
                           int dimensions, int items) {
   ocl_context_t* context = ocl_getContext();
-  clFinish(context->queue);cl_event sumOfArray(cl_mem input_buffer, unsigned int elements,
-                                               cl_mem result_buffer, unsigned int result_buffer_offset,
-                                               cl_event external_event);
+  clFinish(context->queue);
 
   // Fetch the buffer to disk.
   kde_float_t* host_buffer = palloc(sizeof(kde_float_t) * dimensions * items);
@@ -323,6 +321,36 @@ void ocl_dumpBufferToFile(const char* file, cl_mem buffer,
     fprintf(f, "\n");
   }
   fclose(f);
+  pfree(host_buffer);
+}
+
+void ocl_printBuffer(const char* message, cl_mem buffer, int dimensions, int items) {
+  ocl_context_t* context = ocl_getContext();
+  clFinish(context->queue);
+
+  unsigned int i,j;
+
+  // Fetch the buffer to the host.
+  kde_float_t* host_buffer = palloc(sizeof(kde_float_t) * dimensions * items);
+  clEnqueueReadBuffer(context->queue, buffer, CL_TRUE,
+                      0, sizeof(kde_float_t) * dimensions * items,
+                      host_buffer, 0, NULL, NULL);
+  fprintf(stderr, "%s:", message);
+  if (items == 1) {
+    fprintf(stderr, " ");
+    for (i=0; i<dimensions; ++i) {
+      fprintf(stderr, "%f ", host_buffer[i]);
+    }
+  } else {
+    fprintf(stderr, "\n\t");
+    for (i=0; i<items; ++i) {
+      for (j=0; j<dimensions; ++j) {
+        fprintf(stderr, "%f ", host_buffer[i*dimensions + j]);
+      }
+      fprintf(stderr, "\n\t");
+    }
+  }
+
   pfree(host_buffer);
 }
 
