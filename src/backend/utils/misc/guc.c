@@ -133,6 +133,8 @@ extern char *SSLCipherSuites;
 /* Flag to determine whether we should use the OpenCL KDE estimator or not. */
 extern bool kde_enable;
 extern void assign_kde_enable(bool newval, void *extra);
+/* Flag to determine whether we should print debug information. */
+extern bool kde_debug;
 /* Determines how many rows should be kept in the KDE sample.*/
 extern int kde_samplesize;
 extern void assign_kde_samplesize(int newval, void *extra);
@@ -1510,6 +1512,16 @@ static struct config_bool ConfigureNamesBool[] =
 		false,
 		NULL, assign_kde_enable, NULL
 	},
+  {
+    {"kde_debug", PGC_USERSET, DEVELOPER_OPTIONS,
+      gettext_noop("Enable the KDE debug mode."),
+      NULL,
+      GUC_NOT_IN_SAMPLE
+    },
+    &kde_debug,
+    true,
+    NULL, NULL, NULL
+  },
 	{
 		{"kde_collect_feedback", PGC_USERSET, DEVELOPER_OPTIONS,
 			gettext_noop("Collect query feedback to improve the KDE model."),

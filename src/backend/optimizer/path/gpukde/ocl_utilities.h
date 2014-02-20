@@ -58,15 +58,19 @@ typedef struct {
 // #########################################################################
 // ################## FUNCTIONS FOR DEBUGGING ##############################
 /**
- * ocl_printBufferToFile
+ * ocl_printBufferToFile / ocl_printBuffer
  *
  * Takes the content of the given buffer and writes it to the provided file.
  * The function assumes that the buffer is of size dimensions*items*sizeof(float)
  *
+ * Note: Both functions only work if kde_debug is set.
  */
-void ocl_dumpBufferToFile(const char* file, cl_mem buffer, int dimensions, int items);
 
+void ocl_dumpBufferToFile(const char* file, cl_mem buffer, int dimensions, int items);
 void ocl_printBuffer(const char* message, cl_mem buffer, int dimensions, int items);
+
+// Returns true if debugging is enabled.
+bool ocl_isDebug();
 
 // #########################################################################
 // ################## FUNCTIONS FOR OCL CONTEXT MANAGEMENT #################

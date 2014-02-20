@@ -25,7 +25,12 @@ ocl_context_t* ocl_context = NULL;
  */
 bool ocl_use_gpu;
 bool kde_enable;
+bool kde_debug;
 int kde_samplesize;
+
+bool ocl_isDebug() {
+  return kde_debug;
+}
 
 /*
  * Accessor for the global context. Make sure to initialize the context on first access.
@@ -302,6 +307,8 @@ cl_kernel ocl_getKernel(const char* kernel_name, int dimensions) {
 
 void ocl_dumpBufferToFile(const char* file, cl_mem buffer,
                           int dimensions, int items) {
+  if (!kde_debug) return;
+
   ocl_context_t* context = ocl_getContext();
   clFinish(context->queue);
 
@@ -325,6 +332,8 @@ void ocl_dumpBufferToFile(const char* file, cl_mem buffer,
 }
 
 void ocl_printBuffer(const char* message, cl_mem buffer, int dimensions, int items) {
+  if (!kde_debug) return;
+
   ocl_context_t* context = ocl_getContext();
   clFinish(context->queue);
 

@@ -113,6 +113,7 @@ if (optimization == "adaptive"):
 elif (optimization == "batch_random" or optimization == "batch_workload"):
     cur.execute("SET kde_enable_bandwidth_optimization TO true;")
     cur.execute("SET kde_bandwidth_optimization_feedback_window TO %i;" % trainqueries)
+cur.execute("SET kde_debug TO false;")
 cur.execute("SET kde_enable TO true;")
 
 # Trigger the model optimization.
