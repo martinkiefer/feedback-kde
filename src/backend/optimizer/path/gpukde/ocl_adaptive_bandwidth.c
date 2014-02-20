@@ -288,6 +288,8 @@ void ocl_runOnlineLearningStep(ocl_estimator_t* estimator,
                                double selectivity) {
   if (!kde_enable_adaptive_bandwidth) return;
 
+  if (ocl_isDebug()) fprintf(stderr, ">>> Running online learning step.\n");
+
   ocl_context_t* context = ocl_getContext();
   cl_int err = CL_SUCCESS;
 
@@ -319,9 +321,25 @@ void ocl_runOnlineLearningStep(ocl_estimator_t* estimator,
       context->queue, accumulate, 1, NULL, &global_size, NULL, 1,
       &(estimator->temp_gradient_event), &accumulator_event);
 
+  // Debug print the accumulated buffers.
+  ocl_printBuffer("\tTemp gradient:", estimator->temp_gradient_buffer,
+                  estimator->nr_of_dimensions, 1);
+  ocl_printBuffer("\tTemp hessian:", estimator->temp_hessian_buffer,
+                  estimator->nr_of_dimensions, 1);
+  ocl_printBuffer("\tAccumulated gradient:", estimator->gradient_accumulator,
+                  estimator->nr_of_dimensions, 1);
+  ocl_printBuffer("\tAccumulated gradient^2:", estimator->squared_gradient_accumulator,
+                  estimator->nr_of_dimensions, 1);
+  ocl_printBuffer("\tAccumulated hessian:", estimator->hessian_accumulator,
+                  estimator->nr_of_dimensions, 1);
+  ocl_printBuffer("\tAccumulated hessian^2:", estimator->squared_hessian_accumulator,
+                  estimator->nr_of_dimensions, 1);
+
   estimator->nr_of_accumulated_gradients++;
   // Check if we have a full mini-batch.
-  if (estimator->nr_of_accumulated_gradients == kde_adaptive_bandwidth_minibatch_size) {
+  if (estimator->nr_of_accumulated_gradients >= kde_adaptive_bandwidth_minibatch_size) {
+    if (ocl_isDebug()) fprintf(stderr, "\t >> Full minibatch <<\n");
+
     if (estimator->online_learning_initialized) {
       // If we are initialized, compute the next bandwidth.
       cl_kernel updateModel = ocl_getKernel("updateOnlineEstimate", 0);
@@ -377,7 +395,21 @@ void ocl_runOnlineLearningStep(ocl_estimator_t* estimator,
           &accumulator_event, NULL);
       clReleaseKernel(initModel);
       estimator->online_learning_initialized = true;
+
     }
+    estimator->nr_of_accumulated_gradients = 0;
+
+    // Debug print the accumulated buffers.
+    ocl_printBuffer("\tTime-averaged gradient:", estimator->running_gradient_average,
+                    estimator->nr_of_dimensions, 1);
+    ocl_printBuffer("\tTime-averaged gradient^2:", estimator->running_squared_gradient_average,
+                    estimator->nr_of_dimensions, 1);
+    ocl_printBuffer("\tTime-averaged hessian:", estimator->running_hessian_average,
+                    estimator->nr_of_dimensions, 1);
+    ocl_printBuffer("\tTime-averaged hessian^2:", estimator->running_squared_hessian_average,
+                    estimator->nr_of_dimensions, 1);
+    ocl_printBuffer("\tUpdated bandwidth:", estimator->bandwidth_buffer,
+                    estimator->nr_of_dimensions, 1);
   }
 
   // Wait.

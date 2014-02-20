@@ -31,9 +31,10 @@ typedef enum bound { HIGHBOUND, LOWBOUND, EQUALITY} bound_t;
 
 // GUC configuration variable.
 bool kde_collect_feedback = false;
+extern bool kde_enable_adaptive_bandwidth;
 
 bool kde_feedback_use_collection() {
-    return ocl_reportErrors() || kde_collect_feedback;
+    return ocl_reportErrors() || kde_collect_feedback || kde_enable_adaptive_bandwidth;
 }
 
 // Helper function to materialize an RQlist to a buffer.

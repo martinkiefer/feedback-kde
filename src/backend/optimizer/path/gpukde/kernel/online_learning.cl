@@ -44,7 +44,7 @@ __kernel void computePartialGradient(
   for (unsigned int i=0; i<D; ++i) {
     T grad = res;
     grad *= scratch[D*get_local_id(0) + i];
-    gradient[i * gradient_stride + get_global_id(0)] = res;
+    gradient[i * gradient_stride + get_global_id(0)] = grad;
   }
 }
 
@@ -55,7 +55,9 @@ __kernel void computeFDHessian(
     __global T* hessian
     ) {
   unsigned int i = get_global_id(0);
-  hessian[i] = fabs( (gradient[i] - hessian[i]) / delta[i] );
+  T dx = delta[i];
+  T h = fabs( (gradient[i] - hessian[i]) / delta[i] );
+  hessian[i] = dx == 0 ? h : 0;
 }
 
 __kernel void accumulateOnlineBuffers(
