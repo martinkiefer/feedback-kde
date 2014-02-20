@@ -344,7 +344,7 @@ void ocl_printBuffer(const char* message, cl_mem buffer, int dimensions, int ite
   clEnqueueReadBuffer(context->queue, buffer, CL_TRUE,
                       0, sizeof(kde_float_t) * dimensions * items,
                       host_buffer, 0, NULL, NULL);
-  fprintf(stderr, "%s:", message);
+  fprintf(stderr, "%s", message);
   if (items == 1) {
     fprintf(stderr, " ");
     for (i=0; i<dimensions; ++i) {
