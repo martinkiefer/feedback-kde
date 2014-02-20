@@ -27,7 +27,7 @@
 /*
  * Define whether we use single or double precision.
  */
-typedef float kde_float_t;
+typedef double kde_float_t;
 
 /*
  * Struct defining the current OpenCL context
@@ -96,6 +96,18 @@ void ocl_releaseContext(void);
  * Get an instance of the given kernel using the given build_params.
  */
 cl_kernel ocl_getKernel(const char* kernel_name, int dimensions);
+
+// #########################################################################
+// ############## HELPER FUNCTIONS FOR THE COMPUTATIONS ####################
+
+/*
+ * Computes the sum of the elements in input_buffer, writing it to the
+ * specified position in result_buffer.
+ *
+ */
+cl_event sumOfArray(cl_mem input_buffer, unsigned int elements,
+                    cl_mem result_buffer, unsigned int result_buffer_offset,
+                    cl_event external_event);
 
 #endif /* USE_OPENCL */
 #endif /* OCL_UTILITIES_H_ */

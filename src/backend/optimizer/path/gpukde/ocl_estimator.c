@@ -7,9 +7,10 @@
  *      Author: mheimel
  */
 
+#include "ocl_adaptive_bandwidth.h"
 #include "ocl_estimator.h"
-#include "ocl_utilities.h"
 #include "ocl_model_maintenance.h"
+#include "ocl_utilities.h"
 
 #ifdef USE_OPENCL
 
@@ -47,16 +48,16 @@ typedef enum ocl_kernel_type {
 } ocl_kernel_type_t;
 
 
-ocl_kernel_type_t global_kernel_type = EPANECHNIKOV;
-bool scale_to_unit_variance = true;
+ocl_kernel_type_t global_kernel_type = GAUSS;
+bool scale_to_unit_variance = false;
 
 /*
  * Global registry variable
  */
 ocl_estimator_registry_t* registry = NULL;
 
-static cl_kernel prepareKDEKernel(ocl_estimator_t* estimator,
-                                  const char* kernel_name) {
+static cl_kernel prepareKDEKernel(
+    ocl_estimator_t* estimator, const char* kernel_name) {
   // First, fetch the correct program.
   cl_kernel kernel = ocl_getKernel(kernel_name,
                                    estimator->nr_of_dimensions);
@@ -66,94 +67,6 @@ static cl_kernel prepareKDEKernel(ocl_estimator_t* estimator,
   clSetKernelArg(kernel, 2, sizeof(cl_mem), &(ocl_getContext()->input_buffer));
   clSetKernelArg(kernel, 3, sizeof(cl_mem), &(estimator->bandwidth_buffer));
   return kernel;
-}
-
-static double sumOfArray(cl_mem input_buffer, unsigned int elements, cl_event external_event) {
-  cl_int err = 0;
-	ocl_context_t* context = ocl_getContext();
-	cl_event init_event;
-	cl_event events[] = { NULL, NULL };
-	unsigned int nr_of_events = 0;
-	// Fetch the required sum kernels:
-	cl_kernel init_buffer = ocl_getKernel("init_zero", 0);
-	cl_kernel fast_sum = ocl_getKernel("sum_par", 0);
-	cl_kernel slow_sum = ocl_getKernel("sum_seq", 0);
-	struct timeval start; gettimeofday(&start, NULL);
-
-	// Determine the optimal local size.
-	size_t local_size;
-	clGetKernelWorkGroupInfo(fast_sum, context->device, CL_KERNEL_WORK_GROUP_SIZE,
-	                         sizeof(size_t), &local_size, NULL);
-	// Truncate to local memory requirements.
-	local_size = Min(local_size,
-	                 context->local_mem_size / sizeof(kde_float_t));
-	// And truncate to the next power of two.
-	local_size = (size_t)0x1 << (int)(log2((double)local_size));
-
-  size_t processors = context->max_compute_units;
-
-	// Figure out how many elements we can aggregate per thread in the parallel part:
-	unsigned int tuples_per_thread = elements / (processors * local_size);
-	// Now compute the configuration of the sequential kernel:
-	unsigned int slow_kernel_data_offset = processors * tuples_per_thread * local_size;
-	unsigned int slow_kernel_elements = elements - slow_kernel_data_offset;
-	unsigned int slow_kernel_result_offset = processors;
-  // Allocate a temporary result buffer.
-  cl_mem tmp_buffer = clCreateBuffer(context->context, CL_MEM_READ_WRITE, sizeof(kde_float_t) * (processors + 1), NULL, NULL);
-  err |= clSetKernelArg(init_buffer, 0, sizeof(cl_mem), &tmp_buffer);
-  size_t global_size = processors + 1;
-  err |= clEnqueueNDRangeKernel(context->queue, init_buffer, 1, NULL, &global_size, NULL, 1, &external_event, &init_event);
-	// Ok, we selected the correct kernel and parameters. Now prepare the arguments.
-	err |= clSetKernelArg(fast_sum, 0, sizeof(cl_mem), &input_buffer);
-	err |= clSetKernelArg(fast_sum, 1, sizeof(kde_float_t) * local_size, NULL);
-	err |= clSetKernelArg(fast_sum, 2, sizeof(cl_mem), &tmp_buffer);
-	err |= clSetKernelArg(fast_sum, 3, sizeof(unsigned int), &tuples_per_thread);
-	err |= clSetKernelArg(slow_sum, 0, sizeof(cl_mem), &input_buffer);
-	err |= clSetKernelArg(slow_sum, 1, sizeof(unsigned int), &slow_kernel_data_offset);
-	err |= clSetKernelArg(slow_sum, 2, sizeof(unsigned int), &slow_kernel_elements);
-	err |= clSetKernelArg(slow_sum, 3, sizeof(cl_mem), &tmp_buffer);
-	err |= clSetKernelArg(slow_sum, 4, sizeof(unsigned int), &slow_kernel_result_offset);
-	// Fire the kernel
-	if (tuples_per_thread) {
-		global_size = local_size * processors;
-		cl_event event;
-		err |= clEnqueueNDRangeKernel(context->queue, fast_sum, 1, NULL, &global_size, &local_size, 1, &init_event, &event);
-		events[nr_of_events++] = event;
-	}
-	if (slow_kernel_elements) {
-    cl_event event;
-		err |= clEnqueueTask(context->queue, slow_sum, 1, &init_event, &event);
-    events[nr_of_events++] = event;
-	}
-	// Now perform a final pass over the data to compute the aggregate.
-	slow_kernel_data_offset = 0;
-	slow_kernel_elements = processors + 1;
-	slow_kernel_result_offset = 0;
-  err |= clSetKernelArg(slow_sum, 0, sizeof(cl_mem), &tmp_buffer);
-  err |= clSetKernelArg(slow_sum, 1, sizeof(unsigned int), &slow_kernel_data_offset);
-  err |= clSetKernelArg(slow_sum, 2, sizeof(unsigned int), &slow_kernel_elements);
-  err |= clSetKernelArg(slow_sum, 3, sizeof(cl_mem), &tmp_buffer);
-  err |= clSetKernelArg(slow_sum, 4, sizeof(unsigned int), &slow_kernel_result_offset);
-  cl_event finalize_event;
-  err |= clEnqueueTask(context->queue, slow_sum, nr_of_events, events, &finalize_event);
-  // Now transfer the final aggregate back.
-  kde_float_t result;
-  err |= clEnqueueReadBuffer(context->queue, tmp_buffer, CL_TRUE, 0,
-                             sizeof(kde_float_t), &result, 1, &finalize_event, NULL);
-	// Clean up ...
-	clReleaseKernel(slow_sum);
-	clReleaseKernel(fast_sum);
-	clReleaseKernel(init_buffer);
-	clReleaseMemObject(tmp_buffer);
-	clReleaseEvent(finalize_event);
-	clReleaseEvent(init_event);
-	if (events[0]) clReleaseEvent(events[0]);
-  if (events[1]) clReleaseEvent(events[1]);
-	// .. and return the result.
-	struct timeval now; gettimeofday(&now, NULL); long seconds = now.tv_sec - start.tv_sec; long useconds = now.tv_usec - start.tv_usec;
-	long mtime = ((seconds) * 1000 + useconds/1000.0) + 0.5;
-	fprintf(stderr, "Sum: %li ms\n", mtime);
-	return result;
 }
 
 static double rangeKDE(ocl_context_t* ctxt, ocl_estimator_t* estimator) {
@@ -176,16 +89,24 @@ static double rangeKDE(ocl_context_t* ctxt, ocl_estimator_t* estimator) {
   cl_event kde_event;
 	clEnqueueNDRangeKernel(ctxt->queue, kde_kernel, 1, NULL, &global_size,
 	                       NULL, 0, NULL, &kde_event);
-	kde_float_t result = sumOfArray(
-	    ctxt->result_buffer, estimator->rows_in_sample, kde_event);
+	cl_mem result_buffer = clCreateBuffer(
+	    ctxt->context, CL_MEM_READ_WRITE, sizeof(kde_float_t), NULL, NULL);
+	cl_event sum_event = sumOfArray(
+	    ctxt->result_buffer, estimator->rows_in_sample, result_buffer, 0,
+	    kde_event);
+	kde_float_t result;
+	clEnqueueReadBuffer(ctxt->queue, result_buffer, CL_TRUE, 0,
+	                    sizeof(kde_float_t), &result, 1, &sum_event, NULL);
 	result *= normalization_factor / estimator->rows_in_sample;
+	clReleaseMemObject(result_buffer);
 	clReleaseKernel(kde_kernel);
 	clReleaseEvent(kde_event);
+	clReleaseEvent(sum_event);
 	return result;
 }
 
-static ocl_estimator_t* ocl_buildEstimatorFromCatalogEntry(Relation kde_rel,
-                                                           HeapTuple tuple) {
+static ocl_estimator_t* ocl_buildEstimatorFromCatalogEntry(
+    Relation kde_rel, HeapTuple tuple) {
   unsigned int i;
   Datum datum;
   ArrayType* array;
@@ -204,7 +125,7 @@ static ocl_estimator_t* ocl_buildEstimatorFromCatalogEntry(Relation kde_rel,
   descriptor->columns = DatumGetInt32(datum);
   unsigned int columns = descriptor->columns;
   descriptor->column_order = calloc(1, 32*sizeof(unsigned int));
-  for (i=0; columns && i<32; ++i) {
+  for ( i=0; columns && i<32; ++i ) {
     if (columns & (0x1)) {
       descriptor->column_order[i] = descriptor->nr_of_dimensions++;
     }
@@ -246,7 +167,7 @@ static ocl_estimator_t* ocl_buildEstimatorFromCatalogEntry(Relation kde_rel,
     // The system catalog stores double, but we expect float.
     kde_float_t* tmp_buffer = palloc(sizeof(kde_float_t) * descriptor->nr_of_dimensions);
     float8* catalog_ptr = (float8*)ARR_DATA_PTR(array);
-    for (i=0; i<descriptor->nr_of_dimensions; ++i) {
+    for ( i=0; i<descriptor->nr_of_dimensions; ++i ) {
       tmp_buffer[i] = catalog_ptr[i];
     }
     clEnqueueWriteBuffer(context->queue, descriptor->bandwidth_buffer, CL_TRUE,
@@ -286,7 +207,7 @@ static ocl_estimator_t* ocl_buildEstimatorFromCatalogEntry(Relation kde_rel,
   if (sizeof(kde_float_t) == sizeof(float)) {
     kde_float_t* transfer_buffer = palloc(
         sizeof(kde_float_t) * descriptor->nr_of_dimensions * descriptor->rows_in_sample);
-    for (i=0; i<descriptor->nr_of_dimensions * descriptor->rows_in_sample; ++i) {
+    for ( i=0; i<descriptor->nr_of_dimensions * descriptor->rows_in_sample; ++i ) {
       transfer_buffer[i] = file_buffer[i];
     }
     clEnqueueWriteBuffer(
@@ -342,7 +263,7 @@ static void ocl_updateEstimatorInCatalog(ocl_estimator_t* estimator) {
 
   // >> Write the scale factors.
   array_datums = palloc(sizeof(Datum) * estimator->nr_of_dimensions);
-  for (i = 0; i < estimator->nr_of_dimensions; ++i) {
+  for ( i = 0; i < estimator->nr_of_dimensions; ++i ) {
     array_datums[i] = Float8GetDatum(estimator->scale_factors[i]);
   }
   array = construct_array(array_datums, estimator->nr_of_dimensions,
@@ -434,11 +355,38 @@ static void ocl_freeEstimator(ocl_estimator_t* estimator, bool materialize) {
   // Write all changes to stable storage.
   if (materialize) ocl_updateEstimatorInCatalog(estimator);
   // Release the in-memory structure.
-  if (estimator->scale_factors) free(estimator->scale_factors);
-  if (estimator->sample_buffer) clReleaseMemObject(estimator->sample_buffer);
-  if (estimator->bandwidth_buffer) clReleaseMemObject(estimator->bandwidth_buffer);
-  if (estimator->gradient_accumulator) clReleaseMemObject(estimator->gradient_accumulator);
-  if (estimator->column_order) free(estimator->column_order);
+  if (estimator->scale_factors)
+    free(estimator->scale_factors);
+  if (estimator->sample_buffer)
+    clReleaseMemObject(estimator->sample_buffer);
+  if (estimator->bandwidth_buffer)
+    clReleaseMemObject(estimator->bandwidth_buffer);
+    // Release all buffers for the online optimization.
+  if (estimator->gradient_accumulator)
+    clReleaseMemObject(estimator->gradient_accumulator);
+  if (estimator->squared_gradient_accumulator)
+    clReleaseMemObject(estimator->squared_gradient_accumulator);
+  if (estimator->hessian_accumulator)
+    clReleaseMemObject(estimator->hessian_accumulator);
+  if (estimator->squared_hessian_accumulator)
+    clReleaseMemObject(estimator->squared_hessian_accumulator);
+  if (estimator->running_gradient_average)
+    clReleaseMemObject(estimator->running_gradient_average);
+  if (estimator->running_squared_gradient_average)
+    clReleaseMemObject(estimator->running_squared_gradient_average);
+  if (estimator->running_hessian_average)
+    clReleaseMemObject(estimator->running_hessian_average);
+  if (estimator->running_squared_hessian_average)
+    clReleaseMemObject(estimator->running_squared_hessian_average);
+  if (estimator->current_time_constant)
+    clReleaseMemObject(estimator->current_time_constant);
+  if (estimator->temp_gradient_buffer)
+    clReleaseMemObject(estimator->temp_gradient_buffer);
+  if (estimator->temp_hessian_buffer)
+    clReleaseMemObject(estimator->temp_hessian_buffer);
+
+  if (estimator->column_order)
+    free(estimator->column_order);
   free(estimator);
 }
 
@@ -647,6 +595,8 @@ int ocl_estimateSelectivity(const ocl_estimator_request_t* request,
   ocl_dumpRequest(request);
   fprintf(stderr, "Estimated selectivity: %f, took: %ld ms.\n", *selectivity, mtime);
   free(row_ranges);
+  // Finally, prepare the online update of the bandwidth.
+  ocl_prepareOnlineLearningStep(estimator);
   return 1;
 }
 
@@ -705,12 +655,12 @@ void ocl_constructEstimator(
 	    ocl_sizeOfSampleItem(estimator) * sample_size);
 	double* mean = (double*)calloc(1, sizeof(double) * dimensionality);
 	double* M2 = (double*)calloc(1, sizeof(double) * dimensionality);
-	for ( i = 0; i < sample_size; ++i) {
+	for ( i = 0; i < sample_size; ++i ) {
 	  // Extract the item.
 	  ocl_extractSampleTuple(estimator, rel, sample[i],
 	                         &(host_buffer[i*estimator->nr_of_dimensions]));
 	  // And update the attributes.
-	  for ( j = 0; j < estimator->nr_of_dimensions; ++j) {
+	  for ( j = 0; j < estimator->nr_of_dimensions; ++j ) {
 	    double delta = host_buffer[i*estimator->nr_of_dimensions + j] - mean[j];
 	    mean[j] = mean[j] + delta / (i + 1);
 	    M2[j] += delta * (host_buffer[i*estimator->nr_of_dimensions + j] - mean[j]);
@@ -719,28 +669,29 @@ void ocl_constructEstimator(
 	// Compute the scale factors (this is just the standard deviation per dimension).
 	free(mean);
 	estimator->scale_factors = M2;
-	for ( i = 0; i < estimator->nr_of_dimensions; ++i) {
+	for ( i = 0; i < estimator->nr_of_dimensions; ++i ) {
 	  estimator->scale_factors[i] /= (sample_size - 1);
 	  estimator->scale_factors[i] = sqrt(estimator->scale_factors[i]);
 	}
 	// Compute an initial bandwidth estimate using Scott's rule.
 	kde_float_t* bandwidth = (kde_float_t*)malloc(
 	    sizeof(kde_float_t)*dimensionality);
-	for ( i = 0; i < dimensionality; ++i) {
+	for ( i = 0; i < dimensionality; ++i ) {
 	  if (!scale_to_unit_variance) {
 	    // If data scaling is deactivated, the scale factor is simply one - and
 	    // the bandwidth is computed from the stdev.
 	    bandwidth[i] = estimator->scale_factors[i] *
 	        pow(sample_size, -1.0 /((double)(dimensionality + 4)));
 	    if (global_kernel_type == EPANECHNIKOV) bandwidth[i] *= sqrt(5);
-	    estimator->scale_factors[i] = 0.0001;
+	    estimator->scale_factors[i] = 1;
 	  } else {
 	    // If data scaling is activated, we scale the data to unit variance.
-	    bandwidth[i] = pow(sample_size, -1.0 /((double)(dimensionality + 4)));
+	    bandwidth[i] = 100*pow(sample_size, -1.0 /((double)(dimensionality + 4)));
       if (global_kernel_type == EPANECHNIKOV) bandwidth[i] *= sqrt(5);
       estimator->scale_factors[i] = 1.0 / estimator->scale_factors[i];
 	  }
 	}
+	fprintf(stderr, "\n");
 	estimator->bandwidth_buffer = clCreateBuffer(
 	    ctxt->context, CL_MEM_READ_WRITE, sizeof(kde_float_t) * dimensionality,
 	    NULL, NULL);
@@ -754,8 +705,8 @@ void ocl_constructEstimator(
 	fprintf(stderr, "\n");
 	free(bandwidth);
   // Re-scale the data to unit variance.
-  for ( j = 0; j < sample_size; ++j) {
-    for ( i = 0; i < dimensionality; ++i) {
+  for ( j = 0; j < sample_size; ++j ) {
+    for ( i = 0; i < dimensionality; ++i ) {
       host_buffer[j*dimensionality + i] *= estimator->scale_factors[i];
     }
   }
@@ -836,7 +787,7 @@ void ocl_pushEntryToSampleBufer(ocl_estimator_t* estimator, int position,
 void ocl_extractSampleTuple(ocl_estimator_t* estimator, Relation rel,
                             HeapTuple tuple, kde_float_t* target) {
   unsigned int i;
-  for (i=0; i<rel->rd_att->natts; ++i) {
+  for ( i=0; i<rel->rd_att->natts; ++i ) {
     // Check if this column is contained in the estimator.
     int16 colno = rel->rd_att->attrs[i]->attnum;
     if (!(estimator->columns & (0x1 << colno))) continue;

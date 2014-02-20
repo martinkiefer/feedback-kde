@@ -32,9 +32,23 @@ typedef struct ocl_estimator {
   unsigned int rows_in_sample;  // Current number of tuples in the sample.
   size_t sample_buffer_size;      // Size of the sample buffer in bytes.
   cl_mem sample_buffer;           // Buffer that stores the data sample.
-  /* Fields for tracking mini-batch gradient updates to the bandwidth. */
+  /* Fields for tracking mini-batch updates to the bandwidth. */
   cl_mem gradient_accumulator;
+  cl_mem squared_gradient_accumulator;
+  cl_mem hessian_accumulator;
+  cl_mem squared_hessian_accumulator;
   unsigned int nr_of_accumulated_gradients;
+  /* Fields for computing the adaptive learning rate */
+  bool online_learning_initialized;
+  cl_mem running_gradient_average;
+  cl_mem running_squared_gradient_average;
+  cl_mem running_hessian_average;
+  cl_mem running_squared_hessian_average;
+  cl_mem current_time_constant;
+  /* Fields for pre-computing the gradient for online learning */
+  cl_mem temp_gradient_buffer;
+  cl_mem temp_hessian_buffer;
+  cl_event temp_gradient_event;
   /* Normalization factors */
   double* scale_factors;    // Scale factors that were applied to the data in the sample.
   /* Runtime information */

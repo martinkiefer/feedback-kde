@@ -7,50 +7,6 @@
   #define TYPE_DEFINED_
 #endif /* TYPE_DEFINED */
 
-__kernel void computeSingleGradient(
-  __global const T* const data,
-  unsigned int items_in_sample,
-  __global const T* const range,
-  __global const T* const bandwidth,
-  __local T* scratch,
-  __global T* gradient,
-  unsigned int gradient_stride
-  ) {
-
-  if (get_global_id(0) >= items_in_sample) return;
-  // First compute the factors.
-  T res = 1.0f;
-  for (unsigned int i=0; i<D; ++i) {
-    T val = data[D*get_global_id(0) + i];
-    T h = bandwidth[i];
-    h = h <= 0 ? 0.0001f : h;
-    T lo = range[2*i] - val;
-    T up = range[2*i + 1] - val;
-
-    T factor1 = isinf(lo) ? 0 : (lo / (sqrt(2 * M_PI) * pow(h, (T)1.5))
-                * exp(-1.0f * lo * lo / (2*h)));
-    factor1 -= isinf(up) ? 0 : (up / (sqrt(2 * M_PI) * pow(h, (T)1.5))
-               * exp(-1.0f * up * up / (2*h)));
-    T factor2 = erf(up / sqrt(2*h)) - erf(lo / sqrt(2*h));
-
-    res *= factor2;
-    scratch[D*get_local_id(0) + i]  =  factor2 == 0 ? 0 : factor1 / factor2;
-  }
-  // Now compute the gradient.
-  for (unsigned int i=0; i<D; ++i) {
-    T grad = res;
-    grad *= scratch[D*get_local_id(0) + i];
-    gradient[i * gradient_stride + get_global_id(0)] = res;
-  }
-}
-
-__kernel void accumulateGradient(
-    __global T* gradient_accumulator,
-    __global const T* gradient_contribution,
-    T factor) {
-  gradient_accumulator[get_global_id(0)] += factor * gradient_contribution[get_global_id(0)];
-}
-
 __kernel void applyGradient(
 	__global T* bandwidth,
 	__global const T* gradient,
@@ -116,7 +72,8 @@ __kernel void computeBatchGradientAbsolute(
     // Result.
     __global T* cost_values,
     __global T* gradient,
-    unsigned int gradient_stride
+    unsigned int gradient_stride,
+    unsigned int nrows  /* Number of rows in table */
   ) {
   // First, we compute the error-independent parts of the gradient.
   BATCH_GRADIENT_COMMON();
@@ -146,13 +103,14 @@ __kernel void computeBatchGradientRelative(
     // Result.
     __global T* cost_values,
     __global T* gradient,
-    unsigned int gradient_stride
+    unsigned int gradient_stride,
+    unsigned int nrows  /* Number of rows in table */
   ) {
   // First, we compute the error-independent parts of the gradient.
   BATCH_GRADIENT_COMMON();
   // Next, compute the estimation error and the gradient scale factor.
   T error = estimation - observations[get_global_id(0)];
-  T factor = (error < 0 ? -1.0 : 1.0) / (0.001 + observations[get_global_id(0)]);
+  T factor = (error < 0 ? -1.0 : 1.0) / max((T)(1.0/nrows), observations[get_global_id(0)]);
   cost_values[get_global_id(0)] = error * factor;
   factor /= pow((T)2.0, D) * nr_of_data_points;
   // Finally, write the gradient from this observation to global memory.
@@ -176,7 +134,8 @@ __kernel void computeBatchGradientQuadratic(
     // Result.
     __global T* cost_values,
     __global T* gradient,
-    unsigned int gradient_stride
+    unsigned int gradient_stride,
+    unsigned int nrows  /* Number of rows in table */
   ) {
   // First, we compute the error-independent parts of the gradient.
   BATCH_GRADIENT_COMMON();
@@ -206,7 +165,8 @@ __kernel void computeBatchGradientQ(
     // Result.
     __global T* cost_values,
     __global T* gradient,
-    unsigned int gradient_stride
+    unsigned int gradient_stride,
+    unsigned int nrows  /* Number of rows in table */
   ) {
   // First, we compute the error-independent parts of the gradient.
   BATCH_GRADIENT_COMMON();

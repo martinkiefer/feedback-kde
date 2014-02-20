@@ -16,3 +16,9 @@ __kernel void init_one(
 	__global T* data) {
 	data[get_global_id(0)] = 1.0;
 }
+
+__kernel void init(
+    __global T* data,
+    T value) {
+  data[get_global_id(0)] = value;
+}

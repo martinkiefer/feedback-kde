@@ -12,6 +12,8 @@
 #include <stdlib.h>
 #include <sys/time.h>
 
+#include "ocl_adaptive_bandwidth.h"
+#include "ocl_error_metrics.h"
 #include "ocl_estimator.h"
 #include "ocl_sample_maintenance.h"
 #include "ocl_utilities.h"
@@ -29,423 +31,12 @@
 bool kde_enable_bandwidth_optimization;
 int kde_bandwidth_optimization_strategy;
 int kde_bandwidth_optimization_feedback_window;
-bool kde_enable_adaptive_bandwidth;
-int kde_adaptive_bandwidth_minibatch_size;
-char* kde_estimation_quality_logfile_name;
-int kde_error_metric;
 
-
-// ############################################################
-// # Define estimation error metrics.
-// ############################################################
-typedef struct error_metric {
-	const char* name;
-	double (*function)(double, double);
-	double (*gradient_factor)(double, double);
-	const char* batch_kernel_name;
-} error_metric_t;
-
-
-// Functions that implement the error metrics.
-static double QuadraticError(double actual, double expected) {
-  return (actual - expected) * (actual - expected);
-}
-static double QuadraticErrorGradientFactor(double actual, double expected) {
-  return 2 * (actual - expected);
-}
-static double QErrror(double actual, double expected) {
-  // Constants are required to avoid computing the log of 0.
-  double tmp = log(0.0001f + actual) - log(0.0001f + expected);
-  return tmp * tmp;
-}
-static double QErrorGradientFactor(double actual, double expected) {
-  return 2 * (log(0.0001f + actual) - log(0.0001f + expected)) / (0.0001f + actual);
-}
-static double AbsoluteError(double actual, double expected) {
-  return fabs(actual - expected);
-}
-static double AbsoluteErrorGradientFactor(double actual, double expected) {
-  if (actual > expected) {
-    return 1;
-  } else if (actual == expected) {
-    return 0;
-  } else {
-    return -1;
-  }
-}
-static double RelativeError(double actual, double expected) {
-  // Not entirely correct, but robust against zero estimates.
-  return fabs(actual - expected) / (0.0001f + expected);
-}
-static double RelativeErrorGradientFactor(double actual, double expected) {
-  if (actual > expected) {
-    return 1.0 / (0.0001 + expected);
-  } else if (actual == expected) {
-    return 0;
-  } else {
-    return -1.0 / (0.0001 + expected);
-  }
-}
-
-// Array of all available metrics.
-static error_metric_t error_metrics[] = {
-   {
-      "Absolute",  &AbsoluteError, &AbsoluteErrorGradientFactor,
-      "computeBatchGradientAbsolute"
-   },
-   {
-      "Relative", &RelativeError, &RelativeErrorGradientFactor,
-      "computeBatchGradientRelative"
-   },
-   {
-      "Quadratic", &QuadraticError, &QuadraticErrorGradientFactor,
-      "computeBatchGradientQuadratic"
-   },
-   {
-      "QError", &QErrror, &QErrorGradientFactor, "computeBatchGradientQ"
-   }
-};
-
-// ############################################################
-// # Code for estimation error reporting.
-// ############################################################
-
-static FILE* estimation_quality_log_file = NULL;
-
-void assign_kde_estimation_quality_logfile_name(const char *newval, void *extra) {
-  if (estimation_quality_log_file != NULL) fclose(estimation_quality_log_file);
-  estimation_quality_log_file = fopen(newval, "w");
-  if (estimation_quality_log_file == NULL) return;
-  // Write a header to the file to specify all registered error metrics.
-  unsigned int i;
-  fprintf(estimation_quality_log_file, "Relation ID");
-  for (i=0; i<sizeof(error_metrics)/sizeof(error_metric_t); ++i) {
-	  fprintf(estimation_quality_log_file, " ; %s", error_metrics[i].name);
-  }
-  fprintf(estimation_quality_log_file, "\n");
-  fflush(estimation_quality_log_file);
-}
-
-bool ocl_reportErrors(void) {
-  return estimation_quality_log_file != NULL;
-}
-
-void ocl_reportErrorToLogFile(Oid relation, double actual, double expected) {
-  if (estimation_quality_log_file == NULL) return;
-  // Compute the estimation error for all metrics and write them to the file.
-  unsigned int i;
-  fprintf(estimation_quality_log_file, "%u", relation);
-  for (i=0; i<sizeof(error_metrics)/sizeof(error_metric_t); ++i) {
- 	  double error = (*(error_metrics[i].function))(actual, expected);
- 	  fprintf(estimation_quality_log_file, " ; %.4f", error);
-   }
-   fprintf(estimation_quality_log_file, "\n");
-   fflush(estimation_quality_log_file);
-}
-
-/**
- * Helper function to efficiently compute the sum of an input buffer.
- *
- * The computed sum is written to the offset result_buffer_offset in the
- * specified result_buffer.
- *
- * The function returns an event to wait for the computation to complete.
- */
-static cl_event sumOfArray(cl_mem input_buffer, unsigned int elements,
-                           cl_mem result_buffer, unsigned int result_buffer_offset,
-                           cl_event external_event) {
-  cl_int err = 0;
-  ocl_context_t* context = ocl_getContext();
-  cl_event init_event;
-  cl_event events[] = { NULL, NULL };
-  unsigned int nr_of_events = 0;
-  // Fetch the required sum kernels:
-  cl_kernel init_buffer = ocl_getKernel("init_zero", 0);
-  cl_kernel fast_sum = ocl_getKernel("sum_par", 0);
-  cl_kernel slow_sum = ocl_getKernel("sum_seq", 0);
-  struct timeval start; gettimeofday(&start, NULL);
-
-  // Determine the optimal local size.
-  size_t local_size;
-  clGetKernelWorkGroupInfo(fast_sum, context->device, CL_KERNEL_WORK_GROUP_SIZE,
-                           sizeof(size_t), &local_size, NULL);
-  // Truncate to local memory requirements.
-  local_size = Min(
-      local_size,
-      context->local_mem_size / sizeof(kde_float_t));
-  // And truncate to the next power of two.
-  local_size = (size_t)0x1 << (int)(log2((double)local_size));
-
-  size_t processors = context->max_compute_units;
-
-  // Figure out how many elements we can aggregate per thread in the parallel part:
-  unsigned int tuples_per_thread = elements / (processors * local_size);
-  // Now compute the configuration of the sequential kernel:
-  unsigned int slow_kernel_data_offset = processors * tuples_per_thread * local_size;
-  unsigned int slow_kernel_elements = elements - slow_kernel_data_offset;
-  unsigned int slow_kernel_result_offset = processors;
-
-  // Allocate a temporary result buffer.
-  cl_mem tmp_buffer = clCreateBuffer(
-      context->context, CL_MEM_READ_WRITE,
-      sizeof(kde_float_t) * (processors + 1), NULL, NULL);
-  err |= clSetKernelArg(init_buffer, 0, sizeof(cl_mem), &tmp_buffer);
-  size_t global_size = processors + 1;
-  err |= clEnqueueNDRangeKernel(
-      context->queue, init_buffer, 1, NULL, &global_size,
-      NULL, 1, &external_event, &init_event);
-  // Ok, we selected the correct kernel and parameters. Now prepare the arguments.
-  err |= clSetKernelArg(fast_sum, 0, sizeof(cl_mem), &input_buffer);
-  err |= clSetKernelArg(fast_sum, 1, sizeof(kde_float_t) * local_size, NULL);
-  err |= clSetKernelArg(fast_sum, 2, sizeof(cl_mem), &tmp_buffer);
-  err |= clSetKernelArg(fast_sum, 3, sizeof(unsigned int), &tuples_per_thread);
-  err |= clSetKernelArg(slow_sum, 0, sizeof(cl_mem), &input_buffer);
-  err |= clSetKernelArg(slow_sum, 1, sizeof(unsigned int), &slow_kernel_data_offset);
-  err |= clSetKernelArg(slow_sum, 2, sizeof(unsigned int), &slow_kernel_elements);
-  err |= clSetKernelArg(slow_sum, 3, sizeof(cl_mem), &tmp_buffer);
-  err |= clSetKernelArg(slow_sum, 4, sizeof(unsigned int), &slow_kernel_result_offset);
-  // Fire the kernel
-  if (tuples_per_thread) {
-    global_size = local_size * processors;
-    cl_event event;
-    err |= clEnqueueNDRangeKernel(
-        context->queue, fast_sum, 1, NULL, &global_size,
-        &local_size, 1, &init_event, &event);
-    events[nr_of_events++] = event;
-  }
-  if (slow_kernel_elements) {
-    cl_event event;
-    err |= clEnqueueTask(context->queue, slow_sum, 1, &init_event, &event);
-    events[nr_of_events++] = event;
-  }
-  // Now perform a final pass over the data to compute the aggregate.
-  slow_kernel_data_offset = 0;
-  slow_kernel_elements = processors + 1;
-  slow_kernel_result_offset = 0;
-  err |= clSetKernelArg(slow_sum, 0, sizeof(cl_mem), &tmp_buffer);
-  err |= clSetKernelArg(slow_sum, 1, sizeof(unsigned int), &slow_kernel_data_offset);
-  err |= clSetKernelArg(slow_sum, 2, sizeof(unsigned int), &slow_kernel_elements);
-  err |= clSetKernelArg(slow_sum, 3, sizeof(cl_mem), &result_buffer);
-  err |= clSetKernelArg(slow_sum, 4, sizeof(unsigned int), &result_buffer_offset);
-  cl_event finalize_event;
-  err |= clEnqueueTask(context->queue, slow_sum, nr_of_events, events, &finalize_event);
-
-  // Clean up ...
-  clReleaseKernel(slow_sum);
-  clReleaseKernel(fast_sum);
-  clReleaseKernel(init_buffer);
-  clReleaseMemObject(tmp_buffer);
-  clReleaseEvent(init_event);
-  if (events[0]) clReleaseEvent(events[0]);
-  if (events[1]) clReleaseEvent(events[1]);
-
-  return finalize_event;
-}
-
-const double learning_rate = 0.1f;
+const double learning_rate = 0.01f;
 
 // ############################################################
 // # Code for adaptive bandwidth optimization (online learning).
 // ############################################################
-
-/**
- * Helper function to compute a single online learning step.
- */
-static void ocl_runOnlineLearningStep(ocl_estimator_t* estimator,
-                                      double selectivity) {
-  if (!kde_enable_adaptive_bandwidth) return;
-
-  cl_int err;
-  ocl_context_t* context = ocl_getContext();
-
-  // Check whether the estimator already has a designated buffer to accumulate gradients.
-  if (estimator->gradient_accumulator == NULL) {
-    estimator->gradient_accumulator = clCreateBuffer(
-        context->context, CL_MEM_READ_WRITE,
-        sizeof(kde_float_t) * estimator->nr_of_dimensions, NULL, NULL);
-    // Initialize the gradient accumulator buffer with zero.
-    cl_kernel init_zero = ocl_getKernel("init_zero", 0);
-    clSetKernelArg(init_zero, 0, sizeof(cl_mem), &(estimator->gradient_accumulator));
-    size_t global_size = estimator->nr_of_dimensions;
-    clEnqueueNDRangeKernel(context->queue, init_zero, 1, NULL, &global_size, NULL, 0, NULL, NULL);
-    clFinish(context->queue);
-    clReleaseKernel(init_zero);
-  }
-
-  struct timeval start; gettimeofday(&start, NULL);
-
-  // Allocate a buffer to hold the temporary gradient contributions.
-  size_t stride_size = sizeof(kde_float_t) * estimator->rows_in_sample;
-  if ((stride_size * 8) % context->required_mem_alignment) {
-    // The stride size is not aligned, add some padding.
-    stride_size *= 8;
-    stride_size = (1 + stride_size / context->required_mem_alignment)
-                * context->required_mem_alignment;
-    stride_size /= 8;
-  }
-  unsigned int result_stride_elements = stride_size / sizeof(kde_float_t);
-
-  cl_mem gradient_buffer = clCreateBuffer(
-      context->context, CL_MEM_READ_WRITE,
-      stride_size * estimator->nr_of_dimensions, NULL, &err);
-  if (gradient_buffer == NULL || err != CL_SUCCESS) {
-    fprintf(stderr, "Could not allocate buffer for gradient computation.\n");
-    return;
-  }
-
-  // Now calculate the gradient contributions from each sample point.
-  cl_kernel computeSingleGradient = ocl_getKernel("computeSingleGradient",
-                                                  estimator->nr_of_dimensions);
-  // Figure out the maximum local size this kernel supports.
-  size_t local_size;
-  clGetKernelWorkGroupInfo(computeSingleGradient, context->device,
-                           CL_KERNEL_WORK_GROUP_SIZE, sizeof(size_t),
-                           &local_size, NULL);
-  // Now cap this to the local memory size requirements.
-  size_t available_local_memory;
-  clGetKernelWorkGroupInfo(computeSingleGradient, context->device,
-                           CL_KERNEL_LOCAL_MEM_SIZE, sizeof(size_t),
-                           &available_local_memory, NULL);
-  available_local_memory = context->local_mem_size - available_local_memory;
-  local_size = Min(
-      local_size,
-      available_local_memory / (sizeof(kde_float_t) * estimator->nr_of_dimensions));
-  // Finally, cap the local size to a multiple of the preferred multiple size.
-  size_t preferred_local_size_multiple;
-  clGetKernelWorkGroupInfo(computeSingleGradient, context->device,
-                           CL_KERNEL_PREFERRED_WORK_GROUP_SIZE_MULTIPLE,
-                           sizeof(size_t), &preferred_local_size_multiple, NULL);
-  local_size = preferred_local_size_multiple
-             * (local_size / preferred_local_size_multiple);
-  // Ok, compute the global size to match this local size.
-  size_t global_size = local_size * (estimator->rows_in_sample / local_size);
-  if (global_size < estimator->rows_in_sample) global_size+=local_size;
-
-  err |= clSetKernelArg(computeSingleGradient, 0, sizeof(cl_mem),
-                        &(estimator->sample_buffer));
-  err |= clSetKernelArg(computeSingleGradient, 1, sizeof(unsigned int),
-                        &(estimator->rows_in_sample));
-  err |= clSetKernelArg(computeSingleGradient, 2, sizeof(cl_mem),
-                        &(context->input_buffer));
-  err |= clSetKernelArg(computeSingleGradient, 3, sizeof(cl_mem),
-                        &(estimator->bandwidth_buffer));
-  err |= clSetKernelArg(computeSingleGradient, 4, available_local_memory, NULL);
-  err |= clSetKernelArg(computeSingleGradient, 5, sizeof(cl_mem),
-                        &gradient_buffer);
-  err |= clSetKernelArg(computeSingleGradient, 6, sizeof(unsigned int),
-                        &result_stride_elements);
-  cl_event gradient_event;
-  err |= clEnqueueNDRangeKernel(context->queue, computeSingleGradient, 1, NULL,
-                                &global_size, &local_size, 0, NULL,
-                                &gradient_event);
-
-  // Ok cool, now compute the actual gradient by summing up the individual contributions.
-  cl_mem gradient = clCreateBuffer(
-      context->context, CL_MEM_READ_WRITE,
-      sizeof(kde_float_t) * estimator->nr_of_dimensions, NULL, &err);
-  cl_event* events = palloc(sizeof(cl_event) * estimator->nr_of_dimensions);
-  cl_mem* sub_buffers = palloc(sizeof(cl_mem) * estimator->nr_of_dimensions);
-  unsigned int i;
-  for (i=0; i<estimator->nr_of_dimensions; ++i) {
-    cl_buffer_region region;
-    region.size = stride_size;
-    region.origin = i * stride_size;
-    sub_buffers[i] = clCreateSubBuffer(
-        gradient_buffer, CL_MEM_READ_ONLY, CL_BUFFER_CREATE_TYPE_REGION,
-        &region, &err);
-    events[i] = sumOfArray(sub_buffers[i], estimator->rows_in_sample,
-                           gradient, i, gradient_event);
-  }
-  // Finally, compute the gradient scaling factor.
-  double scale_factor = 1.0
-      / (pow(2.0, estimator->nr_of_dimensions) * estimator->rows_in_sample);
-  scale_factor *= (*(error_metrics[kde_error_metric].gradient_factor))(
-      estimator->last_selectivity, selectivity);
-
-  if (kde_adaptive_bandwidth_minibatch_size == 1) {
-    // Directly apply the gradient to the bandwidth.
-    cl_kernel applyGradient = ocl_getKernel("applyGradient", 0);
-    err |= clSetKernelArg(applyGradient, 0, sizeof(cl_mem),
-                          &(estimator->bandwidth_buffer));
-    err |= clSetKernelArg(applyGradient, 1, sizeof(cl_mem), &gradient);
-    kde_float_t scale_factor_tmp = scale_factor * learning_rate;
-    err |= clSetKernelArg(applyGradient, 2, sizeof(kde_float_t),
-                          &scale_factor_tmp);
-    global_size = estimator->nr_of_dimensions;
-    err |= clEnqueueNDRangeKernel(context->queue, applyGradient, 1, NULL,
-                                  &global_size, NULL,
-                                  estimator->nr_of_dimensions, events, NULL);
-    clFinish(context->queue);
-    clReleaseKernel(applyGradient);
-  } else {
-    // Accumulate the single gradient in the accumulator buffer.
-    cl_kernel accumulateGradient = ocl_getKernel("accumulateGradient", 0);
-    err |= clSetKernelArg(accumulateGradient, 0, sizeof(cl_mem),
-                          &(estimator->gradient_accumulator));
-    err |= clSetKernelArg(accumulateGradient, 1, sizeof(cl_mem), &gradient);
-    kde_float_t scale_factor_tmp = scale_factor * learning_rate;
-    err |= clSetKernelArg(accumulateGradient, 2, sizeof(kde_float_t),
-                          &scale_factor_tmp);
-    cl_event accumulateGradientEvent;
-    global_size = estimator->nr_of_dimensions;
-    err |= clEnqueueNDRangeKernel(context->queue, accumulateGradient, 1, NULL,
-                                  &global_size, NULL,
-                                  estimator->nr_of_dimensions, events,
-                                  &accumulateGradientEvent);
-    estimator->nr_of_accumulated_gradients++;
-    // Check if we have a full mini-batch.
-    if (estimator->nr_of_accumulated_gradients >= kde_adaptive_bandwidth_minibatch_size) {
-      // Apply it to the bandwidth.
-      cl_kernel applyGradient = ocl_getKernel("applyGradient", 0);
-      err |= clSetKernelArg(applyGradient, 0, sizeof(cl_mem),
-                            &(estimator->bandwidth_buffer));
-      err |= clSetKernelArg(applyGradient, 1, sizeof(cl_mem),
-                            &(estimator->gradient_accumulator));
-      kde_float_t scale_factor_tmp = learning_rate / estimator->nr_of_accumulated_gradients;
-      err |= clSetKernelArg(applyGradient, 2, sizeof(kde_float_t),
-                            &scale_factor_tmp);
-      cl_event applyGradientEvent;
-      err |= clEnqueueNDRangeKernel(context->queue, applyGradient, 1, NULL,
-                                    &global_size, NULL,
-                                    1, &accumulateGradientEvent,
-                                    &applyGradientEvent);
-      // Zero out the accumulation buffer.
-      cl_kernel init_zero = ocl_getKernel("init_zero", 0);
-      err |= clSetKernelArg(init_zero, 0, sizeof(cl_mem),
-                            &(estimator->gradient_accumulator));
-      err |= clEnqueueNDRangeKernel(context->queue, init_zero, 1, NULL,
-                                    &global_size, NULL, 1,
-                                    &applyGradientEvent, NULL);
-      estimator->nr_of_accumulated_gradients = 0;
-
-      clReleaseKernel(init_zero);
-      clReleaseKernel(applyGradient);
-      clReleaseEvent(applyGradientEvent);
-    }
-    clFinish(context->queue);
-    clReleaseEvent(accumulateGradientEvent);
-    clReleaseKernel(accumulateGradient);
-  }
-
-  // Clean up.
-  clFinish(context->queue);
-  for (i=0; i<estimator->nr_of_dimensions; ++i) {
-    clReleaseMemObject(sub_buffers[i]);
-    clReleaseEvent(events[i]);
-  }
-  clReleaseMemObject(gradient_buffer);
-  clReleaseEvent(gradient_event);
-  pfree(events);
-  pfree(sub_buffers);
-
-  // Print timing:
-  struct timeval now; gettimeofday(&now, NULL);
-  long seconds = now.tv_sec - start.tv_sec;
-  long useconds = now.tv_usec - start.tv_usec;
-  long mtime = ((seconds) * 1000 + useconds/1000.0) + 0.5;
-  fprintf(stderr, "Adjusted bandwidth, took: %ld ms.\n", mtime);
-}
-
 
 void ocl_notifyModelMaintenanceOfSelectivity(Oid relation, double selectivity) {
   // Check if we have an estimator for this relation.
@@ -460,7 +51,8 @@ void ocl_notifyModelMaintenanceOfSelectivity(Oid relation, double selectivity) {
   ocl_runOnlineLearningStep(estimator, selectivity);
 
   // Write the error to the log file.
-  ocl_reportErrorToLogFile(relation, estimator->last_selectivity, selectivity);
+  ocl_reportErrorToLogFile(relation, estimator->last_selectivity,
+                           selectivity, estimator->rows_in_table);
 
   // We are done.
   estimator->open_estimation = false;
@@ -677,7 +269,7 @@ static double computeGradient(unsigned n, const double* bandwidth,
   }
   // Prepare the kernel that computes a gradient for each observation.
   cl_kernel gradient_kernel = ocl_getKernel(
-      error_metrics[kde_error_metric].batch_kernel_name,
+      ocl_getSelectedErrorMetric()->batch_kernel_name,
       estimator->nr_of_dimensions);
     // First, fix the local and global size. We identify the optimal local size
     // by looking at available and required local memory and by ensuring that
@@ -728,6 +320,8 @@ static double computeGradient(unsigned n, const double* bandwidth,
   unsigned int stride_elements = conf->stride_size / sizeof(kde_float_t);
   err |= clSetKernelArg(gradient_kernel, 11, sizeof(unsigned int),
                         &stride_elements);
+  err |= clSetKernelArg(gradient_kernel, 12, sizeof(unsigned int),
+                        &(estimator->rows_in_table));
   // Compute the gradient for each observation.
   cl_event partial_gradient_event;
   err |= clEnqueueNDRangeKernel(context->queue, gradient_kernel, 1, NULL,

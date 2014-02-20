@@ -8,6 +8,9 @@
 
 #include "ocl_utilities.h"
 
+#include <math.h>
+#include <sys/time.h>
+
 #include "catalog/pg_type.h"
 
 #ifdef USE_OPENCL
@@ -180,9 +183,10 @@ static const char *kernel_names[] = {
     PGSHAREDIR"/kernel/kde.cl",
     PGSHAREDIR"/kernel/init.cl",
     PGSHAREDIR"/kernel/sample_maintenance.cl",
-    PGSHAREDIR"/kernel/model_maintenance.cl"
+    PGSHAREDIR"/kernel/model_maintenance.cl",
+    PGSHAREDIR"/kernel/online_learning.cl"
 };
-static const unsigned int nr_of_kernels = 5;
+static const unsigned int nr_of_kernels = 6;
 
 static void concatFiles(unsigned int nr_of_files,
                         char** file_buffers, size_t* file_lengths,
@@ -299,7 +303,9 @@ cl_kernel ocl_getKernel(const char* kernel_name, int dimensions) {
 void ocl_dumpBufferToFile(const char* file, cl_mem buffer,
                           int dimensions, int items) {
   ocl_context_t* context = ocl_getContext();
-  clFinish(context->queue);
+  clFinish(context->queue);cl_event sumOfArray(cl_mem input_buffer, unsigned int elements,
+                                               cl_mem result_buffer, unsigned int result_buffer_offset,
+                                               cl_event external_event);
 
   // Fetch the buffer to disk.
   kde_float_t* host_buffer = palloc(sizeof(kde_float_t) * dimensions * items);
@@ -318,6 +324,103 @@ void ocl_dumpBufferToFile(const char* file, cl_mem buffer,
   }
   fclose(f);
   pfree(host_buffer);
+}
+
+cl_event sumOfArray(cl_mem input_buffer, unsigned int elements,
+                    cl_mem result_buffer, unsigned int result_buffer_offset,
+                    cl_event external_event) {
+  cl_int err = 0;
+  ocl_context_t* context = ocl_getContext();
+  cl_event init_event;
+  cl_event events[] = { NULL, NULL };
+  unsigned int nr_of_events = 0;
+  // Fetch the required sum kernels:
+  cl_kernel init_buffer = ocl_getKernel("init_zero", 0);
+  cl_kernel fast_sum = ocl_getKernel("sum_par", 0);
+  cl_kernel slow_sum = ocl_getKernel("sum_seq", 0);
+  struct timeval start; gettimeofday(&start, NULL);
+
+  // Determine the optimal local size.
+  size_t local_size;
+  clGetKernelWorkGroupInfo(fast_sum, context->device, CL_KERNEL_WORK_GROUP_SIZE,
+                           sizeof(size_t), &local_size, NULL);
+  // Truncate to local memory requirements.
+  local_size = Min(
+      local_size,
+      context->local_mem_size / sizeof(kde_float_t));
+  // And truncate to the next power of two.
+  local_size = (size_t)0x1 << (int)(log2((double)local_size));
+
+  size_t processors = context->max_compute_units;
+
+  // Figure out how many elements we can aggregate per thread in the parallel part:
+  unsigned int tuples_per_thread = elements / (processors * local_size);
+  // Now compute the configuration of the sequential kernel:
+  unsigned int slow_kernel_data_offset = processors * tuples_per_thread * local_size;
+  unsigned int slow_kernel_elements = elements - slow_kernel_data_offset;
+  unsigned int slow_kernel_result_offset = processors;
+
+  // Allocate a temporary result buffer.
+  cl_mem tmp_buffer = clCreateBuffer(
+      context->context, CL_MEM_READ_WRITE,
+      sizeof(kde_float_t) * (processors + 1), NULL, NULL);
+  err |= clSetKernelArg(init_buffer, 0, sizeof(cl_mem), &tmp_buffer);
+  size_t global_size = processors + 1;
+  if (external_event == NULL) {
+    err |= clEnqueueNDRangeKernel(
+        context->queue, init_buffer, 1, NULL, &global_size,
+        NULL, 0, NULL, &init_event);
+  } else {
+    err |= clEnqueueNDRangeKernel(
+        context->queue, init_buffer, 1, NULL, &global_size,
+        NULL, 1, &external_event, &init_event);
+  }
+  // Ok, we selected the correct kernel and parameters. Now prepare the arguments.
+  err |= clSetKernelArg(fast_sum, 0, sizeof(cl_mem), &input_buffer);
+  err |= clSetKernelArg(fast_sum, 1, sizeof(kde_float_t) * local_size, NULL);
+  err |= clSetKernelArg(fast_sum, 2, sizeof(cl_mem), &tmp_buffer);
+  err |= clSetKernelArg(fast_sum, 3, sizeof(unsigned int), &tuples_per_thread);
+  err |= clSetKernelArg(slow_sum, 0, sizeof(cl_mem), &input_buffer);
+  err |= clSetKernelArg(slow_sum, 1, sizeof(unsigned int), &slow_kernel_data_offset);
+  err |= clSetKernelArg(slow_sum, 2, sizeof(unsigned int), &slow_kernel_elements);
+  err |= clSetKernelArg(slow_sum, 3, sizeof(cl_mem), &tmp_buffer);
+  err |= clSetKernelArg(slow_sum, 4, sizeof(unsigned int), &slow_kernel_result_offset);
+  // Fire the kernel
+  if (tuples_per_thread) {
+    global_size = local_size * processors;
+    cl_event event;
+    err |= clEnqueueNDRangeKernel(
+        context->queue, fast_sum, 1, NULL, &global_size,
+        &local_size, 1, &init_event, &event);
+    events[nr_of_events++] = event;
+  }
+  if (slow_kernel_elements) {
+    cl_event event;
+    err |= clEnqueueTask(context->queue, slow_sum, 1, &init_event, &event);
+    events[nr_of_events++] = event;
+  }
+  // Now perform a final pass over the data to compute the aggregate.
+  slow_kernel_data_offset = 0;
+  slow_kernel_elements = processors + 1;
+  slow_kernel_result_offset = 0;
+  err |= clSetKernelArg(slow_sum, 0, sizeof(cl_mem), &tmp_buffer);
+  err |= clSetKernelArg(slow_sum, 1, sizeof(unsigned int), &slow_kernel_data_offset);
+  err |= clSetKernelArg(slow_sum, 2, sizeof(unsigned int), &slow_kernel_elements);
+  err |= clSetKernelArg(slow_sum, 3, sizeof(cl_mem), &result_buffer);
+  err |= clSetKernelArg(slow_sum, 4, sizeof(unsigned int), &result_buffer_offset);
+  cl_event finalize_event;
+  err |= clEnqueueTask(context->queue, slow_sum, nr_of_events, events, &finalize_event);
+
+  // Clean up ...
+  clReleaseKernel(slow_sum);
+  clReleaseKernel(fast_sum);
+  clReleaseKernel(init_buffer);
+  clReleaseMemObject(tmp_buffer);
+  clReleaseEvent(init_event);
+  if (events[0]) clReleaseEvent(events[0]);
+  if (events[1]) clReleaseEvent(events[1]);
+
+  return finalize_event;
 }
 
 #endif /* USE_OPENCL */
