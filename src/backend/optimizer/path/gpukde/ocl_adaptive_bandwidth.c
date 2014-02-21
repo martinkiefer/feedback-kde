@@ -322,19 +322,17 @@ void ocl_runOnlineLearningStep(ocl_estimator_t* estimator,
   estimator->temp_gradient_event = NULL;
 
   // Compute the factor for the gradient.
-  kde_float_t gradient_factor = 1.0f
+  kde_float_t gradient_factor = 1.0
       / (pow(2.0f, estimator->nr_of_dimensions) * estimator->rows_in_sample);
   gradient_factor *= (*(ocl_getSelectedErrorMetric()->gradient_factor))(
       estimator->last_selectivity, selectivity, estimator->rows_in_table);
   // Compute the factor for the adjusted gradient.
-  kde_float_t shifted_gradient_factor = 1.0f
+  kde_float_t shifted_gradient_factor = 1.0
        / (pow(2.0f, estimator->nr_of_dimensions) * estimator->rows_in_sample);
   shifted_gradient_factor *= (*(ocl_getSelectedErrorMetric()->gradient_factor))(
       shifted_estimate, selectivity, estimator->rows_in_table);
 
   size_t global_size = estimator->nr_of_dimensions;
-
-  fprintf(stderr, "%f %f\n", estimator->last_selectivity, shifted_estimate);
 
   // Now accumulate the gradient within the current mini-batch.
   cl_kernel accumulate = ocl_getKernel("accumulateOnlineBuffers", 0);
