@@ -169,6 +169,7 @@ static const struct config_enum_entry kde_error_metric_options[] = {
   {"Relative", RELATIVE, false},
   {"Quadratic", QUADRATIC, false},
   {"QError", Q, false},
+  {"SquaredRelative", SQUARED_RELATIVE, false},
   {NULL, 0, false}
 };
 extern int kde_error_metric;
