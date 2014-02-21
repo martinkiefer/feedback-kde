@@ -47,7 +47,8 @@ typedef struct ocl_estimator {
   cl_mem current_time_constant;
   /* Fields for pre-computing the gradient for online learning */
   cl_mem temp_gradient_buffer;
-  cl_mem temp_hessian_buffer;
+  cl_mem temp_shifted_gradient_buffer;
+  cl_mem temp_shifted_result_buffer;
   cl_event temp_gradient_event;
   /* Normalization factors */
   double* scale_factors;    // Scale factors that were applied to the data in the sample.

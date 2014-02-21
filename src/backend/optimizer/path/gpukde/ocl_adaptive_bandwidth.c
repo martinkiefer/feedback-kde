@@ -26,7 +26,7 @@ static void ocl_initializeBuffersForOnlineLearning(ocl_estimator_t* estimator) {
   cl_kernel init_zero = ocl_getKernel("init_zero", 0);
   cl_kernel init_one = ocl_getKernel("init_one", 0);
   cl_kernel init_small = ocl_getKernel("init", 0);
-  kde_float_t small_val = 1e-4;
+  kde_float_t small_val = 1e-1;
   err |= clSetKernelArg(init_small, 1, sizeof(kde_float_t), &small_val);
   size_t global_size = estimator->nr_of_dimensions;
 
@@ -114,9 +114,11 @@ static void ocl_initializeBuffersForOnlineLearning(ocl_estimator_t* estimator) {
    estimator->temp_gradient_buffer = clCreateBuffer(
        context->context, CL_MEM_READ_WRITE,
        sizeof(kde_float_t) * estimator->nr_of_dimensions, NULL, NULL);
-   estimator->temp_hessian_buffer = clCreateBuffer(
+   estimator->temp_shifted_gradient_buffer= clCreateBuffer(
        context->context, CL_MEM_READ_WRITE,
        sizeof(kde_float_t) * estimator->nr_of_dimensions, NULL, NULL);
+   estimator->temp_shifted_result_buffer = clCreateBuffer(
+       context->context, CL_MEM_READ_WRITE, sizeof(kde_float_t), NULL, NULL);
 
   // Clean up and wait for everything to finish..
   clReleaseKernel(init_one);
@@ -145,7 +147,7 @@ void ocl_prepareOnlineLearningStep(ocl_estimator_t* estimator) {
   }
 
   cl_event* summation_events = palloc(
-      2 * sizeof(cl_event) * estimator->nr_of_dimensions);
+      sizeof(cl_event) * (2 * estimator->nr_of_dimensions + 1));
 
   // Compute the required stride size for the partial gradient buffers.
   size_t stride_size = sizeof(kde_float_t) * estimator->rows_in_sample;
@@ -209,6 +211,8 @@ void ocl_prepareOnlineLearningStep(ocl_estimator_t* estimator) {
                         &null_buffer);
   err |= clSetKernelArg(computePartialGradient, 6, sizeof(cl_mem),
                         &partial_gradient_buffer);
+  err |= clSetKernelArg(computePartialGradient, 8, sizeof(cl_mem),
+                        &null_buffer);
   err |= clEnqueueNDRangeKernel(context->queue, computePartialGradient, 1,
                                 NULL, &global_size, &local_size, 0, NULL,
                                 &partial_gradient_event);
@@ -233,10 +237,15 @@ void ocl_prepareOnlineLearningStep(ocl_estimator_t* estimator) {
   cl_mem partial_shifted_gradient_buffer = clCreateBuffer(
       context->context, CL_MEM_READ_WRITE,
       stride_size * estimator->nr_of_dimensions, NULL, &err);
+  cl_mem partial_shifted_result_buffer = clCreateBuffer(
+      context->context, CL_MEM_READ_WRITE,
+      sizeof(kde_float_t) * estimator->rows_in_sample, NULL, &err);
   err |= clSetKernelArg(computePartialGradient, 4, sizeof(cl_mem),
                         &(estimator->running_gradient_average));
   err |= clSetKernelArg(computePartialGradient, 6, sizeof(cl_mem),
                         &partial_shifted_gradient_buffer);
+  err |= clSetKernelArg(computePartialGradient, 8, sizeof(cl_mem),
+                        &partial_shifted_result_buffer);
   err |= clEnqueueNDRangeKernel(context->queue, computePartialGradient, 1,
                                 NULL, &global_size, &local_size, 0, NULL,
                                 &partial_shifted_gradient_event);
@@ -251,37 +260,48 @@ void ocl_prepareOnlineLearningStep(ocl_estimator_t* estimator) {
         CL_BUFFER_CREATE_TYPE_REGION, &region, &err);
     summation_events[estimator->nr_of_dimensions + i] = sumOfArray(
         shifted_gradient_sub_buffer, estimator->rows_in_sample,
-        estimator->temp_hessian_buffer, i, partial_shifted_gradient_event);
+        estimator->temp_shifted_gradient_buffer, i,
+        partial_shifted_gradient_event);
     clReleaseMemObject(shifted_gradient_sub_buffer);
   }
+  // Also schedule the kernel that computes the sum of local result contributions
+  // for the shifted gradient.
+  summation_events[2 * estimator->nr_of_dimensions] = sumOfArray(
+      partial_shifted_result_buffer, estimator->rows_in_sample,
+      estimator->temp_shifted_result_buffer, 0, partial_shifted_gradient_event);
   clReleaseEvent(partial_shifted_gradient_event);
 
-  // Finally, schedule the kernel that computes the finite-difference
-  // estimation of the Hessian.
-  cl_kernel computeHessian = ocl_getKernel("computeFDHessian", 0);
-  global_size = estimator->nr_of_dimensions;
-  err |= clSetKernelArg(computeHessian, 0, sizeof(cl_mem),
-                        &(estimator->temp_gradient_buffer));
-  err |= clSetKernelArg(computeHessian, 1, sizeof(cl_mem),
-                        &(estimator->running_gradient_average));
-  err |= clSetKernelArg(computeHessian, 2, sizeof(cl_mem),
-                        &(estimator->temp_hessian_buffer));
-  err |= clEnqueueNDRangeKernel(
-      context->queue, computeHessian, 1, NULL, &global_size, NULL,
-      estimator->nr_of_dimensions, summation_events,
-      &(estimator->temp_gradient_event));
+  ocl_printBuffer(" > Gradient at bandwidth:", estimator->temp_gradient_buffer, estimator->nr_of_dimensions, 1);
+  ocl_printBuffer(" > Shifted gradient:", estimator->temp_shifted_gradient_buffer, estimator->nr_of_dimensions, 1);
+
+  // Finally, schedule a single task that serves as an indicator that all computations
+  // have finished and that normalizes the shifted gradient result.
+  kde_float_t normalization_factor =
+       pow(0.5, estimator->nr_of_dimensions) / estimator->rows_in_sample;
+  cl_kernel finalizeKernel = ocl_getKernel("finalizeEstimate", 0);
+  err |= clSetKernelArg(finalizeKernel, 0, sizeof(cl_mem),
+                        &(estimator->temp_shifted_result_buffer));
+  err |= clSetKernelArg(finalizeKernel, 1, sizeof(kde_float_t),
+                        &normalization_factor);
+  err |= clEnqueueTask(
+      context->queue, finalizeKernel,
+      2*estimator->nr_of_dimensions + 1,
+      summation_events, &(estimator->temp_gradient_event));
+
 
   // Clean up.
-  clReleaseKernel(computeHessian);
+  clReleaseKernel(finalizeKernel);
   clReleaseKernel(computePartialGradient);
-  for (i=0; i<(estimator->online_learning_initialized ? 2 : 1) * estimator->nr_of_dimensions; ++i) {
+  for (i=0; i<(2 * estimator->nr_of_dimensions + 1); ++i) {
     clReleaseEvent(summation_events[i]);
   }
   pfree(summation_events);
   if (partial_gradient_buffer)
-      clReleaseMemObject(partial_gradient_buffer);
+    clReleaseMemObject(partial_gradient_buffer);
   if (partial_shifted_gradient_buffer)
     clReleaseMemObject(partial_shifted_gradient_buffer);
+  if (partial_shifted_result_buffer)
+    clReleaseMemObject(partial_shifted_result_buffer);
 }
 
 void ocl_runOnlineLearningStep(ocl_estimator_t* estimator,
@@ -293,39 +313,54 @@ void ocl_runOnlineLearningStep(ocl_estimator_t* estimator,
   ocl_context_t* context = ocl_getContext();
   cl_int err = CL_SUCCESS;
 
-  // Compute the factor to adjust the gradient.
+  // Fetch the shifted result.
+  kde_float_t shifted_estimate;
+  clEnqueueReadBuffer(context->queue, estimator->temp_shifted_result_buffer,
+                      CL_TRUE, 0, sizeof(kde_float_t), &shifted_estimate, 1,
+                      &(estimator->temp_gradient_event), NULL);
+  clReleaseEvent(estimator->temp_gradient_event);
+  estimator->temp_gradient_event = NULL;
+
+  // Compute the factor for the gradient.
   kde_float_t gradient_factor = 1.0f
       / (pow(2.0f, estimator->nr_of_dimensions) * estimator->rows_in_sample);
   gradient_factor *= (*(ocl_getSelectedErrorMetric()->gradient_factor))(
       estimator->last_selectivity, selectivity, estimator->rows_in_table);
+  // Compute the factor for the adjusted gradient.
+  kde_float_t shifted_gradient_factor = 1.0f
+       / (pow(2.0f, estimator->nr_of_dimensions) * estimator->rows_in_sample);
+  shifted_gradient_factor *= (*(ocl_getSelectedErrorMetric()->gradient_factor))(
+      shifted_estimate, selectivity, estimator->rows_in_table);
 
   size_t global_size = estimator->nr_of_dimensions;
+
+  fprintf(stderr, "%f %f\n", estimator->last_selectivity, shifted_estimate);
 
   // Now accumulate the gradient within the current mini-batch.
   cl_kernel accumulate = ocl_getKernel("accumulateOnlineBuffers", 0);
   err |= clSetKernelArg(accumulate, 0, sizeof(cl_mem),
                         &(estimator->temp_gradient_buffer));
   err |= clSetKernelArg(accumulate, 1, sizeof(cl_mem),
-                        &(estimator->temp_hessian_buffer));
+                        &(estimator->temp_shifted_gradient_buffer));
   err |= clSetKernelArg(accumulate, 2, sizeof(kde_float_t), &gradient_factor);
-  err |= clSetKernelArg(accumulate, 3, sizeof(cl_mem),
-                        &(estimator->gradient_accumulator));
+  err |= clSetKernelArg(accumulate, 3, sizeof(kde_float_t),
+                        &shifted_gradient_factor);
   err |= clSetKernelArg(accumulate, 4, sizeof(cl_mem),
-                        &(estimator->squared_gradient_accumulator));
+                        &(estimator->running_gradient_average));
   err |= clSetKernelArg(accumulate, 5, sizeof(cl_mem),
-                        &(estimator->hessian_accumulator));
+                        &(estimator->gradient_accumulator));
   err |= clSetKernelArg(accumulate, 6, sizeof(cl_mem),
+                        &(estimator->squared_gradient_accumulator));
+  err |= clSetKernelArg(accumulate, 7, sizeof(cl_mem),
+                        &(estimator->hessian_accumulator));
+  err |= clSetKernelArg(accumulate, 8, sizeof(cl_mem),
                         &(estimator->squared_hessian_accumulator));
   cl_event accumulator_event;
   err |= clEnqueueNDRangeKernel(
-      context->queue, accumulate, 1, NULL, &global_size, NULL, 1,
-      &(estimator->temp_gradient_event), &accumulator_event);
+      context->queue, accumulate, 1, NULL, &global_size, NULL,
+      0, NULL, &accumulator_event);
 
   // Debug print the accumulated buffers.
-  ocl_printBuffer("\tTemp gradient:", estimator->temp_gradient_buffer,
-                  estimator->nr_of_dimensions, 1);
-  ocl_printBuffer("\tTemp hessian:", estimator->temp_hessian_buffer,
-                  estimator->nr_of_dimensions, 1);
   ocl_printBuffer("\tAccumulated gradient:", estimator->gradient_accumulator,
                   estimator->nr_of_dimensions, 1);
   ocl_printBuffer("\tAccumulated gradient^2:", estimator->squared_gradient_accumulator,

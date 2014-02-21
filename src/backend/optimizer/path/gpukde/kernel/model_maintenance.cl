@@ -120,6 +120,38 @@ __kernel void computeBatchGradientRelative(
   }
 }
 
+__kernel void computeBatchGradientSquaredRelative(
+    __global T* data,
+    unsigned int nr_of_data_points,
+    __global T* ranges,
+    __global T* observations,
+    unsigned int nr_of_observations,
+    __global T* bandwidth,
+    // Scratch space.
+    __local T* lower_bound_scratch,
+    __local T* upper_bound_scratch,
+    __local T* gradient_scratch,
+    // Result.
+    __global T* cost_values,
+    __global T* gradient,
+    unsigned int gradient_stride,
+    unsigned int nrows  /* Number of rows in table */
+  ) {
+  // First, we compute the error-independent parts of the gradient.
+  BATCH_GRADIENT_COMMON();
+  // Next, compute the estimation error and the gradient scale factor.
+  T error = estimation - observations[get_global_id(0)];
+  T tmp = max((T)(1.0/nrows), observations[get_global_id(0)]);
+  T factor = 2 * error / (tmp * tmp);
+  cost_values[get_global_id(0)] = error * factor;
+  factor /= pow((T)2.0, D) * nr_of_data_points;
+  // Finally, write the gradient from this observation to global memory.
+  for (unsigned int i=0; i<D; ++i) {
+    gradient[i * gradient_stride + get_global_id(0)] =
+        gradient_scratch[get_local_id(0) * D + i] * factor;
+  }
+}
+
 __kernel void computeBatchGradientQuadratic(
     __global T* data,
     unsigned int nr_of_data_points,
