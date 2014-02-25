@@ -2,7 +2,7 @@
 
 BASEDIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 
-source $BASEDIR/../../conf.sh
+source $BASEDIR/../conf.sh
 
 # If MonetDB is used, make sure that the database is writable.
 if [ ! -z $MONET_DATABASE ]; then
