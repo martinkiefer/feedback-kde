@@ -2,6 +2,7 @@
   #if (TYPE == 4)
     typedef float T;
   #elif (TYPE == 8)
+    #pragma OPENCL EXTENSION cl_khr_fp64: enable
     typedef double T;
   #endif
   #define TYPE_DEFINED_
