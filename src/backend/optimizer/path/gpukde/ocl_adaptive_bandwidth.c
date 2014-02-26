@@ -363,10 +363,8 @@ void ocl_runOnlineLearningStep(ocl_estimator_t* estimator,
                         &(estimator->squared_hessian_accumulator));
   cl_event accumulator_event;
   err |= clEnqueueNDRangeKernel(
-      context->queue, accumulate, 1, NULL, &global_size, NULL, 1,
-      &(estimator->online_learning_event), &accumulator_event);
-  clReleaseEvent(estimator->online_learning_event);
-  estimator->online_learning_event = NULL;
+      context->queue, accumulate, 1, NULL, &global_size, NULL, 0, NULL,
+      &accumulator_event);
 
   // Debug print the accumulated buffers.
   ocl_printBuffer("\tAccumulated gradient:", estimator->gradient_accumulator,
