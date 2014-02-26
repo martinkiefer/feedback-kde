@@ -324,9 +324,9 @@ void ocl_runOnlineLearningStep(ocl_estimator_t* estimator,
   kde_float_t shifted_estimate;
   clEnqueueReadBuffer(context->queue, estimator->temp_shifted_result_buffer,
                       CL_TRUE, 0, sizeof(kde_float_t), &shifted_estimate, 1,
-                      &(estimator->temp_gradient_event), NULL);
-  clReleaseEvent(estimator->temp_gradient_event);
-  estimator->temp_gradient_event = NULL;
+                      &(estimator->online_learning_event), NULL);
+  clReleaseEvent(estimator->online_learning_event);
+  estimator->online_learning_event = NULL;
 
   // Compute the factor for the gradient.
   kde_float_t gradient_factor = 1.0
