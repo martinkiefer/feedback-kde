@@ -18,7 +18,8 @@ __kernel void computePartialGradient(
     __global const T* const bandwidth_delta,
     __local T* scratch,
     __global T* gradient,
-    unsigned int gradient_stride
+    unsigned int gradient_stride,
+    __global T* result
     ) {
   if (get_global_id(0) >= items_in_sample) return;
   // First compute the factors.
@@ -27,7 +28,7 @@ __kernel void computePartialGradient(
     T val = data[D*get_global_id(0) + i];
     T h = bandwidth[i];
     if (bandwidth_delta) h += bandwidth_delta[i];
-    h = h <= 0 ? 0.0001f : h;
+    h = h <= 0 ? 1e-5 : h;
     T lo = range[2*i] - val;
     T up = range[2*i + 1] - val;
 
@@ -47,24 +48,25 @@ __kernel void computePartialGradient(
     grad *= scratch[D*get_local_id(0) + i];
     gradient[i * gradient_stride + get_global_id(0)] = grad;
   }
+
+  // If requested, write out the result as well.
+  if (result) result[get_global_id(0)] = res;
 }
 
-// Kernel to compute the finite-difference estimation of the on-diagonal Hessian elements.
-__kernel void computeFDHessian(
-    __global const T* gradient,
-    __global const T* delta,
-    __global T* hessian
+// This is a very simple kernel that only multiplies a given value by a factor.
+__kernel void finalizeEstimate(
+    __global T* result,
+    T factor
     ) {
-  unsigned int i = get_global_id(0);
-  T dx = delta[i];
-  T h = fabs( (gradient[i] - hessian[i]) / delta[i] );
-  hessian[i] = dx == 0 ? h : 0;
+  result[0] *= factor;
 }
 
 __kernel void accumulateOnlineBuffers(
     __global const T* gradient,
-    __global const T* hessian,
+    __global const T* shifted_gradient,
     T gradient_factor,
+    T shifted_gradient_factor,
+    __global const T* running_gradient_average,
     __global T* gradient_accumulator,
     __global T* squared_gradient_accumulator,
     __global T* hessian_accumulator,
@@ -72,7 +74,11 @@ __kernel void accumulateOnlineBuffers(
     ) {
   unsigned int i = get_global_id(0);
   T grad = gradient_factor * gradient[i];
-  T hess = gradient_factor * hessian[i];
+  T shift_grad = shifted_gradient_factor * shifted_gradient[i];
+  // First, compute the hessian approximation via finite differences.
+  T dx = running_gradient_average[i];
+  T hess = dx == 0 ? 0 : fabs ( (grad - shift_grad) / dx );
+  // Now update the accumulators.
   gradient_accumulator[i] += grad;
   squared_gradient_accumulator[i] += grad * grad;
   hessian_accumulator[i] += hess;

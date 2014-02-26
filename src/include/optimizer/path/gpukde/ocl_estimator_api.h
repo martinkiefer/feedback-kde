@@ -46,7 +46,8 @@ typedef enum error_metrics {
   ABSOLUTE = 0,
   RELATIVE = 1,
   QUADRATIC = 2,
-  Q = 3
+  Q = 3,
+  SQUARED_RELATIVE = 4,
 } ocl_error_metrics_t;
 
 /*

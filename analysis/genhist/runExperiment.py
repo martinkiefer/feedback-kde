@@ -101,10 +101,10 @@ selected_queries = set(selected_queries[0:queries])
 # Set all required options.
 cur.execute("SET ocl_use_gpu TO false;")
 cur.execute("SET kde_estimation_quality_logfile TO '/tmp/error.log';")
-if errortype == "absolute":
-    cur.execute("SET kde_error_metric TO Absolute;")
-elif errortype == "relative":
-    cur.execute("SET kde_error_metric TO Relative;")
+if (errortype == "relative"):
+    cur.execute("SET kde_error_metric TO SquaredRelative;")
+elif (errortype == "absolute"):
+    cur.execute("SET kde_error_metric TO Quadratic;")
 cur.execute("SET kde_samplesize TO %i;" % samplesize)
 # Set the optimization strategy.
 if (optimization == "adaptive"):

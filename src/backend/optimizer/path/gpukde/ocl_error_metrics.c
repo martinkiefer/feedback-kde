@@ -60,6 +60,14 @@ static double RelativeErrorGradientFactor(double actual, double expected, double
     return -1.0 / Max(1.0 / nrows, expected);
   }
 }
+static double SquaredRelativeError(double actual, double expected, double nrows) {
+  // Not entirely correct, but robust against zero estimates.
+  double e = (actual - expected) / Max(1.0 / nrows, expected);
+  return e*e;
+}
+static double SquaredRelativeErrorGradientFactor(double actual, double expected, double nrows) {
+  return 2 * (actual - expected) / (Max(1.0 / nrows, expected) * Max(1.0 / nrows, expected));
+}
 
 // Array of all available metrics.
 static error_metric_t error_metrics[] = {
@@ -78,6 +86,11 @@ static error_metric_t error_metrics[] = {
    {
       "QError", &QErrror, &QErrorGradientFactor,
       "computeBatchGradientQ"
+   },
+   {
+      "SquaredRelative", &SquaredRelativeError,
+      &SquaredRelativeErrorGradientFactor,
+      "computeBatchGradientSquaredRelative"
    }
 };
 

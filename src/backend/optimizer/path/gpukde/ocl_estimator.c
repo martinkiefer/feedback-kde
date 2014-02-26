@@ -393,8 +393,10 @@ static void ocl_freeEstimator(ocl_estimator_t* estimator, bool materialize) {
     clReleaseMemObject(estimator->current_time_constant);
   if (estimator->temp_gradient_buffer)
     clReleaseMemObject(estimator->temp_gradient_buffer);
-  if (estimator->temp_hessian_buffer)
-    clReleaseMemObject(estimator->temp_hessian_buffer);
+  if (estimator->temp_shifted_gradient_buffer)
+    clReleaseMemObject(estimator->temp_shifted_gradient_buffer);
+  if (estimator->temp_shifted_result_buffer)
+    clReleaseMemObject(estimator->temp_shifted_result_buffer);
 
   if (estimator->column_order)
     free(estimator->column_order);
