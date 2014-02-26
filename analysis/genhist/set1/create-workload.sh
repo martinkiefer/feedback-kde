@@ -16,8 +16,8 @@ mkdir -p $BASEDIR/queries
 # Create the different query workloads.
 
 workload_1_tables=()
-workload_2_tables=("gen1_d5" "gen1_d8" "gen1_d10")
-workload_3_tables=("gen1_d4" "gen1_d5")
+workload_2_tables=()
+workload_3_tables=()
 workload_4_tables=()
 workload_5_tables=("gen1_d4" "gen1_d5" "gen1_d8" "gen1_d10")
 
@@ -60,6 +60,6 @@ for table in "${workload_5_tables[@]}"
 do
 	# Workload 5: Random range queries.
 	python $BASEDIR/../generateRandomWorkload.py \
-		--dbname=$DATABASE --database=$DBMS --table=$table --queries=10000 \
+		--dbname=$DATABASE --database=$DBMS --table=$table --queries=500 \
 		--type=range --out=$BASEDIR/queries/${table}_5.sql
 done
