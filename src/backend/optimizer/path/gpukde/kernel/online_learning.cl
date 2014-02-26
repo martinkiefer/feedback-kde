@@ -32,9 +32,9 @@ __kernel void computePartialGradient(
     T up = range[2*i + 1] - val;
 
     T factor1 = isinf(lo) ? 0 : (lo / (sqrt(2 * M_PI) * pow(h, (T)1.5))
-                * exp(-1.0f * lo * lo / (2*h)));
+                * exp((T)-1.0 * lo * lo / (2*h)));
     factor1 -= isinf(up) ? 0 : (up / (sqrt(2 * M_PI) * pow(h, (T)1.5))
-               * exp(-1.0f * up * up / (2*h)));
+               * exp((T)-1.0 * up * up / (2*h)));
     T factor2 = erf(up / sqrt(2*h)) - erf(lo / sqrt(2*h));
 
     res *= factor2;
@@ -105,9 +105,9 @@ __kernel void initializeOnlineEstimate(
 
   // We now use these to initialze our running averages.
   running_gradient_average[i] = g;
-  running_squared_gradient_average[i] = max(1e-5, gs);
-  running_hessian_average[i] = max(1e-5, h);
-  running_squared_hessian_average[i] = max(1e-5, hs);
+  running_squared_gradient_average[i] = max((T)1e-5, gs);
+  running_hessian_average[i] = max((T)1e-5, h);
+  running_squared_hessian_average[i] = max((T)1e-5, hs);
 
   // Reset the accumulators.
   gradient_accumulator[i] = 0;
@@ -161,9 +161,9 @@ __kernel void updateOnlineEstimate(
   hs_ = (1 - tinv) * hs_ + tinv * hs;
 
   // Compensate for negative values:
-  gs_ = max(1e-4, gs_);
-  h_ = max(1e-4, h_);
-  hs_ = max(1e-4, hs_);
+  gs_ = max((T)1e-4, gs_);
+  h_ = max((T)1e-4, h_);
+  hs_ = max((T)1e-4, hs_);
 
   // Estimate the learning rate.
   T learning_rate = (h_ / hs_) * (mini_batch_size * g_ * g_) / (gs_ + (mini_batch_size - 1) * g_ * g_);
@@ -173,7 +173,7 @@ __kernel void updateOnlineEstimate(
 
   // Update the bandwidth.
   T b = bandwidth[i] - learning_rate * g;
-  b = max(1e-5, b);   // Never allow negative bandwidths.
+  b = max((T)1e-5, b);   // Never allow negative bandwidths.
   bandwidth[i] = b;
 
   // Write back all running estimates.
