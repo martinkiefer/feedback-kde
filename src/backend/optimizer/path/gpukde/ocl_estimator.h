@@ -48,12 +48,13 @@ typedef struct ocl_estimator {
   /* Fields for pre-computing the gradient for online learning */
   cl_mem temp_gradient_buffer;
   cl_mem temp_hessian_buffer;
-  cl_event temp_gradient_event;
+  cl_event online_learning_event; 
   /* Normalization factors */
   double* scale_factors;    // Scale factors that were applied to the data in the sample.
   /* Runtime information */
   bool open_estimation;     // Set to true if this estimator has produced a valid estimation for which we are still waiting for feedback.
   double last_selectivity;  // Stores the last selectivity computed by this estimator.
+  cl_kernel estimator;
 } ocl_estimator_t;
 
 /*

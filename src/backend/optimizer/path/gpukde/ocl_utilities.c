@@ -28,6 +28,10 @@ bool kde_enable;
 bool kde_debug;
 int kde_samplesize;
 
+cl_kernel init_buffer = NULL;
+cl_kernel fast_sum = NULL;
+cl_kernel slow_sum = NULL;
+
 bool ocl_isDebug() {
   return kde_debug;
 }
@@ -245,7 +249,6 @@ static cl_program buildProgram(ocl_context_t* context, const char* build_params)
 	} else if (sizeof(kde_float_t) == sizeof(float)) {
 	  strcat(device_params, "-DTYPE=4 ");
 	}
-	strcat(device_params, "-g -s \"/tmp/kernel.cl\" ");
 	strcat(device_params, build_params);
 	// Ok, build the program
 	cl_program program = clCreateProgramWithSource(
@@ -372,9 +375,12 @@ cl_event sumOfArray(cl_mem input_buffer, unsigned int elements,
   cl_event events[] = { NULL, NULL };
   unsigned int nr_of_events = 0;
   // Fetch the required sum kernels:
-  cl_kernel init_buffer = ocl_getKernel("init_zero", 0);
-  cl_kernel fast_sum = ocl_getKernel("sum_par", 0);
-  cl_kernel slow_sum = ocl_getKernel("sum_seq", 0);
+  if (init_buffer == NULL)
+    init_buffer = ocl_getKernel("init_zero", 0);
+  if (fast_sum == NULL)
+    fast_sum = ocl_getKernel("sum_par", 0);
+  if (slow_sum == NULL)
+    slow_sum = ocl_getKernel("sum_seq", 0);
   struct timeval start; gettimeofday(&start, NULL);
 
   // Determine the optimal local size.
@@ -449,9 +455,6 @@ cl_event sumOfArray(cl_mem input_buffer, unsigned int elements,
   err |= clEnqueueTask(context->queue, slow_sum, nr_of_events, events, &finalize_event);
 
   // Clean up ...
-  clReleaseKernel(slow_sum);
-  clReleaseKernel(fast_sum);
-  clReleaseKernel(init_buffer);
   clReleaseMemObject(tmp_buffer);
   clReleaseEvent(init_event);
   if (events[0]) clReleaseEvent(events[0]);

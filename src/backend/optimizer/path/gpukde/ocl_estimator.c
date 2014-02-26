@@ -75,21 +75,33 @@ static double rangeKDE(ocl_context_t* ctxt, ocl_estimator_t* estimator) {
   kde_float_t normalization_factor = 1.0;
   if (global_kernel_type == EPANECHNIKOV) {
     // Epanechnikov.
-    kde_kernel = prepareKDEKernel(estimator, "epanechnikov_kde");
+    if (estimator->estimator == NULL)
+      estimator->estimator = prepareKDEKernel(estimator, "epanechnikov_kde");
+    kde_kernel = estimator->estimator;
     // (3/4)^d
     normalization_factor = pow(0.75, estimator->nr_of_dimensions);
   } else {
     // Gauss.
-    kde_kernel = prepareKDEKernel(estimator, "gauss_kde");
+    if (estimator->estimator == NULL)
+      estimator->estimator = prepareKDEKernel(estimator, "gauss_kde");
+    kde_kernel = estimator->estimator;
     // (1/2)^d
     normalization_factor = pow(0.5, estimator->nr_of_dimensions);
   }
   // Now run the actual computation.
   size_t global_size = estimator->rows_in_sample;
   cl_event kde_event;
-	clEnqueueNDRangeKernel(ctxt->queue, kde_kernel, 1, NULL, &global_size,
-	                       NULL, 0, NULL, &kde_event);
-	cl_mem result_buffer = clCreateBuffer(
+  if (estimator->online_learning_event) {
+	  clEnqueueNDRangeKernel(ctxt->queue, kde_kernel, 1, NULL, &global_size,
+	                         NULL, 1, &(estimator->online_learning_event),
+                           &kde_event);
+    clReleaseEvent(estimator->online_learning_event);
+    estimator->online_learning_event = NULL;
+	} else {
+    clEnqueueNDRangeKernel(ctxt->queue, kde_kernel, 1, NULL, &global_size,
+	                         NULL, 0, NULL, &kde_event);
+	}
+  cl_mem result_buffer = clCreateBuffer(
 	    ctxt->context, CL_MEM_READ_WRITE, sizeof(kde_float_t), NULL, NULL);
 	cl_event sum_event = sumOfArray(
 	    ctxt->result_buffer, estimator->rows_in_sample, result_buffer, 0,
@@ -99,7 +111,6 @@ static double rangeKDE(ocl_context_t* ctxt, ocl_estimator_t* estimator) {
 	                    sizeof(kde_float_t), &result, 1, &sum_event, NULL);
 	result *= normalization_factor / estimator->rows_in_sample;
 	clReleaseMemObject(result_buffer);
-	clReleaseKernel(kde_kernel);
 	clReleaseEvent(kde_event);
 	clReleaseEvent(sum_event);
 	return result;
@@ -540,7 +551,7 @@ int ocl_updateRequest(ocl_estimator_request_t* request,
 int ocl_estimateSelectivity(const ocl_estimator_request_t* request,
 		Selectivity* selectivity) {
 	struct timeval start; gettimeofday(&start, NULL); 
-	unsigned int i,j;
+	unsigned int i;
 	// Fetch the OpenCL context, initializing it if requested.
 	ocl_context_t* ctxt = ocl_getContext();
 	if (ctxt == NULL)	return 0;
@@ -572,9 +583,9 @@ int ocl_estimateSelectivity(const ocl_estimator_request_t* request,
 	for (i = 0; i < request->range_count; ++i) {
 		unsigned int range_pos = estimator->column_order[request->ranges[i].colno];
     row_ranges[2*range_pos] =
-        request->ranges[i].lower_bound * estimator->scale_factors[j];
+        request->ranges[i].lower_bound * estimator->scale_factors[range_pos];
     row_ranges[2*range_pos + 1] =
-        request->ranges[i].upper_bound * estimator->scale_factors[j];
+        request->ranges[i].upper_bound * estimator->scale_factors[range_pos];
     if (request->ranges[i].lower_included)
       row_ranges[2*range_pos] -= 0.001;
     if (request->ranges[i].upper_included)

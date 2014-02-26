@@ -14,6 +14,15 @@
 #include "ocl_error_metrics.h"
 #include "ocl_utilities.h"
 
+cl_kernel init_zero = NULL;
+cl_kernel init_one = NULL;
+cl_kernel init_small = NULL;
+cl_kernel computePartialGradient = NULL;  
+cl_kernel computeHessian = NULL;
+cl_kernel accumulate = NULL;
+cl_kernel updateModel = NULL;
+cl_kernel initModel = NULL;
+
 // GUC configuration variables.
 bool kde_enable_adaptive_bandwidth;
 int kde_adaptive_bandwidth_minibatch_size;
@@ -23,9 +32,12 @@ static void ocl_initializeBuffersForOnlineLearning(ocl_estimator_t* estimator) {
   ocl_context_t* context = ocl_getContext();
 
   // Prepare the initialization kernels.
-  cl_kernel init_zero = ocl_getKernel("init_zero", 0);
-  cl_kernel init_one = ocl_getKernel("init_one", 0);
-  cl_kernel init_small = ocl_getKernel("init", 0);
+  if (init_zero == NULL)
+    init_zero = ocl_getKernel("init_zero", 0);
+  if (init_one == NULL)
+    init_one = ocl_getKernel("init_one", 0);
+  if (init_small == NULL)
+    init_small = ocl_getKernel("init", 0);
   kde_float_t small_val = 1e-4;
   err |= clSetKernelArg(init_small, 1, sizeof(kde_float_t), &small_val);
   size_t global_size = estimator->nr_of_dimensions;
@@ -118,10 +130,6 @@ static void ocl_initializeBuffersForOnlineLearning(ocl_estimator_t* estimator) {
        context->context, CL_MEM_READ_WRITE,
        sizeof(kde_float_t) * estimator->nr_of_dimensions, NULL, NULL);
 
-  // Clean up and wait for everything to finish..
-  clReleaseKernel(init_one);
-  clReleaseKernel(init_zero);
-  clReleaseKernel(init_small);
   // And finish.
   clFinish(context->queue);
 }
@@ -159,7 +167,8 @@ void ocl_prepareOnlineLearningStep(ocl_estimator_t* estimator) {
   unsigned int result_stride_elements = stride_size / sizeof(kde_float_t);
 
   // Figure out the optimal local size for the partial gradient kernel.
-  cl_kernel computePartialGradient = ocl_getKernel(
+  if (computePartialGradient == NULL)  
+    computePartialGradient = ocl_getKernel(
       "computePartialGradient", estimator->nr_of_dimensions);
     // We start with the maximum supporter local size.
   size_t local_size;
@@ -258,7 +267,8 @@ void ocl_prepareOnlineLearningStep(ocl_estimator_t* estimator) {
 
   // Finally, schedule the kernel that computes the finite-difference
   // estimation of the Hessian.
-  cl_kernel computeHessian = ocl_getKernel("computeFDHessian", 0);
+  if (computeHessian == NULL)
+    computeHessian = ocl_getKernel("computeFDHessian", 0);
   global_size = estimator->nr_of_dimensions;
   err |= clSetKernelArg(computeHessian, 0, sizeof(cl_mem),
                         &(estimator->temp_gradient_buffer));
@@ -269,11 +279,9 @@ void ocl_prepareOnlineLearningStep(ocl_estimator_t* estimator) {
   err |= clEnqueueNDRangeKernel(
       context->queue, computeHessian, 1, NULL, &global_size, NULL,
       estimator->nr_of_dimensions, summation_events,
-      &(estimator->temp_gradient_event));
+      &(estimator->online_learning_event));
 
   // Clean up.
-  clReleaseKernel(computeHessian);
-  clReleaseKernel(computePartialGradient);
   for (i=0; i<(estimator->online_learning_initialized ? 2 : 1) * estimator->nr_of_dimensions; ++i) {
     clReleaseEvent(summation_events[i]);
   }
@@ -302,7 +310,8 @@ void ocl_runOnlineLearningStep(ocl_estimator_t* estimator,
   size_t global_size = estimator->nr_of_dimensions;
 
   // Now accumulate the gradient within the current mini-batch.
-  cl_kernel accumulate = ocl_getKernel("accumulateOnlineBuffers", 0);
+  if (accumulate == NULL)
+    accumulate = ocl_getKernel("accumulateOnlineBuffers", 0);
   err |= clSetKernelArg(accumulate, 0, sizeof(cl_mem),
                         &(estimator->temp_gradient_buffer));
   err |= clSetKernelArg(accumulate, 1, sizeof(cl_mem),
@@ -319,7 +328,9 @@ void ocl_runOnlineLearningStep(ocl_estimator_t* estimator,
   cl_event accumulator_event;
   err |= clEnqueueNDRangeKernel(
       context->queue, accumulate, 1, NULL, &global_size, NULL, 1,
-      &(estimator->temp_gradient_event), &accumulator_event);
+      &(estimator->online_learning_event), &accumulator_event);
+  clReleaseEvent(estimator->online_learning_event);
+  estimator->online_learning_event = NULL;
 
   // Debug print the accumulated buffers.
   ocl_printBuffer("\tTemp gradient:", estimator->temp_gradient_buffer,
@@ -342,7 +353,8 @@ void ocl_runOnlineLearningStep(ocl_estimator_t* estimator,
 
     if (estimator->online_learning_initialized) {
       // If we are initialized, compute the next bandwidth.
-      cl_kernel updateModel = ocl_getKernel("updateOnlineEstimate", 0);
+      if (updateModel == NULL)
+        updateModel = ocl_getKernel("updateOnlineEstimate", 0);
       err |= clSetKernelArg(updateModel, 0, sizeof(cl_mem),
                             &(estimator->gradient_accumulator));
       err |= clSetKernelArg(updateModel, 1, sizeof(cl_mem),
@@ -367,11 +379,11 @@ void ocl_runOnlineLearningStep(ocl_estimator_t* estimator,
                             &kde_adaptive_bandwidth_minibatch_size);
       err |= clEnqueueNDRangeKernel(
           context->queue, updateModel, 1, NULL, &global_size, NULL, 1,
-          &accumulator_event, NULL);
-      clReleaseKernel(updateModel);
+          &accumulator_event, &(estimator->online_learning_event));
     } else {
       // In order to initialize the algorithm, we simply use the accumulated averages.
-      cl_kernel initModel = ocl_getKernel("initializeOnlineEstimate", 0);
+      if (initModel == NULL)
+        initModel = ocl_getKernel("initializeOnlineEstimate", 0);
       err |= clSetKernelArg(initModel, 0, sizeof(cl_mem),
                             &(estimator->gradient_accumulator));
       err |= clSetKernelArg(initModel, 1, sizeof(cl_mem),
@@ -392,8 +404,7 @@ void ocl_runOnlineLearningStep(ocl_estimator_t* estimator,
                             &kde_adaptive_bandwidth_minibatch_size);
       err |= clEnqueueNDRangeKernel(
           context->queue, initModel, 1, NULL, &global_size, NULL, 1,
-          &accumulator_event, NULL);
-      clReleaseKernel(initModel);
+          &accumulator_event, &(estimator->online_learning_event));
       estimator->online_learning_initialized = true;
 
     }
@@ -412,13 +423,7 @@ void ocl_runOnlineLearningStep(ocl_estimator_t* estimator,
                     estimator->nr_of_dimensions, 1);
   }
 
-  // Wait.
-  clFinish(context->queue);
-
   // Clean up.
-  clReleaseKernel(accumulate);
-  clReleaseEvent(estimator->temp_gradient_event);
-  estimator->temp_gradient_event = NULL;
   clReleaseEvent(accumulator_event);
 
 }
