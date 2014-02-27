@@ -605,8 +605,10 @@ int ocl_estimateSelectivity(const ocl_estimator_request_t* request,
   long seconds = now.tv_sec - start.tv_sec;
   long useconds = now.tv_usec - start.tv_usec;
   long mtime = ((seconds) * 1000 + useconds/1000.0) + 0.5;
-  ocl_dumpRequest(request);
-  fprintf(stderr, "Estimated selectivity: %f, took: %ld ms.\n", *selectivity, mtime);
+  if (ocl_isDebug()) {
+    ocl_dumpRequest(request);
+    fprintf(stderr, "Estimated selectivity: %f, took: %ld ms.\n", *selectivity, mtime);
+  }
   free(row_ranges);
   // Finally, prepare the online update of the bandwidth.
   ocl_prepareOnlineLearningStep(estimator);
@@ -704,7 +706,6 @@ void ocl_constructEstimator(
       estimator->scale_factors[i] = 1.0 / estimator->scale_factors[i];
 	  }
 	}
-	fprintf(stderr, "\n");
 	estimator->bandwidth_buffer = clCreateBuffer(
 	    ctxt->context, CL_MEM_READ_WRITE, sizeof(kde_float_t) * dimensionality,
 	    NULL, NULL);
@@ -738,6 +739,7 @@ void ocl_constructEstimator(
   clFinish(ocl_getContext()->queue);
 
   // Finally, hand the estimator over for model optimization.
+  estimator->learning_boost_rate = 10;
   ocl_runModelOptimization(estimator);
 }
 

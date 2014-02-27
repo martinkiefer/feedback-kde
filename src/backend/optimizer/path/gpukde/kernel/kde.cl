@@ -49,12 +49,12 @@ __kernel void gauss_kde(
 	for (unsigned int i=0; i<D; ++i) {
 		// Fetch all required input data.
 		T val = data[D*get_global_id(0) + i];
-		T h = sqrt(2*bandwidth[i]);
-		T lo = range[2*i];
-		T up = range[2*i + 1];
+		T h = bandwidth[i];
+		T lo = range[2*i] - val;
+		T up = range[2*i + 1] - val;
 		// Now compute the local result.
-		T local_result = erf((up - val) / h);
-		local_result -= erf((lo - val) / h);
+		T local_result = erf(up / (M_SQRT2 * h));
+		local_result -= erf(lo / (M_SQRT2 * h));
 		res *= local_result;
 	}
 	result[get_global_id(0)] = res;

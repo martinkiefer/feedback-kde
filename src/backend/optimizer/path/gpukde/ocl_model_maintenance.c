@@ -29,7 +29,6 @@
 
 // Global GUC variables
 bool kde_enable_bandwidth_optimization;
-int kde_bandwidth_optimization_strategy;
 int kde_bandwidth_optimization_feedback_window;
 
 const double learning_rate = 0.01f;
@@ -218,10 +217,11 @@ typedef struct {
 } optimization_config_t;
 
 /**
- * Counter for evaluations.
+ * Counters for evaluations.
  */
 int evaluations;
-
+double start_error;
+struct timeval opt_start;
 
 /*
  * Function to compute the gradient for a penalized objective function that will
@@ -359,14 +359,28 @@ static double computeGradient(unsigned n, const double* bandwidth,
                              estimator->nr_of_dimensions + 1, events,
                              &(result_events[1]));
   err |= clWaitForEvents(2, result_events);
+  error /= conf->nr_of_observations;
+  if (evaluations == 1) start_error = error;
+  struct timeval now; gettimeofday(&now, NULL);
+  long seconds = now.tv_sec - opt_start.tv_sec;
+  long useconds = now.tv_usec - opt_start.tv_usec;
+  long mtime = ((seconds) * 1000 + useconds/1000.0) + 0.5;
+  // Ok, cool. Transfer the bandwidth back.
+  fprintf(stderr, "\r\tOptimization round %i. Current error: %f "
+          "(started at %f), took: %ld ms.",
+          evaluations, error, start_error, mtime);
   // Finally, cast back to double.
   for (i = 0; i<estimator->nr_of_dimensions; ++i) {
-    gradient[i] = tmp_gradient[i] / conf->nr_of_observations;
+    // Apply the gradient normalization.
+    double h = bandwidth[i] <= 0 ? 1e-10 : bandwidth[i];
+    gradient[i] = tmp_gradient[i] * M_SQRT2 / (
+        sqrt(M_PI) * h * h * pow(2.0, estimator->nr_of_dimensions) *
+        conf->nr_of_observations * estimator->rows_in_sample);
   }
   if (ocl_isDebug()) {
-    fprintf(stderr, "\tGradient:");
+    fprintf(stderr, "\n\tGradient:");
     for (i=0; i<n; ++i) fprintf(stderr, " %f", gradient[i]);
-    fprintf(stderr, " (%f)\n", error);
+    fprintf(stderr, "\n", error);
   }
   // Ok, clean everything up.
   for (i=0; i<estimator->nr_of_dimensions; ++i) {
@@ -381,28 +395,7 @@ static double computeGradient(unsigned n, const double* bandwidth,
   clReleaseEvent(partial_gradient_event);
   clReleaseEvent(result_events[0]);
   clReleaseEvent(result_events[1]);
-  return error / conf->nr_of_observations;
-}
-
-
-/**
- * Function to compute a penalized gradient of the objective function that adds
- * a huge penalty to negative bandwidths. This is used to enforce the
- * non-negativity constraint when using an unconstrained solver.
- */
-static double computePenalizedGradient(void* params, const double* bandwidth,
-                                       double* gradient, const int n,
-                                       const double step) {
-  optimization_config_t* conf = (optimization_config_t*)params;
-  // Compute the unpenalized error.
-  double error = computeGradient(n, bandwidth, gradient, params);
-  // Add the penalty if the bandwidth is negative.
-  unsigned int i;
-  for (i = 0; i<conf->estimator->nr_of_dimensions; ++i) {
-    // Apply a penalty for negative bandwidths.
-    error += 0.05*exp(-30 * bandwidth[i]);
-    gradient[i] -= 1.5*exp(-30 * bandwidth[i]);
-  }
+  clReleaseKernel(gradient_kernel);
   return error;
 }
 
@@ -463,57 +456,34 @@ void ocl_runModelOptimization(ocl_estimator_t* estimator) {
   params.error_buffer = clCreateBuffer(
       context->context, CL_MEM_READ_WRITE, sizeof(kde_float_t), NULL, NULL);
   // Ok, we are prepared. Call the optimization routine.
-  struct timeval start; gettimeofday(&start, NULL);
+  gettimeofday(&opt_start, NULL);
   evaluations = 0;
-  if (kde_bandwidth_optimization_strategy == UNCONSTRAINED_PENALIZED) {
-    // Use L-BFGS.
-    fprintf(stderr, "> Starting (unconstrained) numerical optimization of "
-        "bandwidth ... ");
-    lbfgs_parameter_t optimizer_parameters;
-    lbfgs_parameter_init(&optimizer_parameters);
-    if (lbfgs(estimator->nr_of_dimensions, bandwidth, NULL,
-              computePenalizedGradient, NULL, &params,
-              &optimizer_parameters) != 0) {
-      fprintf(stderr, "failed! ");
-    } else {
-      fprintf(stderr, "done! ");
-    }
-  } else if (kde_bandwidth_optimization_strategy == CONSTRAINED) {
-    fprintf(stderr, "> Starting (constrained) numerical optimization of "
-        "bandwidth ... ");
-    // Prepare the bound constraints.
-    double* lower_bounds = palloc(sizeof(double) * estimator->nr_of_dimensions);
-    for (i=0; i<estimator->nr_of_dimensions; ++i)
-      lower_bounds[i] = 1e-10;
-    // Create the optimization parameter.
-    nlopt_opt optimizer_parameters = nlopt_create(
-        NLOPT_LD_MMA, estimator->nr_of_dimensions);
-    nlopt_set_lower_bounds(optimizer_parameters, lower_bounds);
-    nlopt_set_min_objective(optimizer_parameters, computeGradient, &params);
-    nlopt_set_ftol_rel(optimizer_parameters, 1e-5);
-    nlopt_set_ftol_abs(optimizer_parameters, 1e-8);
-    nlopt_set_maxeval(optimizer_parameters, 200);
-    double tmp;
-    if (nlopt_optimize(optimizer_parameters, bandwidth, &tmp) < 0) {
-      fprintf(stderr, "failed! ");
-    } else {
-      fprintf(stderr, "done! ");
-    }
-    nlopt_destroy(optimizer_parameters);
+  fprintf(stderr, "> Starting numerical optimization of the model:\n");
+  // Prepare the bound constraints.
+  double* lower_bounds = palloc(sizeof(double) * estimator->nr_of_dimensions);
+  for (i=0; i<estimator->nr_of_dimensions; ++i)
+    lower_bounds[i] = 1e-10;
+  // Create the optimization parameter.
+  nlopt_opt optimizer_parameters = nlopt_create(
+      NLOPT_LD_LBFGS, estimator->nr_of_dimensions);
+  nlopt_set_lower_bounds(optimizer_parameters, lower_bounds);
+  nlopt_set_min_objective(optimizer_parameters, computeGradient, &params);
+  nlopt_set_ftol_abs(optimizer_parameters, 1e-10);
+  double tmp;
+  int err = nlopt_optimize(optimizer_parameters, bandwidth, &tmp);
+  if (err < 0) {
+    fprintf(stderr, "\nOptimization failed: %i!", err);
+  } else {
+    fprintf(stderr, "\nNew bandwidth:");
+    for ( i = 0; i < estimator->nr_of_dimensions ; ++i)
+      fprintf(stderr, " %f", bandwidth[i]);
+    fprintf(stderr, "\n");
   }
-  struct timeval now; gettimeofday(&now, NULL);
-  long seconds = now.tv_sec - start.tv_sec;
-  long useconds = now.tv_usec - start.tv_usec;
-  long mtime = ((seconds) * 1000 + useconds/1000.0) + 0.5;
-  // Ok, cool. Transfer the bandwidth back.
-  fprintf(stderr, "(%ld ms and %i evaluations).\n",
-          mtime, evaluations);
-  fprintf(stderr, "> Optimized bandwidth:");
+  nlopt_destroy(optimizer_parameters);
+  // Transfer the bandwidth to the device.
   for (i=0; i<estimator->nr_of_dimensions; ++i) {
-      fbandwidth[i] = bandwidth[i];
-      fprintf(stderr, " %f", fbandwidth[i]);
+    fbandwidth[i] = bandwidth[i];
   }
-  fprintf(stderr, "\n");
   clEnqueueWriteBuffer(context->queue, estimator->bandwidth_buffer, CL_TRUE, 0,
                        sizeof(kde_float_t) * estimator->nr_of_dimensions,
                        fbandwidth, 0, NULL, NULL);

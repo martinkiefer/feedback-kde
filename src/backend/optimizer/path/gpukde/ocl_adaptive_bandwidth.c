@@ -16,7 +16,6 @@
 
 cl_kernel init_zero = NULL;
 cl_kernel init_one = NULL;
-cl_kernel init_small = NULL;
 cl_kernel computePartialGradient = NULL;  
 cl_kernel finalizeKernel = NULL;
 cl_kernel accumulate = NULL;
@@ -32,14 +31,8 @@ static void ocl_initializeBuffersForOnlineLearning(ocl_estimator_t* estimator) {
   ocl_context_t* context = ocl_getContext();
 
   // Prepare the initialization kernels.
-  if (init_zero == NULL)
-    init_zero = ocl_getKernel("init_zero", 0);
-  if (init_one == NULL)
-    init_one = ocl_getKernel("init_one", 0);
-  if (init_small == NULL)
-    init_small = ocl_getKernel("init", 0);
-  kde_float_t small_val = 1e-4;
-  err |= clSetKernelArg(init_small, 1, sizeof(kde_float_t), &small_val);
+  if (init_zero == NULL) init_zero = ocl_getKernel("init_zero", 0);
+  if (init_one == NULL) init_one = ocl_getKernel("init_one", 0);
   size_t global_size = estimator->nr_of_dimensions;
 
   // Initialize the accumulator buffers and fill them with zero.
@@ -77,16 +70,15 @@ static void ocl_initializeBuffersForOnlineLearning(ocl_estimator_t* estimator) {
                                 &global_size, NULL, 0, NULL, NULL);
 
   // Initialize the running average buffers with zero.
-
   estimator->running_gradient_average = clCreateBuffer(
       context->context, CL_MEM_READ_WRITE,
       sizeof(kde_float_t) * estimator->nr_of_dimensions, NULL, NULL);
     // We initialize the gradient average buffer with a small positive value,
     // since this gradient is used by the online estimator to determine the
     // finite difference step to estimate the Hessian.
-  err |= clSetKernelArg(init_small, 0, sizeof(cl_mem),
+  err |= clSetKernelArg(init_one, 0, sizeof(cl_mem),
                         &(estimator->running_gradient_average));
-  err |= clEnqueueNDRangeKernel(context->queue, init_small, 1, NULL,
+  err |= clEnqueueNDRangeKernel(context->queue, init_one, 1, NULL,
                                 &global_size, NULL, 0, NULL, NULL);
 
   estimator->running_squared_gradient_average = clCreateBuffer(
@@ -113,7 +105,7 @@ static void ocl_initializeBuffersForOnlineLearning(ocl_estimator_t* estimator) {
   err |= clEnqueueNDRangeKernel(context->queue, init_zero, 1, NULL,
                                 &global_size, NULL, 0, NULL, NULL);
 
-  // Initialize the time constant buffer with one.
+  // Initialize the time constant buffer to two.
   estimator->current_time_constant = clCreateBuffer(
        context->context, CL_MEM_READ_WRITE,
        sizeof(kde_float_t) * estimator->nr_of_dimensions, NULL, NULL);
@@ -169,9 +161,10 @@ void ocl_prepareOnlineLearningStep(ocl_estimator_t* estimator) {
   unsigned int result_stride_elements = stride_size / sizeof(kde_float_t);
 
   // Figure out the optimal local size for the partial gradient kernel.
-  if (computePartialGradient == NULL)  
-    computePartialGradient = ocl_getKernel(
-      "computePartialGradient", estimator->nr_of_dimensions);
+  if (computePartialGradient == NULL) {
+    computePartialGradient = ocl_getKernel("computePartialGradient",
+                                           estimator->nr_of_dimensions);
+  }
     // We start with the maximum supporter local size.
   size_t local_size;
   clGetKernelWorkGroupInfo(computePartialGradient, context->device,
@@ -194,7 +187,7 @@ void ocl_prepareOnlineLearningStep(ocl_estimator_t* estimator) {
   local_size = preferred_local_size_multiple
       * (local_size / preferred_local_size_multiple);
 
-  // Now ensure that the global size is big enoug to accomodate all sample items.
+  // Ensure that the global size is big enough to accomodate all sample items.
   size_t global_size = local_size * (estimator->rows_in_sample / local_size);
   if (global_size < estimator->rows_in_sample) global_size += local_size;
 
@@ -259,7 +252,7 @@ void ocl_prepareOnlineLearningStep(ocl_estimator_t* estimator) {
                                 NULL, &global_size, &local_size, 0, NULL,
                                 &partial_shifted_gradient_event);
 
-  // Now schedule the summation of the partial shifted gradient contributions.
+  // Schedule the summation of the partial shifted gradient contributions.
   for (i=0; i<estimator->nr_of_dimensions; ++i) {
     cl_buffer_region region;
     region.size = stride_size;
@@ -287,8 +280,7 @@ void ocl_prepareOnlineLearningStep(ocl_estimator_t* estimator) {
   // have finished and that normalizes the shifted gradient result.
   kde_float_t normalization_factor =
        pow(0.5, estimator->nr_of_dimensions) / estimator->rows_in_sample;
-  if (finalizeKernel == NULL)  
-    finalizeKernel = ocl_getKernel("finalizeEstimate", 0);
+  if (finalizeKernel == NULL) finalizeKernel = ocl_getKernel("finalizeEstimate", 0);
   err |= clSetKernelArg(finalizeKernel, 0, sizeof(cl_mem),
                         &(estimator->temp_shifted_result_buffer));
   err |= clSetKernelArg(finalizeKernel, 1, sizeof(kde_float_t),
@@ -320,7 +312,7 @@ void ocl_runOnlineLearningStep(ocl_estimator_t* estimator,
   ocl_context_t* context = ocl_getContext();
   cl_int err = CL_SUCCESS;
 
-  // Fetch the shifted result.
+  // Fetch the estimate for shifted bandwidth.
   kde_float_t shifted_estimate;
   clEnqueueReadBuffer(context->queue, estimator->temp_shifted_result_buffer,
                       CL_TRUE, 0, sizeof(kde_float_t), &shifted_estimate, 1,
@@ -328,38 +320,42 @@ void ocl_runOnlineLearningStep(ocl_estimator_t* estimator,
   clReleaseEvent(estimator->online_learning_event);
   estimator->online_learning_event = NULL;
 
-  // Compute the factor for the gradient.
-  kde_float_t gradient_factor = 1.0
-      / (pow(2.0f, estimator->nr_of_dimensions) * estimator->rows_in_sample);
+  // Compute the scaling factor for the gradient.
+  kde_float_t gradient_factor =
+      M_SQRT2 / (sqrt(M_PI) * pow(2.0, estimator->nr_of_dimensions));
   gradient_factor *= (*(ocl_getSelectedErrorMetric()->gradient_factor))(
       estimator->last_selectivity, selectivity, estimator->rows_in_table);
-  // Compute the factor for the adjusted gradient.
-  kde_float_t shifted_gradient_factor = 1.0
-       / (pow(2.0f, estimator->nr_of_dimensions) * estimator->rows_in_sample);
+  // Compute the scaling factor for the adjusted gradient.
+  kde_float_t shifted_gradient_factor =
+      M_SQRT2 / (sqrt(M_PI) * pow(2.0, estimator->nr_of_dimensions));
   shifted_gradient_factor *= (*(ocl_getSelectedErrorMetric()->gradient_factor))(
       shifted_estimate, selectivity, estimator->rows_in_table);
 
   size_t global_size = estimator->nr_of_dimensions;
 
   // Now accumulate the gradient within the current mini-batch.
-  if (accumulate == NULL)
+  if (accumulate == NULL) {
     accumulate = ocl_getKernel("accumulateOnlineBuffers", 0);
+  }
   err |= clSetKernelArg(accumulate, 0, sizeof(cl_mem),
                         &(estimator->temp_gradient_buffer));
   err |= clSetKernelArg(accumulate, 1, sizeof(cl_mem),
                         &(estimator->temp_shifted_gradient_buffer));
-  err |= clSetKernelArg(accumulate, 2, sizeof(kde_float_t), &gradient_factor);
+  err |= clSetKernelArg(accumulate, 2, sizeof(kde_float_t),
+                        &gradient_factor);
   err |= clSetKernelArg(accumulate, 3, sizeof(kde_float_t),
                         &shifted_gradient_factor);
   err |= clSetKernelArg(accumulate, 4, sizeof(cl_mem),
-                        &(estimator->running_gradient_average));
+                        &(estimator->bandwidth_buffer));
   err |= clSetKernelArg(accumulate, 5, sizeof(cl_mem),
-                        &(estimator->gradient_accumulator));
+                        &(estimator->running_gradient_average));
   err |= clSetKernelArg(accumulate, 6, sizeof(cl_mem),
-                        &(estimator->squared_gradient_accumulator));
+                        &(estimator->gradient_accumulator));
   err |= clSetKernelArg(accumulate, 7, sizeof(cl_mem),
-                        &(estimator->hessian_accumulator));
+                        &(estimator->squared_gradient_accumulator));
   err |= clSetKernelArg(accumulate, 8, sizeof(cl_mem),
+                        &(estimator->hessian_accumulator));
+  err |= clSetKernelArg(accumulate, 9, sizeof(cl_mem),
                         &(estimator->squared_hessian_accumulator));
   cl_event accumulator_event;
   err |= clEnqueueNDRangeKernel(
@@ -383,8 +379,9 @@ void ocl_runOnlineLearningStep(ocl_estimator_t* estimator,
 
     if (estimator->online_learning_initialized) {
       // If we are initialized, compute the next bandwidth.
-      if (updateModel == NULL)
+      if (updateModel == NULL) {
         updateModel = ocl_getKernel("updateOnlineEstimate", 0);
+      }
       err |= clSetKernelArg(updateModel, 0, sizeof(cl_mem),
                             &(estimator->gradient_accumulator));
       err |= clSetKernelArg(updateModel, 1, sizeof(cl_mem),
@@ -407,13 +404,18 @@ void ocl_runOnlineLearningStep(ocl_estimator_t* estimator,
                             &(estimator->bandwidth_buffer));
       err |= clSetKernelArg(updateModel, 10, sizeof(unsigned int),
                             &kde_adaptive_bandwidth_minibatch_size);
+      err |= clSetKernelArg(updateModel, 11, sizeof(kde_float_t),
+                            &(estimator->learning_boost_rate));
       err |= clEnqueueNDRangeKernel(
           context->queue, updateModel, 1, NULL, &global_size, NULL, 1,
           &accumulator_event, &(estimator->online_learning_event));
+      estimator->learning_boost_rate = Max(
+          1.0, estimator->learning_boost_rate * 0.95);
     } else {
       // In order to initialize the algorithm, we simply use the accumulated averages.
-      if (initModel == NULL)
+      if (initModel == NULL) {
         initModel = ocl_getKernel("initializeOnlineEstimate", 0);
+      }
       err |= clSetKernelArg(initModel, 0, sizeof(cl_mem),
                             &(estimator->gradient_accumulator));
       err |= clSetKernelArg(initModel, 1, sizeof(cl_mem),
@@ -430,13 +432,14 @@ void ocl_runOnlineLearningStep(ocl_estimator_t* estimator,
                             &(estimator->running_hessian_average));
       err |= clSetKernelArg(initModel, 7, sizeof(cl_mem),
                             &(estimator->running_squared_hessian_average));
-      err |= clSetKernelArg(initModel, 8, sizeof(unsigned int),
+      err |= clSetKernelArg(initModel, 8, sizeof(cl_mem),
+                            &(estimator->current_time_constant));
+      err |= clSetKernelArg(initModel, 9, sizeof(unsigned int),
                             &kde_adaptive_bandwidth_minibatch_size);
       err |= clEnqueueNDRangeKernel(
           context->queue, initModel, 1, NULL, &global_size, NULL, 1,
           &accumulator_event, &(estimator->online_learning_event));
       estimator->online_learning_initialized = true;
-
     }
     estimator->nr_of_accumulated_gradients = 0;
 

@@ -32,31 +32,34 @@ __kernel void applyGradient(
     gradient_scratch[D * get_local_id(0) + i] = 0;                          \
   }                                                                         \
   T estimation = 0;                                                         \
-  T parameter_scratch[D];                                                   \
   /* Iterate over all sample points. */                                     \
   for (unsigned int i=0; i<nr_of_data_points; ++i) {                        \
     /* Compute the local contributions from this data point. */             \
     T local_contribution = 1.0;                                             \
+    T local_gradient[D];                                                    \
+    for (unsigned int j=0; j<D; ++j) {                                      \
+      local_gradient[j] = 1.0;                                              \
+    }                                                                       \
     for (unsigned int j=0; j<D; ++j) {                                      \
       T val = data[D*i + j];                                                \
-      T h = bandwidth[j] <= 0 ? 0.0001f : bandwidth[j];                     \
+      T h = bandwidth[j] <= 0 ? 1e-10 : bandwidth[j];                       \
       T lo = lower_bound_scratch[D*get_local_id(0) + j] - val;              \
-      T up = upper_bound_scratch[D*get_local_id(0) + j] - val;              \
-      T factor1 = isinf(lo) ? 0 : (lo / (sqrt(2 * M_PI) * pow(h, (T)1.5))   \
-                  * exp((T)-1.0 * lo * lo / (2*h)));                        \
-      factor1 -= isinf(up) ? 0 : (up / (sqrt(2 * M_PI) * pow(h, (T)1.5))    \
-                 * exp((T)-1.0 * up * up / (2*h)));                         \
-      T factor2 = erf(up / sqrt(2*h)) - erf(lo / sqrt(2*h));                \
+      T hi = upper_bound_scratch[D*get_local_id(0) + j] - val;              \
+      T factor1  = isinf(lo) ? 0 : lo * exp((T)-1.0 * lo * lo / (2*h*h));   \
+        factor1 -= isinf(hi) ? 0 : hi * exp((T)-1.0 * hi * hi / (2*h*h));   \
+      T factor2 = erf(hi / (M_SQRT2 * h)) - erf(lo / (M_SQRT2 * h));        \
       local_contribution *= factor2;                                        \
-      parameter_scratch[j] = factor2 == 0 ? 0 : factor1 / factor2;          \
+      for (unsigned int k=0; k<D; ++k) {                                    \
+        local_gradient[k] *= (k==j) ? factor1 : factor2;                    \
+      }                                                                     \
     }                                                                       \
     estimation += local_contribution;                                       \
     for (unsigned int j=0; j<D; ++j) {                                      \
-      gradient_scratch[get_local_id(0) * D + j] +=                          \
-          local_contribution * parameter_scratch[j];                        \
+      gradient_scratch[D * get_local_id(0) + j] +=                          \
+          local_gradient[j];                                                \
     }                                                                       \
   }                                                                         \
-  estimation /= pow(2.0f, D) * nr_of_data_points;                           \
+  estimation /= pow((T)2.0, D) * nr_of_data_points;                         \
 
 
 __kernel void computeBatchGradientAbsolute(
@@ -80,13 +83,12 @@ __kernel void computeBatchGradientAbsolute(
   BATCH_GRADIENT_COMMON();
   // Next, compute the estimation error and the gradient scale factor.
   T error = estimation - observations[get_global_id(0)];
-  T factor = error < 0 ? -1.0 : 1.0;
+  T factor = error == 0 ? 0 : (error < 0 ? -1.0 : 1.0);
   cost_values[get_global_id(0)] = error * factor;
-  factor /= pow((T)2.0, D) * nr_of_data_points;
   // Finally, write the gradient from this observation to global memory.
   for (unsigned int i=0; i<D; ++i) {
     gradient[i * gradient_stride + get_global_id(0)] =
-        gradient_scratch[get_local_id(0) * D + i];
+        gradient_scratch[get_local_id(0) * D + i] * factor;
   }
 }
 
@@ -111,9 +113,8 @@ __kernel void computeBatchGradientRelative(
   BATCH_GRADIENT_COMMON();
   // Next, compute the estimation error and the gradient scale factor.
   T error = estimation - observations[get_global_id(0)];
-  T factor = (error < 0 ? -1.0 : 1.0) / max((T)(1.0/nrows), observations[get_global_id(0)]);
+  T factor = (error == 0 ? 0 : (error < 0 ? -1.0 : 1.0) / max((T)(1.0/nrows), observations[get_global_id(0)]));
   cost_values[get_global_id(0)] = error * factor;
-  factor /= pow((T)2.0, D) * nr_of_data_points;
   // Finally, write the gradient from this observation to global memory.
   for (unsigned int i=0; i<D; ++i) {
     gradient[i * gradient_stride + get_global_id(0)] =
@@ -144,7 +145,6 @@ __kernel void computeBatchGradientSquaredRelative(
   T error = (estimation - observations[get_global_id(0)]) / max((T)(1.0/nrows), observations[get_global_id(0)]);
   T factor = 2 * error / max((T)(1.0/nrows), observations[get_global_id(0)]);
   cost_values[get_global_id(0)] = error * error;
-  factor /= pow((T)2.0, D) * nr_of_data_points;
   // Finally, write the gradient from this observation to global memory.
   for (unsigned int i=0; i<D; ++i) {
     gradient[i * gradient_stride + get_global_id(0)] =
@@ -175,7 +175,6 @@ __kernel void computeBatchGradientQuadratic(
   T error = estimation - observations[get_global_id(0)];
   T factor = 2 * error;
   cost_values[get_global_id(0)] = error * error;
-  factor /= pow((T)2.0, D) * nr_of_data_points;
   // Finally, write the gradient from this observation to global memory.
   for (unsigned int i=0; i<D; ++i) {
     gradient[i * gradient_stride + get_global_id(0)] =
@@ -203,10 +202,9 @@ __kernel void computeBatchGradientQ(
   // First, we compute the error-independent parts of the gradient.
   BATCH_GRADIENT_COMMON();
   // Next, compute the estimation error and the gradient scale factor.
-  T error = log((T)0.0001 + estimation) - log((T)0.0001 + observations[get_global_id(0)]);
-  T factor = 2 * error / (0.0001 + observations[get_global_id(0)]);
+  T error = log(1e-5 + estimation) - log(1e-5 + observations[get_global_id(0)]);
+  T factor = 2 * error / (1e-5 + estimation);
   cost_values[get_global_id(0)] = error * error;
-  factor /= pow((T)2.0, D) * nr_of_data_points;
   // Finally, write the gradient from this observation to global memory.
   for (unsigned int i=0; i<D; ++i) {
     gradient[i * gradient_stride + get_global_id(0)] =
