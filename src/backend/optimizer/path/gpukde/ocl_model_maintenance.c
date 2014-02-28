@@ -469,6 +469,7 @@ void ocl_runModelOptimization(ocl_estimator_t* estimator) {
   nlopt_set_lower_bounds(optimizer_parameters, lower_bounds);
   nlopt_set_min_objective(optimizer_parameters, computeGradient, &params);
   nlopt_set_ftol_abs(optimizer_parameters, 1e-10);
+  nlopt_set_maxeval(optimizer_parameters, 100);
   double tmp;
   int err = nlopt_optimize(optimizer_parameters, bandwidth, &tmp);
   if (err < 0) {
