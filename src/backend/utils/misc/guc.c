@@ -161,7 +161,7 @@ static const struct config_enum_entry kde_error_metric_options[] = {
   {"Absolute", ABSOLUTE, false},
   {"Relative", RELATIVE, false},
   {"Quadratic", QUADRATIC, false},
-  {"QError", Q, false},
+  {"QError", SQUARED_Q, false},
   {"SquaredRelative", SQUARED_RELATIVE, false},
   {NULL, 0, false}
 };
