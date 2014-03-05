@@ -2536,7 +2536,7 @@ static struct config_int ConfigureNamesInt[] =
     NULL, assign_kde_samplesize, NULL
   },
   {
-    {"kde_bandwidth_optimization_feedback_window", PGC_USERSET, DEVELOPER_OPTIONS,
+    {"kde_optimization_feedback_window", PGC_USERSET, DEVELOPER_OPTIONS,
       gettext_noop("Determines how many of the most recent feedback records "
           "will be used to optimize the model bandwidth. If set to -1, all "
           "available records will be used."),
@@ -2548,20 +2548,16 @@ static struct config_int ConfigureNamesInt[] =
     NULL, NULL, NULL
   },
   {
-    {"kde_adaptive_bandwidth_minibatch_size", PGC_USERSET, DEVELOPER_OPTIONS,
+    {"kde_minibatch_size", PGC_USERSET, DEVELOPER_OPTIONS,
       gettext_noop("Mini-batch size that is used to adaptively adjust the bandwidth."),
       NULL,
       GUC_NOT_IN_SAMPLE
     },
     &kde_adaptive_bandwidth_minibatch_size,
-    1, 1, 1024,
+    5, 1, 1024,
     NULL, NULL, NULL
   },
-
-
-
-
-#endif
+#endif /* USE_OPENCL */
 
 	/* End-of-list marker */
 	{
