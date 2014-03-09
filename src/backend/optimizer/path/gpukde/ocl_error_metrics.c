@@ -27,12 +27,12 @@ static double QuadraticError(double actual, double expected, double nrows) {
 static double QuadraticErrorGradientFactor(double actual, double expected, double nrows) {
   return 2 * (actual - expected);
 }
-static double QErrror(double actual, double expected, double nrows) {
+static double SquaredQErrror(double actual, double expected, double nrows) {
   // Constants are required to avoid computing the log of 0.
   double tmp = log(1e-5 + actual) - log(1e-5 + expected);
   return tmp * tmp;
 }
-static double QErrorGradientFactor(double actual, double expected, double nrows) {
+static double SquaredQErrorGradientFactor(double actual, double expected, double nrows) {
   return 2 * (log(1e-5 + actual) - log(1e-5 + expected)) / (1e-5 + actual);
 }
 static double AbsoluteError(double actual, double expected, double nrows) {
@@ -84,7 +84,7 @@ static error_metric_t error_metrics[] = {
       "computeBatchGradientQuadratic"
    },
    {
-      "QError", &QErrror, &QErrorGradientFactor,
+      "SquaredQError", &SquaredQErrror, &SquaredQErrorGradientFactor,
       "computeBatchGradientQ"
    },
    {
