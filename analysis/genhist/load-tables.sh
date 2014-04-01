@@ -10,7 +10,9 @@ if [ ! -z $MONET_DATABASE ]; then
 	monetdb set readonly=false $MONET_DATABASE
 fi
 
-forest/load-forest-tables.sh
 set1/load-set1-tables.sh
 set2/load-set2-tables.sh
 set3/load-tpch-tables.sh
+set4/load-set4-tables.sh
+set5/load-set5-tables.sh
+forest/load-forest-tables.sh
