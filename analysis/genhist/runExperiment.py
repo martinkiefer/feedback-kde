@@ -46,6 +46,12 @@ if dataset == "set1":
 if dataset == "set2":
     querypath = os.path.join(basepath, "set2/queries")
     table = "gen2_d%i" % dimensions
+if dataset == "set4":
+    querypath = os.path.join(basepath, "set4/queries")
+    table = "gen4_d%i" % dimensions
+if dataset == "set5":
+    querypath = os.path.join(basepath, "set5/queries")
+    table = "gen5_d%i" % dimensions
 if dataset == "tpch":
     querypath = os.path.join(basepath, "set3/queries")
     table = "tpch_data"
@@ -112,7 +118,7 @@ if (optimization == "adaptive"):
     cur.execute("SET kde_adaptive_bandwidth_minibatch_size TO 5;")
 elif (optimization == "batch_random" or optimization == "batch_workload"):
     cur.execute("SET kde_enable_bandwidth_optimization TO true;")
-    cur.execute("SET kde_bandwidth_optimization_feedback_window TO %i;" % trainqueries)
+    cur.execute("SET kde_optimization_feedback_window TO %i;" % trainqueries)
 cur.execute("SET kde_debug TO false;")
 cur.execute("SET kde_enable TO true;")
 
