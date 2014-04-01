@@ -14,3 +14,6 @@ forest/create-workload.sh
 set1/create-workload.sh
 set2/create-workload.sh
 set3/create-workload.sh
+set4/create-workload.sh
+set5/create-workload.sh
+
