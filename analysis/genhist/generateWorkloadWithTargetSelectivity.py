@@ -41,6 +41,8 @@ elif (database == "postgres"):
     import psycopg2
     conn = psycopg2.connect("dbname=%s host=localhost" % dbname)
 
+
+    
 cur = conn.cursor()
 
 # Figure out the dimensionality of this table.
@@ -72,6 +74,7 @@ for i in range(0, columns):
     width = up - low
     ranges.append([low - 0.05*width, up + 0.05*width])
 
+conn.commit()
 # Tell Postgres that we don't need transaction support.
 if (database == "postgres"):
     conn.set_session('read uncommitted', readonly=True, autocommit=True)
