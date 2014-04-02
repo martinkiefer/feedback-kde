@@ -304,7 +304,7 @@ static void ocl_updateEstimatorInCatalog(ocl_estimator_t* estimator) {
       ocl_sizeOfSampleItem(estimator) * estimator->rows_in_sample,
       sample_buffer, 0, NULL, NULL);
   char sample_file_name[1024];
-  sprintf(sample_file_name, "/tmp/rel%i_kde.sample", estimator->table);
+  sprintf(sample_file_name, "%s/pg_kde_smaples/rel%i_kde.sample", DataDir, estimator->table);
   FILE* sample_file = fopen(sample_file_name, "wb");
   if (sizeof(kde_float_t) == sizeof(double)) {
     fwrite(sample_buffer, sizeof(kde_float_t)*estimator->nr_of_dimensions,
