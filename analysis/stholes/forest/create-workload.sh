@@ -37,7 +37,7 @@ workload_5_tables=("forest4")
 for table in "${dv_tables[@]}"
 do
 	echo $table
-	python $BASEDIR/../Stholes.py \
+	python $BASEDIR/../stholes.py \
 		--dbname=$DATABASE --database=$DBMS --table=$table --queries=10000 \
 		--selectivity=0.1 --mcenter=Data --mrange=Volume	\
 		--out=$BASEDIR/queries/${table}_dv.sql
@@ -46,7 +46,7 @@ done
 for table in "${uv_tables[@]}"
 do
 	echo $table
-	python $BASEDIR/../Stholes.py \
+	python $BASEDIR/../stholes.py \
 		--dbname=$DATABASE --database=$DBMS --table=$table --queries=10000 \
 		--selectivity=0.1 --mcenter=Uniform --mrange=Volume	\
 		--out=$BASEDIR/queries/${table}_uv.sql
@@ -55,7 +55,7 @@ done
 for table in "${gv_tables[@]}"
 do
 	echo $table
-	python $BASEDIR/../Stholes.py \
+	python $BASEDIR/../stholes.py \
 		--dbname=$DATABASE --database=$DBMS --table=$table --queries=10000 \
 		--selectivity=0.1 --mcenter=Gauss --clusters=100 --sigma=25 --mrange=Volume	\
 		--out=$BASEDIR/queries/${table}_gv.sql
@@ -65,7 +65,7 @@ done
 for table in "${dt_tables[@]}"
 do
 	echo $table
-	python $BASEDIR/../Stholes.py \
+	python $BASEDIR/../stholes.py \
 		--dbname=$DATABASE --database=$DBMS --table=$table --queries=100 \
 		--selectivity=0.1 --tolerance=0.05 --mcenter=Data --mrange=Tuples	\
 		--out=$BASEDIR/queries/${table}_dt.sql
@@ -74,7 +74,7 @@ done
 for table in "${ut_tables[@]}"
 do
 	echo $table
-	python $BASEDIR/../Stholes.py \
+	python $BASEDIR/../stholes.py \
 		--dbname=$DATABASE --database=$DBMS --table=$table --queries=100 \
 		--selectivity=0.1 --tolerance=0.05 --mcenter=Uniform --mrange=Tuples	\
 		--out=$BASEDIR/queries/${table}_ut.sql
@@ -83,7 +83,7 @@ done
 for table in "${gt_tables[@]}"
 do
 	echo $table
-	python $BASEDIR/../Stholes.py \
+	python $BASEDIR/../stholes.py \
 		--dbname=$DATABASE --database=$DBMS --table=$table --queries=100 \
 		--selectivity=0.1 --tolerance=0.05 --mcenter=Gauss --clusters=100 --sigma=25 --mrange=Tuples	\
 		--out=$BASEDIR/queries/${table}_gt.sql
