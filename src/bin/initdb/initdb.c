@@ -194,7 +194,7 @@ const char *subdirs[] = {
 	"pg_tblspc",
 	"pg_stat",
 	"pg_stat_tmp",
-	"pg_kde_smaples"
+	"pg_kde_samples"
 };
 
 
