@@ -10,9 +10,12 @@ mkdir -p $BASEDIR/tables
 #Create some tables
 for i in 3 4 5 8 10
 do
+  if [ ! -f $BASEDIR/tables/data_mvtc_d$i.csv ] 
+  then 
   python $BASEDIR/../movingTargetChangingData.py --table mvtc --queryoutput $BASEDIR/queries/mvtc_d$i.sql --history 4 --sigma 0.01 \
     --margin 0.4 --clusters 10 --points 1000 --steps 10 --dimensions $i --queriesperstep 10 --maxprob 0.9 \
-    --c1_queries 100 --c1_output $BASEDIR/queries/mvtc_d$i\_O.sql --dataoutput tables/data_mvtc_d$i.csv
+    --c1_queries 100 --c1_output $BASEDIR/queries/mvtc_d$i\_O.sql --dataoutput $BASEDIR/tables/data_mvtc_d$i.csv
+  fi
 done
 # First drop the existing tables
 $BASEDIR/drop-mvtc-tables.sh
