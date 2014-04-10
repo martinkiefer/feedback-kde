@@ -12,7 +12,7 @@ def calc_prob(current,prob,max_prob, clusters, last):
     probs = [0]*clusters
     sum = 0
     if(current == last):
-        probs[0]=1.0
+        probs[current]=1.0
         return probs
         
     for i in range(clusters-1,-1,-1):
@@ -20,10 +20,12 @@ def calc_prob(current,prob,max_prob, clusters, last):
             probs[i]=0.0
         elif(i == current):
             probs[i]=prob*max_prob
-        elif(i > 0):
+        elif(i > last):
             probs[i]=(1-sum)*max_prob
-        elif(i == 0):
+        elif(i == last):
             probs[i]=(1-sum)
+        else:
+            probs[i]=0
             
         sum += probs[i]
             
