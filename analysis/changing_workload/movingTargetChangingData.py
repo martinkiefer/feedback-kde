@@ -14,13 +14,13 @@ parser.add_argument("--sigma", action="store", required=True, type=float, help="
 parser.add_argument("--margin", action="store", required=True, type=float, help="Maximum absolute distance for each dimension of a cluster center from the generating point on the line")
 parser.add_argument("--clusters", action="store", type=int,required=True,help="Total number of clusters constructed during runtime")
 parser.add_argument("--points", action="store", type=int,required=True,help="Total number of data points")
-parser.add_argument("--history", action="store", type=int,required=True,help="Maximum number of clusters maintained paralelly")
+parser.add_argument("--workloadtype", action="store", choices=["insert","insert_delete"],required=True,help="Type of queries in the workload")
+parser.add_argument("--history", action="store", type=int,required=True,help="Maximum number of clusters maintained additionally to the currently active one (insert+delete), number of clusters present before the workload queries are executed (insert,insert_delete)")
 parser.add_argument("--steps", action="store", type=int,required=True,help="Steps along the line")
 parser.add_argument("--dimensions", action="store", type=int,required=True,help="Number of dimensions")
 parser.add_argument("--queriesperstep", action="store", type=int,required=True,help="Number of queries per step")
 parser.add_argument("--maxprob", action="store", type=float,required=True,help="Maximum probability for the active cluster to be queried")
-parser.add_argument("--c1_queries", action="store", type=int,required=True,help="Generated queries from the first cluster center for optimzations.")
-parser.add_argument("--c1_output", action="store", required=True, help="Output file for first cluster queries")
+
 
 args = parser.parse_args()
 
@@ -38,6 +38,7 @@ dimension = args.dimensions
 #Maximum standard deviation
 sigma = args.sigma
 
+workloadtype = args.workloadtype
 
 steps = args.steps
 queries_per_step = args.queriesperstep
@@ -48,9 +49,6 @@ max_prob = args.maxprob
 table = "%s_d%i" % (args.table,dimension)
 query_output = args.queryoutput
 data_output = args.dataoutput
-
-c1_output = args.c1_output
-c1_queries= args.c1_queries
 
 #Step 1: Draw a line through the space 
 pos_vector, dir_vector = mc.create_line(dimension)
@@ -67,6 +65,7 @@ for i in range(1,clusters+1):
     centers.append(center)
 
 #Create data points around the clusters
+#Do we want to have an index on the cluster for fast deletion?
 tuples = []
 for c in centers:    
     r = random.normal(0,sigma,(points/clusters,dimension))
@@ -98,29 +97,53 @@ workload = []
 file = open(data_output,'wb')
 writer = csv.writer(file)
 
-for point in tuples[0]:
-    writer.writerow((current,)+tuple(point))
+#Write $history clusters to data_output for loading tuples
+for tuple_list in tuples[:history]:
+    for point in tuple_list:
+        writer.writerow((current,)+tuple(point))
+    current += 1        
 file.close()
+
+
+
+#Set position vector to the point on line belonging to the last history cluster
+pos_vector = pos_vector + (dir_vector/clusters)*history 
+
+
+#Adjust direction vector accordingly
+dir_vector = dir_vector * (1 - (float(history)/clusters))
     
 for i in range(1,steps+1):
+    #Calculate the point on the line for the current step
     base = pos_vector + (dir_vector/steps) * i    
     
+    tix = 0
+    #Move current cluster and delete the last one if necessary
     while(current < clusters and base[0] > centers[current][0]):
         current += 1
-        if(i >= history):
-            output.write(delete_template % (current-history))
-        for point in tuples[current]:
-            output.write(insert_template % ((current,)+tuple(point)))  
-    if(current == 0):
-        progress = 1.0
-    else:
-        progress = (dir_vector[0]/clusters - (centers[current][0]-base[0]))/(dir_vector[0]/clusters)
-    
+        if(workloadtype == "insert_delete"):
+            output.write(delete_template % (current-history-1))
+        tix = 0
+        
+    #Add a few tuples        
+    for _ in range(0,((points-history*points/clusters)/steps)):
+        output.write(insert_template % ((current,)+tuple(tuples[current][tix])))
+        tix += 1
+                
+
+        
+    #Caclulate progress along the line normalized to the interval [0...1]    
+    progress = (dir_vector[0]/(clusters-history) - (centers[current][0]-base[0]))/(dir_vector[0]/(clusters-history))  
     #Calculate probabilities for querying each cluster     
-    probs = mc.calc_prob(current,progress,max_prob, clusters,max(current-history+1,0))
+    if(workloadtype == "insert_delete"):
+        probs = mc.calc_prob(current,progress,max_prob, clusters,current-history)
+    else:
+        probs = mc.calc_prob(current,progress,max_prob, clusters,0)
     
-    query_centers = random.choice(clusters, queries_per_step, p=probs)
-    
+    #Pick target clusters for queries
+    query_centers = random.choice(clusters, queries_per_step, p=probs)  
+
+    #Generate queries
     queries = []
     for i in query_centers:
         c = centers[i]
@@ -131,17 +154,5 @@ for i in range(1,steps+1):
         high = numpy.maximum(x,y)
         
         output.write(query_template % tuple(mc.createBoundsList(low,high)))
-output.close()
-
-output = open(c1_output,'wb')       
-#Write the random queries for optizations
-c = centers[0]
-for i in range(0,c1_queries):    
-    x = c+random.normal(0,sigma,(dimension))
-    y = c+random.normal(0,sigma,(dimension))
-    
-    low = numpy.minimum(x,y)
-    high = numpy.maximum(x,y)    
-    
-    output.write(query_template % tuple(mc.createBoundsList(low,high)))    
-output.close()             
+        
+output.close()      
