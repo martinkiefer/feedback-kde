@@ -21,8 +21,6 @@ parser.add_argument("--steps", action="store", type=int,required=True,help="Step
 parser.add_argument("--dimensions", action="store", type=int,required=True,help="Number of dimensions")
 parser.add_argument("--queriesperstep", action="store", type=int,required=True,help="Number of queries per step")
 parser.add_argument("--maxprob", action="store", type=float,required=True,help="Maximum probability for the active cluster to be queried")
-parser.add_argument("--c1_queries", action="store", type=int,required=True,help="Generated queries from the first cluster center for optimzations.")
-parser.add_argument("--c1_output", action="store", required=True, help="Output file for first cluster queries")
 
 
 args = parser.parse_args()
@@ -49,8 +47,6 @@ table = "%s_d%i" % (args.table,dimension)
 data_output = args.dataoutput
 query_output = args.queryoutput
 
-c1_output = args.c1_output
-c1_queries= args.c1_queries
 
 #Step 1: Draw a line through the space 
 pos_vector, dir_vector = mc.create_line(dimension)
@@ -123,16 +119,3 @@ f = open(query_output, "w")
 for query in workload:
     f.write(template % tuple(query))
 f.close()
-
-output = open(c1_output,'wb')       
-#Write the random queries for optizations
-c = centers[0]
-for i in range(0,c1_queries):    
-    x = c+random.normal(0,sigma,(dimension))
-    y = c+random.normal(0,sigma,(dimension))
-    
-    low = numpy.minimum(x,y)
-    high = numpy.maximum(x,y)    
-    
-    output.write(template % tuple(mc.createBoundsList(low,high)))    
-output.close()          

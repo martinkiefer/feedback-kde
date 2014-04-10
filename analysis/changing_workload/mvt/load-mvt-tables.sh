@@ -13,8 +13,7 @@ do
   if [ ! -f $BASEDIR/tables/data_mvt_d$i.csv ] 
   then
     python $BASEDIR/../movingTarget.py --table mvt --dataoutput $BASEDIR/tables/data_mvt_d$i.csv --queryoutput $BASEDIR/queries/mvt_d$i.sql \
-    --sigma 0.01 --margin 0.4 --clusters 10 --points 1000 --steps 10 --dimensions $i --queriesperstep 10 --maxprob 0.9 \
-    --c1_queries 100 --c1_output $BASEDIR/queries/mvt_d$i\_O.sql
+    --sigma 0.01 --margin 0.4 --clusters 10 --points 1000 --steps 10 --dimensions $i --queriesperstep 10 --maxprob 0.9 
   fi
 done
 # First drop the existing tables
