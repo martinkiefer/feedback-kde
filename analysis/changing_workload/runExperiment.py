@@ -10,13 +10,13 @@ import time
 # Define and parse the command line arguments
 parser = argparse.ArgumentParser()
 parser.add_argument("--dbname", action="store", required=True, help="Database to which the script will connect.")
-parser.add_argument("--dataset", action="store", choices=["mvt", "mvtc"], required=True, help="Which dataset should be run?")
+parser.add_argument("--dataset", action="store", choices=["mvt", "mvtc_i","mvtc_id"], required=True, help="Which dataset should be run?")
 parser.add_argument("--dimensions", action="store", required=True, type=int, help="Dimensionality of the dataset?")
 #parser.add_argument("--workload", action="store", required=True, type=int, help="Which workload should be run?")
 #parser.add_argument("--queries", action="store", required=True, type=int, help="How many queries from the workload should be run?")
 parser.add_argument("--samplesize", action="store", type=int, default=2400, help="How many rows should the generated model sample?")
 parser.add_argument("--error", action="store", choices=["absolute", "relative"], default="absolute", help="Which error metric should be optimized / reported?")
-parser.add_argument("--optimization", action="store", choices=["none", "adaptive", "batch_workload"], default="none", help="How should the model be optimized?")
+parser.add_argument("--optimization", action="store", choices=["none", "adaptive"], default="none", help="How should the model be optimized?")
 parser.add_argument("--trainqueries", action="store", type=int, default=25, help="How many queries should be used to train the model?")
 parser.add_argument("--log", action="store", required=True, help="Where to append the experimental results?")
 args = parser.parse_args()
@@ -42,20 +42,20 @@ if dataset == "mvt":
     conn.set_session('read uncommitted', autocommit=True)
     querypath = os.path.join(basepath, "mvt/queries")
     table = "mvt_d%i" % dimensions
-if dataset == "mvtc":
+if dataset == "mvtc_i":
     conn.set_session(autocommit=True)
-    querypath = os.path.join(basepath, "mvtc/queries")
-    table = "mvtc_d%i" % dimensions
+    querypath = os.path.join(basepath, "mvtc_i/queries")
+    table = "mvtc_i_d%i" % dimensions
+if dataset == "mvtc_id":
+    conn.set_session(autocommit=True)
+    querypath = os.path.join(basepath, "mvtc_id/queries")
+    table = "mvtc_id_d%i" % dimensions
 queryfile = "%s.sql" % (table)
 
 if (optimization != "none" and optimization != "adaptive"):
     print "Collecting feedback for experiment:"
     sys.stdout.flush()
     # Fetch the optimization queries.
-    if (optimization == "batch_workload"):
-        optimization_query_file = "%s_%s.sql" % (table, "O")
-    #elif (optimizaion == "batch_workload"):
-    #    optimization_query_file = queryfile
     f = open(os.path.join(querypath, optimization_query_file), "r")
     for linecount, _ in enumerate(f):
         pass
