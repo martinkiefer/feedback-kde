@@ -26,10 +26,10 @@ gv_tables=("forest4")
 dt_tables=("forest4")
 
 #<Uniform, T[1%]>
-ut_tables=("forest4")
+ut_tables=()
 
 #<Gauss, T[1%]>
-gt_tables=("forest4")
+gt_tables=()
 
 workload_5_tables=("forest4")
 
@@ -66,8 +66,8 @@ for table in "${dt_tables[@]}"
 do
 	echo $table
 	python $BASEDIR/../stholes.py \
-		--dbname=$DATABASE --database=$DBMS --table=$table --queries=100 \
-		--selectivity=0.1 --tolerance=0.05 --mcenter=Data --mrange=Tuples	\
+		--dbname=$DATABASE --database=$DBMS --table=$table --queries=2000 \
+		--selectivity=0.01 --tolerance=0.005 --mcenter=Data --mrange=Tuples	\
 		--out=$BASEDIR/queries/${table}_dt.sql
 done
 
@@ -76,7 +76,7 @@ do
 	echo $table
 	python $BASEDIR/../stholes.py \
 		--dbname=$DATABASE --database=$DBMS --table=$table --queries=100 \
-		--selectivity=0.1 --tolerance=0.05 --mcenter=Uniform --mrange=Tuples	\
+		--selectivity=0.01 --tolerance=0.005 --mcenter=Uniform --mrange=Tuples	\
 		--out=$BASEDIR/queries/${table}_ut.sql
 done
 
@@ -85,7 +85,7 @@ do
 	echo $table
 	python $BASEDIR/../stholes.py \
 		--dbname=$DATABASE --database=$DBMS --table=$table --queries=100 \
-		--selectivity=0.1 --tolerance=0.05 --mcenter=Gauss --clusters=100 --sigma=25 --mrange=Tuples	\
+		--selectivity=0.01 --tolerance=0.005 --mcenter=Gauss --clusters=100 --sigma=25 --mrange=Tuples	\
 		--out=$BASEDIR/queries/${table}_gt.sql
 done
 
