@@ -228,7 +228,6 @@ elif(mrange == "Tuples"):
             cur.close()
             
             if (selectivity < (target_selectivity + 0.5*target_tolerance) and selectivity > (target_selectivity - 0.5*target_tolerance)):
-
                 break;
             elif (selectivity > target_selectivity):
                 upper_bound = selectivity 
@@ -236,8 +235,8 @@ elif(mrange == "Tuples"):
             else:
                 lower_bound = selectivity
                 lower_bound_factor = test_factor 
-
-        workload.append(createBoundsList(c-(range*test_factor),c+(range*test_factor)))   
+        if (selectivity < (target_selectivity + 0.5*target_tolerance) and selectivity > (target_selectivity - 0.5*target_tolerance)):
+            workload.append(createBoundsList(c-(range*test_factor),c+(range*test_factor)))   
         if (time.time() - last_print_time >= 10):
             print "Generated %i queries for %s, %i remaining (%f queries / second)" \
                 % (len(workload), output_file_name, queries - len(workload), \
