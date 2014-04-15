@@ -41,7 +41,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument("--dbname", action="store", required=True, help="Database to which the script will connect.")
 parser.add_argument("--dataset", action="store", choices=["forest"], required=True, help="Which dataset should be run?")
 parser.add_argument("--dimensions", action="store", required=True, type=int, help="Dimensionality of the dataset?")
-parser.add_argument("--workload", action="store", choices=["dv","uv","gv","dt","ut,","gt,"],required=True, help="Which workload should be run?")
+parser.add_argument("--workload", action="store", choices=["dv","uv","gv","dt","ut","gt"],required=True, help="Which workload should be run?")
 parser.add_argument("--queries", action="store", required=True, type=int, help="How many queries from the workload should be run?")
 parser.add_argument("--samplesize", action="store", type=int, default=2400, help="How many rows should the generated model sample?")
 parser.add_argument("--error", action="store", choices=["absolute", "relative","normalized"], default="absolute", help="Which error metric should be optimized / reported?")
@@ -151,7 +151,7 @@ cur.execute("SET kde_samplesize TO %i;" % samplesize)
 # Set the optimization strategy.
 if (optimization == "adaptive"):
     cur.execute("SET kde_enable_adaptive_bandwidth TO true;")
-    cur.execute("SET kde_adaptive_bandwidth_minibatch_size TO 5;")
+    cur.execute("SET kde_minibatch_size TO 5;")
 elif (optimization == "batch_random" or optimization == "batch_workload"):
     cur.execute("SET kde_enable_bandwidth_optimization TO true;")
     cur.execute("SET kde_optimization_feedback_window TO %i;" % trainqueries)
@@ -182,7 +182,9 @@ for linenr, line in enumerate(f):
     if linenr in selected_queries:
         cur.execute(line)
         if(errortype == "normalized"): 
-	    card = cur.fetchone()[0]
+            card = cur.fetchone()[0]
+            #print("Query: %s" % line)
+            #print("Card %i" % card)
             executed_queries.append(line)
             output_cardinalities.append(card)
         finished_queries += 1
@@ -239,10 +241,10 @@ if errortype == "normalized":
     error_abs = nrows * sum / row_count
     error_uniform /= row_count
     error = error_abs / error_uniform
-print("Sum %f" % sum)
-print("Error: %f" % error)
-print("Nrows: %i" % nrows)
-print("Row count: %i" % row_count)
+#print("Sum %f" % sum)
+#print("Error: %f" % error)
+#print("Nrows: %i" % nrows)
+#print("Row count: %i" % row_count)
     
 # Now append to the error log.
 f = open(log, "a")
