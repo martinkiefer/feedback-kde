@@ -47,6 +47,7 @@ parser.add_argument("--samplesize", action="store", type=int, default=2400, help
 parser.add_argument("--error", action="store", choices=["absolute", "relative","normalized"], default="absolute", help="Which error metric should be optimized / reported?")
 parser.add_argument("--optimization", action="store", choices=["none", "adaptive", "batch_random", "batch_workload"], default="none", help="How should the model be optimized?")
 parser.add_argument("--trainqueries", action="store", type=int, default=25, help="How many queries should be used to train the model?")
+parser.add_argument("--forgetfirst", action="store", type=int, default=0, help="Ignore the first n queries in adaptive mode")
 parser.add_argument("--log", action="store", required=True, help="Where to append the experimental results?")
 args = parser.parse_args()
 
@@ -60,7 +61,10 @@ samplesize = args.samplesize
 errortype = args.error
 optimization = args.optimization
 trainqueries = args.trainqueries
+forgetfirst = args.forgetfirst
 log = args.log
+if(optimization == "adaptive"):
+	queries += forgetfirst
 
 # Open a connection to postgres.
 conn = psycopg2.connect("dbname=%s host=localhost" % dbname)
@@ -146,7 +150,7 @@ cur.execute("SET kde_estimation_quality_logfile TO '/tmp/error.log';")
 if (errortype == "relative"):
     cur.execute("SET kde_error_metric TO SquaredRelative;")
 elif (errortype == "absolute" or errortype == "normalized"):
-    cur.execute("SET kde_error_metric TO Quadratic;")
+    cur.execute("SET kde_error_metric TO Absolute;")
 cur.execute("SET kde_samplesize TO %i;" % samplesize)
 # Set the optimization strategy.
 if (optimization == "adaptive"):
@@ -205,10 +209,19 @@ sum = 0.0
 row_count = 0
 
 error_uniform = 0
+
+#for
+
+    
+
 if(errortype == "normalized"):
-    col_errortype = "absolute"    
+    col_errortype = "absolute"
+    if(optimization == "adaptive"):
+        executed_queries = executed_queries[forgetfirst:]
+        output_cardinalities = output_cardinalities[forgetfirst:]
 else:
     col_errortype = errortype
+
 
 for row in reader:
     if header:
@@ -221,6 +234,8 @@ for row in reader:
             print "Error-type %s not present in given file!" % col_errortype
             sys.exit()
         header = False
+    elif(forgetfirst > 0 and optimization == "adaptive"):
+        forgetfirst -= 1
     else:
         sum += float(row[selected_col])
         #print(executed_queries.pop(0))
