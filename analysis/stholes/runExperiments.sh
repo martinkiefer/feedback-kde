@@ -7,7 +7,7 @@ DATASETS=("forest")
 DIM="4"
 #WORKLOADS=("uv")
 WORKLOADS=("dt" "ut" "gt" "dv" "uv" "gv")
-SAMPLESIZES=(62 62 62 62)
+SAMPLESIZES=(125 125 125 125 2048 2048 2048 2048)
 BATCHSIZES=(5)
 #VARIANTS=("adaptive")
 VARIANTS=("none" "batch_workload" "adaptive")
@@ -33,7 +33,7 @@ do
 					python runExperiment.py	--dbname=xy --dataset=$dataset --dimensions=$DIM \
 											--workload=$workload --queries=$QUERIES --samplesize=$samplesize \
 											--error=$ERROR --optimization=$variant --trainqueries=$TRAININGSET \
-											--log=$LOG$workload$variant --forgetfirst 1000
+											--log=$LOG$samplesize$workload$variant --forgetfirst 1000
 					kill -9 $PID
 					sleep 1
 				done
