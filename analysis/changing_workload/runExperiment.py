@@ -15,7 +15,7 @@ parser.add_argument("--dimensions", action="store", required=True, type=int, hel
 #parser.add_argument("--workload", action="store", required=True, type=int, help="Which workload should be run?")
 #parser.add_argument("--queries", action="store", required=True, type=int, help="How many queries from the workload should be run?")
 parser.add_argument("--samplesize", action="store", type=int, default=2400, help="How many rows should the generated model sample?")
-parser.add_argument("--error", action="store", choices=["absolute", "relative"], default="absolute", help="Which error metric should be optimized / reported?")
+parser.add_argument("--error", action="store", choices=["relative"], default="relative", help="Which error metric should be optimized / reported?")
 parser.add_argument("--optimization", action="store", choices=["none", "adaptive"], default="none", help="How should the model be optimized?")
 parser.add_argument("--trainqueries", action="store", type=int, default=25, help="How many queries should be used to train the model?")
 parser.add_argument("--log", action="store", required=True, help="Where to append the experimental results?")
@@ -129,7 +129,7 @@ finished_queries = 0
 queries = len(f.readlines())
 f.seek(0)
 for line in f:
-    cur.execute(line)
+    cur.execute(line) 
     finished_queries += 1
     sys.stdout.write("\r\tFinished %i of %i queries." % (finished_queries, queries))
     sys.stdout.flush()
