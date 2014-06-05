@@ -39,15 +39,6 @@ extern bool ocl_use_gpu;
 extern bool kde_enable;
 extern int kde_samplesize;
 
-/*
- * SELECTOR FOR THE KERNEL TYPE.
- */
-typedef enum ocl_kernel_type {
-  GAUSS,
-  EPANECHNIKOV
-} ocl_kernel_type_t;
-
-
 ocl_kernel_type_t global_kernel_type = GAUSS;
 bool scale_to_unit_variance = false;
 
@@ -95,30 +86,30 @@ static double rangeKDE(ocl_context_t* ctxt, ocl_estimator_t* estimator) {
 	  clEnqueueNDRangeKernel(ctxt->queue, kde_kernel, 1, NULL, &global_size,
 	                         NULL, 1, &(estimator->online_learning_event),
                            &kde_event);
-    clReleaseEvent(estimator->online_learning_event);
-    estimator->online_learning_event = NULL;
-	} else {
-    clEnqueueNDRangeKernel(ctxt->queue, kde_kernel, 1, NULL, &global_size,
+	  clReleaseEvent(estimator->online_learning_event);
+	  estimator->online_learning_event = NULL;
+  } else {
+	  clEnqueueNDRangeKernel(ctxt->queue, kde_kernel, 1, NULL, &global_size,
 	                         NULL, 0, NULL, &kde_event);
-	}
+  }
   cl_mem result_buffer = clCreateBuffer(
 	    ctxt->context, CL_MEM_READ_WRITE, sizeof(kde_float_t), NULL, NULL);
-	cl_event sum_event = sumOfArray(
+  cl_event sum_event = sumOfArray(
 	    ctxt->result_buffer, estimator->rows_in_sample, result_buffer, 0,
 	    kde_event);
-	kde_float_t result;
-	clEnqueueReadBuffer(ctxt->queue, result_buffer, CL_TRUE, 0,
+  kde_float_t result;
+  clEnqueueReadBuffer(ctxt->queue, result_buffer, CL_TRUE, 0,
 	                    sizeof(kde_float_t), &result, 1, &sum_event, NULL);
-	result *= normalization_factor / estimator->rows_in_sample;
-	clReleaseMemObject(result_buffer);
-	clReleaseEvent(kde_event);
-	clReleaseEvent(sum_event);
-	return result;
+  result *= normalization_factor / estimator->rows_in_sample;
+  clReleaseMemObject(result_buffer);
+  clReleaseEvent(kde_event);
+  clReleaseEvent(sum_event);
+  return result;
 }
 
 static ocl_estimator_t* ocl_buildEstimatorFromCatalogEntry(
     Relation kde_rel, HeapTuple tuple) {
-  unsigned int i;
+  unsigned int i,j;
   Datum datum;
   ArrayType* array;
   bool isNull;
@@ -200,40 +191,70 @@ static ocl_estimator_t* ocl_buildEstimatorFromCatalogEntry(
     fprintf(stderr, "Error opening sample file %s\n", file_name);
     return NULL;
   }
-  double* file_buffer = palloc(
+  double* sample_buffer = palloc(
       sizeof(double) * descriptor->nr_of_dimensions * descriptor->rows_in_sample);
   size_t read_elements = fread(
-      file_buffer, sizeof(double) * descriptor->nr_of_dimensions,
+      sample_buffer, sizeof(double) * descriptor->nr_of_dimensions,
       descriptor->rows_in_sample, file);
   if (read_elements != descriptor->rows_in_sample) {
     fprintf(stderr, "Error reading sample from file %s\n", file_name);
     fclose(file);
-    pfree(file_buffer);
+    pfree(sample_buffer);
+    return NULL;
+  }
+  //Read the error 
+  double* error_buffer = palloc(
+      sizeof(double) * descriptor->rows_in_sample);
+  read_elements = fread(
+      error_buffer, sizeof(double),
+      descriptor->rows_in_sample, file);
+  if (read_elements != descriptor->rows_in_sample) {
+    fprintf(stderr, "Error reading sample from file %s\n", file_name);
+    fclose(file);
+    pfree(sample_buffer);
     return NULL;
   }
   fclose(file);
+  
   descriptor->sample_buffer = clCreateBuffer(
       context->context, CL_MEM_READ_WRITE,
       descriptor->sample_buffer_size, NULL, NULL);
+  descriptor->sample_penalty_buffer = clCreateBuffer(
+      context->context, CL_MEM_READ_WRITE,
+      descriptor->rows_in_sample*sizeof(kde_float_t), NULL, NULL);
   if (sizeof(kde_float_t) == sizeof(float)) {
-    kde_float_t* transfer_buffer = palloc(
+    kde_float_t* sample_transfer_buffer = palloc(
         sizeof(kde_float_t) * descriptor->nr_of_dimensions * descriptor->rows_in_sample);
-    for ( i=0; i<descriptor->nr_of_dimensions * descriptor->rows_in_sample; ++i ) {
-      transfer_buffer[i] = file_buffer[i];
+    kde_float_t* error_transfer_buffer = palloc(
+        sizeof(kde_float_t) * descriptor->rows_in_sample);
+    for( j=0; j < descriptor->rows_in_sample; ++j){
+      error_transfer_buffer[j]=error_buffer[j];
+      for ( i=0; i<descriptor->nr_of_dimensions; ++i ) {
+	sample_transfer_buffer[j*descriptor->nr_of_dimensions+i] = sample_buffer[j*descriptor->nr_of_dimensions+i];
+      }
     }
     clEnqueueWriteBuffer(
         context->queue, descriptor->sample_buffer, CL_TRUE, 0,
         ocl_sizeOfSampleItem(descriptor) * descriptor->rows_in_sample,
-        transfer_buffer, 0, NULL, NULL);
-    pfree(transfer_buffer);
+        sample_transfer_buffer, 0, NULL, NULL);
+    clEnqueueWriteBuffer(
+        context->queue, descriptor->sample_penalty_buffer, CL_TRUE, 0,
+        sizeof(kde_float_t) * descriptor->rows_in_sample,
+        error_transfer_buffer, 0, NULL, NULL);
+    pfree(sample_transfer_buffer);
+    pfree(error_transfer_buffer);
   } else if (sizeof(kde_float_t) == sizeof(double)) {
     clEnqueueWriteBuffer(
         context->queue, descriptor->sample_buffer, CL_TRUE, 0,
         ocl_sizeOfSampleItem(descriptor) * descriptor->rows_in_sample,
-        file_buffer, 0, NULL, NULL);
+        sample_buffer, 0, NULL, NULL);
+    clEnqueueWriteBuffer(
+        context->queue, descriptor->sample_penalty_buffer, CL_TRUE, 0,
+        sizeof(kde_float_t) * descriptor->rows_in_sample,
+        error_buffer, 0, NULL, NULL);
   }
-  pfree(file_buffer);
-
+  pfree(sample_buffer);
+  pfree(error_buffer);
   // Wait for all transfers to finish.
   clFinish(context->queue);
   // We are done.
@@ -241,7 +262,7 @@ static ocl_estimator_t* ocl_buildEstimatorFromCatalogEntry(
 }
 
 static void ocl_updateEstimatorInCatalog(ocl_estimator_t* estimator) {
-  unsigned int i;
+  unsigned int i,j;
   HeapTuple tuple;
   Datum* array_datums;
   ArrayType* array;
@@ -299,29 +320,48 @@ static void ocl_updateEstimatorInCatalog(ocl_estimator_t* estimator) {
   // >> Write the sample to a file.
   kde_float_t* sample_buffer = palloc(
       ocl_sizeOfSampleItem(estimator) * estimator->rows_in_sample);
+  kde_float_t* error_buffer = palloc(
+      sizeof(kde_float_t) * estimator->rows_in_sample);
   clEnqueueReadBuffer(
       context->queue, estimator->sample_buffer, CL_TRUE, 0,
       ocl_sizeOfSampleItem(estimator) * estimator->rows_in_sample,
       sample_buffer, 0, NULL, NULL);
+  clEnqueueReadBuffer(
+      context->queue, estimator->sample_penalty_buffer, CL_TRUE, 0,
+      sizeof(kde_float_t) * estimator->rows_in_sample,
+      error_buffer, 0, NULL, NULL);
   char sample_file_name[1024];
   sprintf(sample_file_name, "%s/pg_kde_samples/rel%i_kde.sample", DataDir, estimator->table);
   FILE* sample_file = fopen(sample_file_name, "wb");
   if (sizeof(kde_float_t) == sizeof(double)) {
     fwrite(sample_buffer, sizeof(kde_float_t)*estimator->nr_of_dimensions,
            estimator->rows_in_sample, sample_file);
-  } else {
-    // We store double values.
-    double* file_buffer = palloc(
-        sizeof(double) * estimator->nr_of_dimensions * estimator->rows_in_sample);
-    for (i=0; i<estimator->nr_of_dimensions * estimator->rows_in_sample; ++i) {
-      file_buffer[i] = sample_buffer[i];
-    }
-    fwrite(file_buffer, sizeof(double)*estimator->nr_of_dimensions,
+    fwrite(error_buffer, sizeof(kde_float_t),
            estimator->rows_in_sample, sample_file);
-    pfree(file_buffer);
+  } 
+  else {
+    double* sample_transfer_buffer = palloc(
+        sizeof(double) * estimator->nr_of_dimensions * estimator->rows_in_sample);
+    double* error_transfer_buffer = palloc(
+        sizeof(double) * estimator->rows_in_sample);
+    for( j=0; j < estimator->rows_in_sample; ++j){
+      error_transfer_buffer[j]=error_buffer[j];
+      for ( i=0; i<estimator->nr_of_dimensions; ++i ) {
+	sample_transfer_buffer[j*estimator->nr_of_dimensions+i] = sample_buffer[j*estimator->nr_of_dimensions+i];
+      }
+    }  
+      
+
+    fwrite(sample_transfer_buffer, sizeof(double)*estimator->nr_of_dimensions,
+           estimator->rows_in_sample, sample_file);
+    fwrite(error_transfer_buffer, sizeof(double),
+           estimator->rows_in_sample, sample_file);
+    pfree(sample_transfer_buffer);
+    pfree(error_transfer_buffer);
   }
   fclose(sample_file);
   pfree(sample_buffer);
+  pfree(error_buffer);
   values[Anum_pg_kdemodels_sample_file-1] = CStringGetTextDatum(sample_file_name);
 
   // Ok, we constructed the tuple. Now try to find whether the estimator is
@@ -340,10 +380,13 @@ static void ocl_updateEstimatorInCatalog(ocl_estimator_t* estimator) {
     simple_heap_insert(kdeRel, tuple);
   } else {
     // This is an existing estimator. Update the corresponding tuple.
-    heap_endscan(scan);
+    
     HeapTuple newtuple = heap_modify_tuple(tuple, RelationGetDescr(kdeRel),
                                            values, nulls, repl);
+    
     simple_heap_update(kdeRel, &tuple->t_self, newtuple);
+    heap_endscan(scan);
+    
   }
   heap_close(kdeRel, RowExclusiveLock);
 
@@ -584,35 +627,35 @@ int ocl_estimateSelectivity(const ocl_estimator_request_t* request,
 	}
 	for (i = 0; i < request->range_count; ++i) {
 		unsigned int range_pos = estimator->column_order[request->ranges[i].colno];
-    row_ranges[2*range_pos] =
-        request->ranges[i].lower_bound * estimator->scale_factors[range_pos];
-    row_ranges[2*range_pos + 1] =
-        request->ranges[i].upper_bound * estimator->scale_factors[range_pos];
-    if (request->ranges[i].lower_included)
-      row_ranges[2*range_pos] -= 0.001;
-    if (request->ranges[i].upper_included)
-      row_ranges[2*range_pos + 1] += 0.001;
-  }
-  // Prepare the request.
-  clEnqueueWriteBuffer(ctxt->queue, ctxt->input_buffer, CL_TRUE, 0,
+		row_ranges[2*range_pos] =
+		request->ranges[i].lower_bound * estimator->scale_factors[range_pos];
+		row_ranges[2*range_pos + 1] =
+		request->ranges[i].upper_bound * estimator->scale_factors[range_pos];
+		if (request->ranges[i].lower_included)
+			row_ranges[2*range_pos] -= 0.001;
+	if (request->ranges[i].upper_included)
+		row_ranges[2*range_pos + 1] += 0.001;
+	}
+	// Prepare the request.
+	clEnqueueWriteBuffer(ctxt->queue, ctxt->input_buffer, CL_TRUE, 0,
                2*estimator->nr_of_dimensions*sizeof(kde_float_t), row_ranges,
                0, NULL, NULL);
-  *selectivity = rangeKDE(ctxt, estimator);
-  estimator->last_selectivity = *selectivity;
-  estimator->open_estimation = true;
-  // Print timing:
-  struct timeval now; gettimeofday(&now, NULL);
-  long seconds = now.tv_sec - start.tv_sec;
-  long useconds = now.tv_usec - start.tv_usec;
-  long mtime = ((seconds) * 1000 + useconds/1000.0) + 0.5;
-  if (ocl_isDebug()) {
-    ocl_dumpRequest(request);
-    fprintf(stderr, "Estimated selectivity: %f, took: %ld ms.\n", *selectivity, mtime);
-  }
-  free(row_ranges);
-  // Finally, prepare the online update of the bandwidth.
-  ocl_prepareOnlineLearningStep(estimator);
-  return 1;
+	*selectivity = rangeKDE(ctxt, estimator);
+	estimator->last_selectivity = *selectivity;
+	estimator->open_estimation = true;
+	// Print timing:
+	struct timeval now; gettimeofday(&now, NULL);
+	long seconds = now.tv_sec - start.tv_sec;
+	long useconds = now.tv_usec - start.tv_usec;
+	long mtime = ((seconds) * 1000 + useconds/1000.0) + 0.5;
+	if (ocl_isDebug()) {
+		ocl_dumpRequest(request);
+		fprintf(stderr, "Estimated selectivity: %f, took: %ld ms.\n", *selectivity, mtime);
+	}
+	free(row_ranges);
+	// Finally, prepare the online update of the bandwidth.
+	ocl_prepareOnlineLearningStep(estimator);
+	return 1;
 }
 
 unsigned int ocl_maxSampleSize(unsigned int dimensionality) {
@@ -649,12 +692,12 @@ void ocl_constructEstimator(
 	  ocl_freeEstimator(old_estimator, false);
 	}
 	// Update the bitmap.
-  registry->estimator_bitmap[rel->rd_node.relNode / 8]
+	registry->estimator_bitmap[rel->rd_node.relNode / 8]
                              |= (0x1 << rel->rd_node.relNode % 8);
 	// Update the descriptor info.
 	estimator->table = rel->rd_node.relNode;
-  estimator->nr_of_dimensions = dimensionality;
-  estimator->column_order = calloc(1, 32 * sizeof(unsigned int));
+	estimator->nr_of_dimensions = dimensionality;
+	estimator->column_order = calloc(1, 32 * sizeof(unsigned int));
 	for (i = 0; i<dimensionality; ++i) {
 	  estimator->columns |= 0x1 << attributes[i];
 	  estimator->column_order[attributes[i]] = i;
@@ -668,12 +711,17 @@ void ocl_constructEstimator(
     */
 	kde_float_t* host_buffer = (kde_float_t*)malloc(
 	    ocl_sizeOfSampleItem(estimator) * sample_size);
+	kde_float_t* host_penalty_buffer = (kde_float_t*) malloc(
+	    sizeof(kde_float_t) * sample_size);
 	double* mean = (double*)calloc(1, sizeof(double) * dimensionality);
 	double* M2 = (double*)calloc(1, sizeof(double) * dimensionality);
 	for ( i = 0; i < sample_size; ++i ) {
 	  // Extract the item.
 	  ocl_extractSampleTuple(estimator, rel, sample[i],
 	                         &(host_buffer[i*estimator->nr_of_dimensions]));
+	  
+	  
+	  
 	  // And update the attributes.
 	  for ( j = 0; j < estimator->nr_of_dimensions; ++j ) {
 	    double delta = host_buffer[i*estimator->nr_of_dimensions + j] - mean[j];
@@ -720,6 +768,7 @@ void ocl_constructEstimator(
 	free(bandwidth);
   // Re-scale the data to unit variance.
   for ( j = 0; j < sample_size; ++j ) {
+    host_penalty_buffer[j] = (kde_float_t) 0.0f;
     for ( i = 0; i < dimensionality; ++i ) {
       host_buffer[j*dimensionality + i] *= estimator->scale_factors[i];
     }
@@ -729,12 +778,19 @@ void ocl_constructEstimator(
 	estimator->sample_buffer = clCreateBuffer(
 	    ctxt->context, CL_MEM_READ_WRITE, estimator->sample_buffer_size,
 	    NULL, NULL);
+	estimator->sample_penalty_buffer = clCreateBuffer(
+	    ctxt->context, CL_MEM_READ_WRITE, estimator->sample_buffer_size,
+	    NULL, NULL);
 	clEnqueueWriteBuffer(
 	    ctxt->queue, estimator->sample_buffer, CL_TRUE, 0,
 	    sample_size * ocl_sizeOfSampleItem(estimator), host_buffer,
 	    0, NULL, NULL);
+	clEnqueueWriteBuffer(
+	    ctxt->queue, estimator->sample_penalty_buffer, CL_TRUE, 0,
+	    sample_size * sizeof(kde_float_t), host_penalty_buffer,
+	    0, NULL, NULL);
   free(host_buffer);
-
+  free(host_penalty_buffer);
     // Wait for the initialization to finish.
   clFinish(ocl_getContext()->queue);
 
@@ -792,10 +848,13 @@ unsigned int ocl_maxRowsInSample(ocl_estimator_t* estimator) {
 void ocl_pushEntryToSampleBufer(ocl_estimator_t* estimator, int position,
                                 kde_float_t* data_item) {
   ocl_context_t* context = ocl_getContext();
+  kde_float_t zero = 0.0;
   size_t transfer_size = ocl_sizeOfSampleItem(estimator);
   size_t offset = position * transfer_size;
   clEnqueueWriteBuffer(context->queue, estimator->sample_buffer, CL_FALSE,
                        offset, transfer_size, data_item, 0, NULL, NULL);
+  clEnqueueWriteBuffer(context->queue, estimator->sample_penalty_buffer, CL_FALSE,
+                       position, sizeof(kde_float_t), &zero, 0, NULL, NULL);  
   clFinish(context->queue);
 }
 
