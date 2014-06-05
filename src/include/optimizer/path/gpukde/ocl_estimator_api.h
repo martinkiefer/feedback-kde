@@ -51,6 +51,25 @@ typedef enum error_metrics {
 } ocl_error_metrics_t;
 
 /*
+ * Enum definition to select a possible error metric that should be optimized.
+ */
+typedef enum sample_maintenance_insert_options {
+  //Insert driven methods
+  NONE_I = 0,
+  RESERVOIR = 1, 	//Plain reservoir sampling
+  RANDOM = 2,		//Replaces the worst sample point with probability 1/number of tuples
+} ocl_sample_maintenance_insert_options_t;
+
+
+typedef enum sample_maintenance_query_options {
+  //Query driven methods
+  NONE_Q = 0,
+  PERIODIC = 1,		//Replace the worst sample point every n elements 
+  THRESHOLD = 2, 	//Replace a sample point when it reaches a certain threshold
+} ocl_sample_maintenance_query_options_t;
+
+
+/*
  * Enum definition to select a batch optimziation strategy.
  */
 typedef enum {
