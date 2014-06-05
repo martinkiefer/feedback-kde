@@ -114,6 +114,14 @@ cl_kernel ocl_getKernel(const char* kernel_name, int dimensions);
 cl_event sumOfArray(cl_mem input_buffer, unsigned int elements,
                     cl_mem result_buffer, unsigned int result_buffer_offset,
                     cl_event external_event);
+/*
+ * Computes the min of the elements in input_buffer, writing minimum and value to the
+ * specified position in result_* buffers.
+ *
+ */
+cl_event minOfArray(cl_mem input_buffer, unsigned int elements,
+                    cl_mem result_min,cl_mem result_index, unsigned int result_buffer_offset,
+                    cl_event external_event);
 
 #endif /* USE_OPENCL */
 #endif /* OCL_UTILITIES_H_ */
