@@ -23,6 +23,7 @@ include $(top_srcdir)/src/backend/common.mk
 .PHONY: install-data
 install-data: all installdirs
 	$(INSTALL_DATA) $(srcdir)/kernel/sum.cl '$(DESTDIR)$(datadir)/kernel/sum.cl'
+	$(INSTALL_DATA) $(srcdir)/kernel/min.cl '$(DESTDIR)$(datadir)/kernel/min.cl'
 	$(INSTALL_DATA) $(srcdir)/kernel/kde.cl '$(DESTDIR)$(datadir)/kernel/kde.cl'
 	$(INSTALL_DATA) $(srcdir)/kernel/init.cl '$(DESTDIR)$(datadir)/kernel/init.cl'
 	$(INSTALL_DATA) $(srcdir)/kernel/sample_maintenance.cl '$(DESTDIR)$(datadir)/kernel/sample_maintenance.cl'
