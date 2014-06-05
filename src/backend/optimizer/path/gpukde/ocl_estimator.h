@@ -32,6 +32,7 @@ typedef struct ocl_estimator {
   unsigned int rows_in_sample;  // Current number of tuples in the sample.
   size_t sample_buffer_size;      // Size of the sample buffer in bytes.
   cl_mem sample_buffer;           // Buffer that stores the data sample.
+  cl_mem sample_penalty_buffer;   // Buffer storing the penalties for every sample
   /* Fields for tracking mini-batch updates to the bandwidth. */
   cl_mem gradient_accumulator;
   cl_mem squared_gradient_accumulator;
@@ -57,7 +58,17 @@ typedef struct ocl_estimator {
   bool open_estimation;     // Set to true if this estimator has produced a valid estimation for which we are still waiting for feedback.
   double last_selectivity;  // Stores the last selectivity computed by this estimator.
   cl_kernel estimator;
+  unsigned long nr_of_estimations;
 } ocl_estimator_t;
+
+/*
+ * SELECTOR FOR THE KERNEL TYPE.
+ */
+typedef enum ocl_kernel_type {
+  GAUSS,
+  EPANECHNIKOV
+} ocl_kernel_type_t;
+
 
 /*
  * Registry of all known estimators.
