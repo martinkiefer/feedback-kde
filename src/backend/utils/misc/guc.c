@@ -141,8 +141,6 @@ extern void assign_kde_samplesize(int newval, void *extra);
 /* Determines whether we use the GPU or the CPU for running KDE. */
 extern bool ocl_use_gpu;
 extern void assign_ocl_use_gpu(bool newval, void *extra);
-/* Determines whether we propagate inserts to the KDE estimator via reservoir sampling. */
-extern bool kde_propagate_inserts;
 /* Name of the file where we log estimation errors. */
 extern char* kde_estimation_quality_logfile_name;
 extern void assign_kde_estimation_quality_logfile_name(const char* newval, void *extra);
@@ -156,6 +154,10 @@ extern int kde_bandwidth_optimization_feedback_window;
 extern bool kde_enable_adaptive_bandwidth;
 /* Determines the mini-batch size that is used for online learning. */
 extern int kde_adaptive_bandwidth_minibatch_size;
+/* Determines the threshold for removing elements for the threshold option */ 
+extern double kde_sample_maintenance_threshold;
+/* Determines the number of queries until the worst sample point is replaced */
+extern int kde_sample_maintenance_period;
 /* Determines the error metric that is used to optimize the bandwidth. */
 static const struct config_enum_entry kde_error_metric_options[] = {
   {"Absolute", ABSOLUTE, false},
@@ -163,10 +165,25 @@ static const struct config_enum_entry kde_error_metric_options[] = {
   {"Quadratic", QUADRATIC, false},
   {"SquaredQ", SQUARED_Q, false},
   {"SquaredRelative", SQUARED_RELATIVE, false},
-  {NULL, 0, false}
+  {NULL, 0, false},
 };
 extern int kde_error_metric;
 
+static const struct config_enum_entry kde_sample_maintenance_insert_options[] = {
+  {"None", NONE_I, false},
+  {"Reservoir", RESERVOIR, false},
+  {"Random", RANDOM, false},
+  {NULL, 0, false},
+};
+
+static const struct config_enum_entry kde_sample_maintenance_query_options[] = {
+  {"None", NONE_Q, false},
+  {"Threshold", THRESHOLD, false},
+  {"Periodic", PERIODIC, false},
+  {NULL, 0, false},
+};
+extern int kde_sample_maintenance_insert_option;
+extern int kde_sample_maintenance_query_option;
 #endif /* USE_OPENCL */
 
 #ifdef TRACE_SORT
@@ -1547,16 +1564,6 @@ static struct config_bool ConfigureNamesBool[] =
     NULL, NULL, NULL
   },
 	{
-		{"kde_propagate_inserts", PGC_USERSET, DEVELOPER_OPTIONS,
-			gettext_noop("Propagate data inserts to improve the KDE model."),
-			NULL,
-			GUC_NOT_IN_SAMPLE
-		},
-		&kde_propagate_inserts,
-		false,
-		NULL, NULL, NULL
-	},
-	{
 		{"ocl_use_gpu", PGC_USERSET, DEVELOPER_OPTIONS,
 			gettext_noop("Use the GPU for OpenCL?"),
 			NULL,
@@ -2557,6 +2564,16 @@ static struct config_int ConfigureNamesInt[] =
     5, 1, 1024,
     NULL, NULL, NULL
   },
+  {
+    {"kde_sample_maintenance_period", PGC_USERSET, DEVELOPER_OPTIONS,
+      gettext_noop("Number of queries in which the worst sample point is replaced"),
+      NULL,
+      GUC_NOT_IN_SAMPLE
+    },
+    &kde_sample_maintenance_period,
+    64, 1, INT_MAX,
+    NULL, NULL, NULL
+  },
 #endif /* USE_OPENCL */
 
 	/* End-of-list marker */
@@ -2699,7 +2716,18 @@ static struct config_real ConfigureNamesReal[] =
 		0.5, 0.0, 1.0,
 		NULL, NULL, NULL
 	},
-
+#ifdef USE_OPENCL	
+	{
+	  {"kde_sample_maintenance_threshold", PGC_USERSET, DEVELOPER_OPTIONS,
+	    gettext_noop("Threshold causing a sample point to be replaced."),
+	    NULL,
+	    GUC_NOT_IN_SAMPLE
+	  },
+	  &kde_sample_maintenance_threshold,
+	  64.0, 0.0, DBL_MAX,
+	  NULL, NULL, NULL
+	},
+#endif /* USE_OPENCL */
 	/* End-of-list marker */
 	{
 		{NULL, 0, 0, NULL, NULL}, NULL, 0.0, 0.0, 0.0, NULL, NULL, NULL
@@ -3489,6 +3517,24 @@ static struct config_enum ConfigureNamesEnum[] =
     },
     &kde_error_metric,
     RELATIVE, kde_error_metric_options,
+    NULL, NULL, NULL
+  },
+  {
+    {"kde_sample_maintenance_insert_propagation", PGC_USERSET, DEVELOPER_OPTIONS,
+      gettext_noop("Sets the method for maintaining sample quality after insertions."),
+      NULL
+    },
+    &kde_sample_maintenance_insert_option,
+    NONE_I, kde_sample_maintenance_insert_options,
+    NULL, NULL, NULL
+  },
+  {
+    {"kde_sample_maintenance_query_propagation", PGC_USERSET, DEVELOPER_OPTIONS,
+      gettext_noop("Sets the method for maintaining sample quality after queries."),
+      NULL
+    },
+    &kde_sample_maintenance_query_option,
+    NONE_Q, kde_sample_maintenance_query_options,
     NULL, NULL, NULL
   },
 #endif
