@@ -43,8 +43,9 @@ void ocl_notifyModelMaintenanceOfSelectivity(Oid relation, double selectivity) {
   if (estimator == NULL) return;
   if (!estimator->open_estimation) return;  // No registered estimation.
 
+  
   // Notify the sample maintenance of this observation so it can track the sample quality.
-  //ocl_notifySampleMaintenanceOfSelectivity(estimator, selectivity);
+  ocl_notifySampleMaintenanceOfSelectivity(estimator, selectivity);
 
   // Update the bandwidth using online learning.
   ocl_runOnlineLearningStep(estimator, selectivity);
@@ -359,6 +360,10 @@ static double computeGradient(unsigned n, const double* bandwidth,
                              estimator->nr_of_dimensions + 1, events,
                              &(result_events[1]));
   err |= clWaitForEvents(2, result_events);
+  
+  if(err != 0)
+    fprintf(stderr, "OpenCL functions failed to compute gradient.\n");
+  
   error /= conf->nr_of_observations;
   if (evaluations == 1) start_error = error;
   struct timeval now; gettimeofday(&now, NULL);
