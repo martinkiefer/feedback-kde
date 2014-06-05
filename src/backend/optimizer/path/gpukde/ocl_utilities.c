@@ -28,9 +28,14 @@ bool kde_enable;
 bool kde_debug;
 int kde_samplesize;
 
-cl_kernel init_buffer = NULL;
+cl_kernel init_buffer_min = NULL;
+cl_kernel init_buffer_sum = NULL;
 cl_kernel fast_sum = NULL;
 cl_kernel slow_sum = NULL;
+
+cl_kernel fast_min = NULL;
+cl_kernel slow_min = NULL;
+cl_kernel last_min = NULL;
 
 bool ocl_isDebug() {
   return kde_debug;
@@ -101,7 +106,7 @@ void ocl_initialize(void) {
 	// Now get some device information parameters:
 	err |= clGetDeviceInfo(device, CL_DEVICE_MAX_MEM_ALLOC_SIZE, sizeof(size_t), &(ctxt->max_alloc_size), NULL);
 	err |= clGetDeviceInfo(device, CL_DEVICE_GLOBAL_MEM_SIZE, sizeof(size_t), &(ctxt->global_mem_size), NULL);
-  err |= clGetDeviceInfo(device, CL_DEVICE_LOCAL_MEM_SIZE, sizeof(size_t), &(ctxt->local_mem_size), NULL);
+	err |= clGetDeviceInfo(device, CL_DEVICE_LOCAL_MEM_SIZE, sizeof(size_t), &(ctxt->local_mem_size), NULL);
 	err |= clGetDeviceInfo(device, CL_DEVICE_MAX_WORK_GROUP_SIZE, sizeof(size_t), &(ctxt->max_workgroup_size), NULL);
 	// Cap to 1024 (our sum kernel cannot deal with larger workgroup sizes atm).
 	ctxt->max_workgroup_size = Min(ctxt->max_workgroup_size, 1024);
@@ -188,6 +193,7 @@ static int readFile(FILE* f, char** content, size_t* length) {
  * List of all kernel names
  */
 static const char *kernel_names[] = {
+    PGSHAREDIR"/kernel/min.cl",
     PGSHAREDIR"/kernel/sum.cl",
     PGSHAREDIR"/kernel/kde.cl",
     PGSHAREDIR"/kernel/init.cl",
@@ -195,7 +201,7 @@ static const char *kernel_names[] = {
     PGSHAREDIR"/kernel/model_maintenance.cl",
     PGSHAREDIR"/kernel/online_learning.cl"
 };
-static const unsigned int nr_of_kernels = 6;
+static const unsigned int nr_of_kernels = 7;
 
 static void concatFiles(unsigned int nr_of_files,
                         char** file_buffers, size_t* file_lengths,
@@ -375,8 +381,8 @@ cl_event sumOfArray(cl_mem input_buffer, unsigned int elements,
   cl_event events[] = { NULL, NULL };
   unsigned int nr_of_events = 0;
   // Fetch the required sum kernels:
-  if (init_buffer == NULL)
-    init_buffer = ocl_getKernel("init_zero", 0);
+  if (init_buffer_sum == NULL)
+    init_buffer_sum = ocl_getKernel("init_zero", 0);
   if (fast_sum == NULL)
     fast_sum = ocl_getKernel("sum_par", 0);
   if (slow_sum == NULL)
@@ -407,15 +413,15 @@ cl_event sumOfArray(cl_mem input_buffer, unsigned int elements,
   cl_mem tmp_buffer = clCreateBuffer(
       context->context, CL_MEM_READ_WRITE,
       sizeof(kde_float_t) * (processors + 1), NULL, NULL);
-  err |= clSetKernelArg(init_buffer, 0, sizeof(cl_mem), &tmp_buffer);
+  err |= clSetKernelArg(init_buffer_sum, 0, sizeof(cl_mem), &tmp_buffer);
   size_t global_size = processors + 1;
   if (external_event == NULL) {
     err |= clEnqueueNDRangeKernel(
-        context->queue, init_buffer, 1, NULL, &global_size,
+        context->queue, init_buffer_sum, 1, NULL, &global_size,
         NULL, 0, NULL, &init_event);
   } else {
     err |= clEnqueueNDRangeKernel(
-        context->queue, init_buffer, 1, NULL, &global_size,
+        context->queue, init_buffer_sum, 1, NULL, &global_size,
         NULL, 1, &external_event, &init_event);
   }
   // Ok, we selected the correct kernel and parameters. Now prepare the arguments.
@@ -460,6 +466,123 @@ cl_event sumOfArray(cl_mem input_buffer, unsigned int elements,
   if (events[0]) clReleaseEvent(events[0]);
   if (events[1]) clReleaseEvent(events[1]);
 
+  return finalize_event;
+}
+
+cl_event minOfArray(cl_mem input_buffer, unsigned int elements,
+                    cl_mem result_min,cl_mem result_index, unsigned int result_buffer_offset,
+                    cl_event external_event) {
+  cl_int err = 0;
+  ocl_context_t* context = ocl_getContext();
+
+  cl_event events[] = { NULL, NULL };
+  unsigned int nr_of_events = 0;
+  
+  // Fetch the required sum kernels:
+  if (init_buffer_min == NULL)
+    init_buffer_min = ocl_getKernel("init", 0);
+  if (fast_min == NULL)
+    fast_min = ocl_getKernel("min_par", 0);
+  if (slow_min == NULL)
+    slow_min = ocl_getKernel("min_seq", 0);
+  if (last_min == NULL)
+    last_min = ocl_getKernel("min_seq_last_pass", 0);
+  struct timeval start; gettimeofday(&start, NULL);
+
+  // Determine the optimal local size.
+  size_t local_size;
+  clGetKernelWorkGroupInfo(fast_sum, context->device, CL_KERNEL_WORK_GROUP_SIZE,
+                           sizeof(size_t), &local_size, NULL);
+  // Truncate to local memory requirements, we need two local floating points per thread
+  local_size = Min(
+      local_size,
+      context->local_mem_size / (sizeof(kde_float_t) * 2));
+  // And truncate to the next power of two.
+  local_size = (size_t)0x1 << (int)(log2((double)local_size));
+
+  size_t processors = context->max_compute_units;
+
+  // Figure out how many elements we can aggregate per thread in the parallel part:
+  unsigned int tuples_per_thread = elements / (processors * local_size);
+  // Now compute the configuration of the sequential kernel:
+  unsigned int slow_kernel_data_offset = processors * tuples_per_thread * local_size;
+  unsigned int slow_kernel_elements = elements - slow_kernel_data_offset;
+  unsigned int slow_kernel_result_offset = processors;
+
+  // Allocate a temporary result buffers.
+  cl_mem tmp_buffer_min = clCreateBuffer(
+      context->context, CL_MEM_READ_WRITE,
+      sizeof(kde_float_t) * (processors + 1), NULL, NULL);
+  
+  cl_mem tmp_buffer_index = clCreateBuffer(
+      context->context, CL_MEM_READ_WRITE,
+      sizeof(unsigned int) * (processors + 1), NULL, NULL);
+  
+  
+  size_t global_size = processors + 1; 
+  
+  
+  //Preinitialize the value buffer with +INNFINITY. 
+  kde_float_t inf = INFINITY;
+  err |= clSetKernelArg(init_buffer_min, 0, sizeof(cl_mem), &tmp_buffer_min);
+  err |= clSetKernelArg(init_buffer_min, 1, sizeof(kde_float_t), &inf);
+  
+  cl_event init_event;
+  err |= clEnqueueNDRangeKernel(
+      context->queue, init_buffer_min, 1, NULL, &global_size,
+      NULL, 0, NULL, &init_event);
+  
+  // Ok, we selected the correct kernel and parameters. Now prepare the arguments.
+  err |= clSetKernelArg(fast_min, 0, sizeof(cl_mem), &input_buffer);
+  err |= clSetKernelArg(fast_min, 1, sizeof(kde_float_t) * local_size, NULL);
+  err |= clSetKernelArg(fast_min, 2, sizeof(kde_float_t) * local_size, NULL);
+  err |= clSetKernelArg(fast_min, 3, sizeof(cl_mem), &tmp_buffer_min);
+  err |= clSetKernelArg(fast_min, 4, sizeof(cl_mem), &tmp_buffer_index);
+  err |= clSetKernelArg(fast_min, 5, sizeof(unsigned int), &tuples_per_thread);
+  err |= clSetKernelArg(slow_min, 0, sizeof(cl_mem), &input_buffer);
+  err |= clSetKernelArg(slow_min, 1, sizeof(unsigned int), &slow_kernel_data_offset);
+  err |= clSetKernelArg(slow_min, 2, sizeof(unsigned int), &slow_kernel_elements);
+  err |= clSetKernelArg(slow_min, 3, sizeof(cl_mem), &tmp_buffer_min);
+  err |= clSetKernelArg(slow_min, 4, sizeof(cl_mem), &tmp_buffer_index);
+  err |= clSetKernelArg(slow_min, 5, sizeof(unsigned int), &slow_kernel_result_offset);
+  
+  // Fire the kernel
+  if (tuples_per_thread) {
+    global_size = local_size * processors;
+    cl_event event;
+    err |= clEnqueueNDRangeKernel(
+        context->queue, fast_min, 1, NULL, &global_size,
+        &local_size, 1, &init_event, &event);
+    events[nr_of_events++] = event;
+  }
+  if (slow_kernel_elements) {
+    cl_event event;
+    err |= clEnqueueTask(context->queue, slow_min, 1, &init_event, &event);
+    events[nr_of_events++] = event;
+  }
+
+  // Now perform a final pass over the data to compute the aggregate.
+  slow_kernel_data_offset = 0;
+  slow_kernel_elements = processors + 1;
+  slow_kernel_result_offset = 0;
+  err = 0;
+  err |= clSetKernelArg(last_min, 0, sizeof(cl_mem), &tmp_buffer_min);
+  err |= clSetKernelArg(last_min, 1, sizeof(cl_mem), &tmp_buffer_index);
+  err |= clSetKernelArg(last_min, 2, sizeof(unsigned int), &slow_kernel_data_offset);
+  err |= clSetKernelArg(last_min, 3, sizeof(unsigned int), &slow_kernel_elements);
+  err |= clSetKernelArg(last_min, 4, sizeof(cl_mem), &result_min);
+  err |= clSetKernelArg(last_min, 5, sizeof(cl_mem), &result_index);
+  err |= clSetKernelArg(last_min, 6, sizeof(unsigned int), &result_buffer_offset);  
+  
+  cl_event finalize_event;
+  err |= clEnqueueTask(context->queue, last_min, nr_of_events, events, &finalize_event);
+
+  
+  // Clean up ...
+  clReleaseMemObject(tmp_buffer_min);
+  clReleaseMemObject(tmp_buffer_index);
+  if (events[0]) clReleaseEvent(events[0]);
+  if (events[1]) clReleaseEvent(events[1]);
   return finalize_event;
 }
 
