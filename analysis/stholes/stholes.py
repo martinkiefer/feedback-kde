@@ -67,10 +67,9 @@ parser.add_argument("--mrange", action="store", choices=["Volume","Tuples"],requ
 parser.add_argument("--clusters", action="store", type=int,default=100,help="Number of clusters for gaussian center mechanism")
 parser.add_argument("--sigma", action="store",type=float,default=25, help="Standard deviation for gaussian center mechanism")
 parser.add_argument("--tolerance", action="store", default=0.1, type=float, help="Tolerance around the target selectivity.")
-parser.add_argument("--fixed", action="store", required=False, type=int, help="How many (random) columns should be fixed to the whole range per query?")
 parser.add_argument("--queries", action="store", required=True, type=int, help="Number of queries in the target workload.")
 parser.add_argument("--output", action="store", required=True, help="Name of the output sql file.")
-parser.add_argument("--method", action="store", choices=["random","binary","interpolation"], default="random", help="Which method should be used to construct the queries?")
+parser.add_argument("--method", action="store", choices=["random"], default="random", help="Which method should be used to construct the queries?")
 parser.add_argument("--database", action="store", choices=["postgres", "monetdb"], default="postgres", help="Which database system should be used to construct the queries (MonetDB will be drastically faster)?")
 args = parser.parse_args()
 
@@ -87,10 +86,6 @@ method = args.method
 mcenter = args.mcenter
 mrange = args.mrange
 database = args.database
-if args.fixed:
-    fixed = args.fixed
-else:
-    fixed = 0
 
 output_file_name = os.path.basename(output_file)
 
@@ -151,19 +146,13 @@ generator = None
 
 if(mcenter == "Data"):
     generator = DataCenterGenerator(conn.cursor(),table,rows)
-#    for i in range(0,queries):
-#        cur.execute("SELECT * FROM %s ORDER BY RANDOM() LIMIT 1" % table)
-#        centers.append(cur.fetchone()) 
+
 elif(mcenter == "Uniform"):
     generator = UniformDataCenterGenerator(low,high,columns)
-#    for r in random.random_sample((queries,columns)):
-#        centers.append(low+(high-low)*r) 
+
 elif(mcenter == "Gauss"):
     generator = GaussCenterGenerator(low,high,clusters,columns,sigma)
-#    for r in random.random_sample((queries,clusters)):
-#        center=low+(high-low)*r
-#        for delta in random.normal(0,sigma,(queries/clusters,columns)):
-#            centers.append(center+delta)
+
 else:
     print("Not yet implemented")
 
@@ -189,7 +178,7 @@ if(mrange == "Volume"):
     while(len(workload) < queries):
         r = random.random_sample((1,columns))
         c = generator.getNextCenter()
-        #workload.append(createBoundsList(numpy.maximum(c-0.5 * edge * r,low), numpy.minimum(c + 0.5 * edge * r,high)))
+
         workload.append(createBoundsList(c-0.5 * edge * r, c + 0.5 * edge * r))
        
 elif(mrange == "Tuples"):    
@@ -197,10 +186,9 @@ elif(mrange == "Tuples"):
 
     last_len = 0
     last_print_time = time.time()
-    while(len(workload) < queries):#len(bounds) < queries):
-        #r = random.random_sample((1,columns))
+    while(len(workload) < queries):
         c = generator.getNextCenter()
-        #print(len(workload))
+
         #Take the maximum range
         range = numpy.minimum(c-low,high-c)
         
@@ -219,6 +207,9 @@ elif(mrange == "Tuples"):
         upper_bound = selectivity
         upper_bound_factor = 1 
         test_factor = 1
+        if (selectivity < (target_selectivity + 0.5*target_tolerance) and selectivity > (target_selectivity - 0.5*target_tolerance)):
+            workload.append(createBoundsList(c-(range*test_factor),c+(range*test_factor)))  
+            continue
         while (upper_bound - lower_bound > target_tolerance and (upper_bound_factor - lower_bound_factor) > 0.001 ):
             last_query_batch += 1
             test_factor = 0.5 * (lower_bound_factor + upper_bound_factor)
@@ -235,8 +226,8 @@ elif(mrange == "Tuples"):
             else:
                 lower_bound = selectivity
                 lower_bound_factor = test_factor 
-        if (selectivity < (target_selectivity + 0.5*target_tolerance) and selectivity > (target_selectivity - 0.5*target_tolerance)):
-            workload.append(createBoundsList(c-(range*test_factor),c+(range*test_factor)))   
+        if (selectivity < (target_selectivity + 0.5*target_tolerance) and selectivity > (target_selectivity - 0.5*target_tolerance)):           
+            workload.append(createBoundsList(c-(range*test_factor),c+(range*test_factor)))  
         if (time.time() - last_print_time >= 10):
             print "Generated %i queries for %s, %i remaining (%f queries / second)" \
                 % (len(workload), output_file_name, queries - len(workload), \
@@ -254,6 +245,5 @@ template += ";\n"
 f = open(output_file, "w")
 # Write out the resulting workload.
 for query in workload:
-    #print(template % tuple(query))
     f.write(template % tuple(query))
 f.close()
