@@ -5,7 +5,6 @@ import os
 import psycopg2
 import random
 import sys
-import time
 
 # Define and parse the command line arguments
 parser = argparse.ArgumentParser()
@@ -19,6 +18,8 @@ parser.add_argument("--error", action="store", choices=["absolute", "relative"],
 parser.add_argument("--optimization", action="store", choices=["none", "adaptive", "batch_random", "batch_workload"], default="none", help="How should the model be optimized?")
 parser.add_argument("--trainqueries", action="store", type=int, default=25, help="How many queries should be used to train the model?")
 parser.add_argument("--log", action="store", required=True, help="Where to append the experimental results?")
+parser.add_argument("--noanalyze", action="store_true",default=False,help="Don't run the analyze command. Continue to use existing estimator.")
+parser.add_argument("--dumpqueries", action="store_true",default=False,help="Dump workload queries to /tmp/queries.sql?")
 args = parser.parse_args()
 
 # Fetch the arguments.
@@ -31,6 +32,8 @@ samplesize = args.samplesize
 errortype = args.error
 optimization = args.optimization
 trainqueries = args.trainqueries
+dumpqueries = args.dumpqueries
+noanalyze = args.noanalyze
 log = args.log
 
 # Open a connection to postgres.
@@ -122,30 +125,38 @@ elif (optimization == "batch_random" or optimization == "batch_workload"):
 cur.execute("SET kde_debug TO false;")
 cur.execute("SET kde_enable TO true;")
 
-# Trigger the model optimization.
-print "Building estimator ...",
-sys.stdout.flush()
-analyze_query = "ANALYZE %s(" % table
-for i in range(1, dimensions + 1):
-    if (i>1):
-        analyze_query += ", c%i" % i
-    else:
-        analyze_query += "c%i" %i
-analyze_query += ");"
-cur.execute(analyze_query)
-print "done!"
+if(not noanalyze):
+    # Trigger the model optimization.
+    print "Building estimator ..."
+    sys.stdout.flush()
+    analyze_query = "ANALYZE %s(" % table
+    for i in range(1, dimensions + 1):
+        if (i>1):
+            analyze_query += ", c%i" % i
+        else:
+            analyze_query += "c%i" %i
+    analyze_query += ");"
+    cur.execute(analyze_query)
+    print "done!"
 
+if(dumpqueries):
+    dfile  = open("/tmp/queries.sql", "wb")
 # Finally, run the experimental queries:
 print "Running experiment:"
 finished_queries = 0
 for linenr, line in enumerate(f):
     if linenr in selected_queries:
         cur.execute(line)
+        if(dumpqueries):
+            dfile.write(line)
         finished_queries += 1
         sys.stdout.write("\r\tFinished %i of %i queries." % (finished_queries, queries))
         sys.stdout.flush()
 print "\ndone!"
+if(dumpqueries):
+    dfile.close()
 f.close()
+cur.close()
 conn.close()
 
 # Extract the error from the error file.
