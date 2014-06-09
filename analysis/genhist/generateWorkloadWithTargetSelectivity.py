@@ -164,7 +164,8 @@ while True:
           lower_bound_factor = test_factor 
       # This is a workload 1 query.
       query = list(test_query)
-    workload.append(list(query))
+    if (selectivity < (target_selectivity + 0.5*target_tolerance) and selectivity > (target_selectivity - 0.5*target_tolerance)):           
+            workload.append(list(query))
     if (len(workload) == queries): 
       break
     if (time.time() - last_print_time >= 10):
