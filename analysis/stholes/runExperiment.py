@@ -49,6 +49,8 @@ parser.add_argument("--optimization", action="store", choices=["none", "adaptive
 parser.add_argument("--trainqueries", action="store", type=int, default=25, help="How many queries should be used to train the model?")
 parser.add_argument("--forgetfirst", action="store", type=int, default=0, help="Ignore the first n queries in adaptive mode")
 parser.add_argument("--log", action="store", required=True, help="Where to append the experimental results?")
+parser.add_argument("--noanalyze", action="store_true",default=False,help="Don't run the analyze command. Continue to use existing estimator.")
+parser.add_argument("--dumpqueries", action="store_true",default=False,help="Dump workload queries to /tmp/queries.sql?")
 args = parser.parse_args()
 
 # Fetch the arguments.
@@ -62,7 +64,10 @@ errortype = args.error
 optimization = args.optimization
 trainqueries = args.trainqueries
 forgetfirst = args.forgetfirst
+dumpqueries = args.dumpqueries
+noanalyze = args.noanalyze
 log = args.log
+
 if(optimization == "adaptive"):
 	queries += forgetfirst
 
@@ -162,22 +167,26 @@ elif (optimization == "batch_random" or optimization == "batch_workload"):
 cur.execute("SET kde_debug TO false;")
 cur.execute("SET kde_enable TO true;")
 
-# Trigger the model optimization.
-print "Building estimator ...",
-sys.stdout.flush()
-analyze_query = "ANALYZE %s(" % table
-for i in range(1, dimensions + 1):
-    if (i>1):
-        analyze_query += ", c%i" % i
-    else:
-        analyze_query += "c%i" %i
-analyze_query += ");"
-cur.execute(analyze_query)
-print "done!"
+if(not noanalyze):
+    # Trigger the model optimization.
+    print "Building estimator ..."
+    sys.stdout.flush()
+    analyze_query = "ANALYZE %s(" % table
+    for i in range(1, dimensions + 1):
+        if (i>1):
+            analyze_query += ", c%i" % i
+        else:
+            analyze_query += "c%i" %i
+    analyze_query += ");"
+    cur.execute(analyze_query)
+    print "done!"
 
 executed_queries = []
 output_cardinalities = []
 
+if(dumpqueries):
+    dfile  = open("/tmp/queries.sql", "wb")
+    
 # Finally, run the experimental queries:
 print "Running experiment:"
 finished_queries = 0
@@ -185,6 +194,8 @@ allrows = 0
 for linenr, line in enumerate(f):
     if linenr in selected_queries:
         cur.execute(line)
+        if(dumpqueries):
+            dfile.write(line)
         if(errortype == "normalized"): 
             card = cur.fetchone()[0]
             #print("Query: %s" % line)
@@ -195,6 +206,8 @@ for linenr, line in enumerate(f):
         sys.stdout.write("\r\tFinished %i of %i queries." % (finished_queries, queries))
         sys.stdout.flush()
 print "\ndone!"
+if(dumpqueries):
+    dfile.close()
 f.close()
 conn.close()
 
