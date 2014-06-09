@@ -17,6 +17,10 @@ $BASEDIR/drop-set1-tables.sh
 
 # PSQL command
 $PSQL $PGDATABASE $USER << EOF
+	CREATE TABLE gen1_d2(
+		c1 double precision,
+		c2 double precision);
+	COPY gen1_d2 FROM '$BASEDIR/tables/data_gen1_d2.csv' DELIMITER',';
 	CREATE TABLE gen1_d3(
 		c1 double precision,
 		c2 double precision,

@@ -20,7 +20,7 @@ error = 0.1
 clusters = 100
 
 #Dimensions
-dimensions = [3,4,5,8,10]
+dimensions = [2,3,4,5,8,10]
 
 #Maximum standard deviation
 sigma = 0.03

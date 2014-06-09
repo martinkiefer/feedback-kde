@@ -9,6 +9,7 @@ $PSQL $PGDATABASE $USER << EOF
 	DROP TABLE gen1_d5;
 	DROP TABLE gen1_d4;
 	DROP TABLE gen1_d3;
+	DROP TABLE gen1_d2;
 EOF
 
 #MonetDB command
@@ -21,4 +22,5 @@ echo "
 	DROP TABLE gen1_d8;
 	DROP TABLE gen1_d5;
 	DROP TABLE gen1_d4;
+	DROP TABLE gen1_d2;
 	DROP TABLE gen1_d3;" | mclient -lsql -d$MONETDATABASE
