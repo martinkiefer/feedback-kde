@@ -23,6 +23,7 @@
 extern ocl_kernel_type_t global_kernel_type;
 // GUC configuration variable.
 double kde_sample_maintenance_threshold;
+double kde_sample_maintenance_exponential_decay;
 int kde_sample_maintenance_period;
 int kde_sample_maintenance_insert_option;
 int kde_sample_maintenance_query_option;
@@ -140,25 +141,23 @@ void ocl_notifySampleMaintenanceOfSelectivity(ocl_estimator_t* estimator,
   
   kde_float_t normalization_factor;
   if(global_kernel_type == EPANECHNIKOV){
-    (kde_float_t) pow(0.75, estimator->nr_of_dimensions);
+    normalization_factor = (kde_float_t) pow(0.75, estimator->nr_of_dimensions);
   }
   else {
-    (kde_float_t) pow(0.5, estimator->nr_of_dimensions);
+    normalization_factor = (kde_float_t) pow(0.5, estimator->nr_of_dimensions);
   }
 
   cl_kernel kernel = ocl_getKernel("udate_sample_penalties_absolute",estimator->nr_of_dimensions);
   ocl_context_t * ctxt = ocl_getContext();
-  
+  kde_float_t samplesize_f = (kde_float_t) estimator->rows_in_sample;
   cl_int err = 0;
-  kde_float_t exponential_forget = 1.0;
-  
   err |= clSetKernelArg(kernel, 0, sizeof(cl_mem), &(ctxt->result_buffer));
   err |= clSetKernelArg(kernel, 1, sizeof(cl_mem), &(estimator->sample_penalty_buffer));
-  err |= clSetKernelArg(kernel, 2, sizeof(kde_float_t), &(global_size));
+  err |= clSetKernelArg(kernel, 2, sizeof(kde_float_t), &(samplesize_f));
   err |= clSetKernelArg(kernel, 3, sizeof(kde_float_t), &(normalization_factor));
   err |= clSetKernelArg(kernel, 4, sizeof(kde_float_t), &(estimator->last_selectivity));
   err |= clSetKernelArg(kernel, 5, sizeof(kde_float_t), &(actual_selectivity));
-  err |= clSetKernelArg(kernel, 6, sizeof(kde_float_t), &(exponential_forget));
+  err |= clSetKernelArg(kernel, 6, sizeof(kde_float_t), &(kde_sample_maintenance_exponential_decay));
   
   err |= clEnqueueNDRangeKernel(ctxt->queue, kernel, 1, NULL, &global_size,
 	                         NULL, 0, NULL, &penalty_event);
