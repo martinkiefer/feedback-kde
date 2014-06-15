@@ -55,7 +55,6 @@
 #include "utils/timestamp.h"
 #include "utils/tqual.h"
 
-
 /* Data structure for Algorithm S from Knuth 3.4.2 */
 typedef struct
 {
@@ -487,7 +486,22 @@ do_analyze_rel(Relation onerel, VacuumStmt *vacstmt,
 		}
 	}
 
-	/* Check if we want to generate a KDE estimator */
+	/*
+	 * Acquire the sample rows
+	 */
+	rows = (HeapTuple *) palloc(targrows * sizeof(HeapTuple));
+	if (inh)
+		numrows = acquire_inherited_sample_rows(onerel, elevel,
+												rows, targrows,
+												&totalrows, &totaldeadrows);
+	else
+		numrows = (*acquirefunc) (onerel, elevel,
+								  rows, targrows,
+								  &totalrows, &totaldeadrows);
+
+
+		
+/* Check if we want to generate a KDE estimator */
 #ifdef USE_OPENCL
   if (ocl_useKDE()) {
     unsigned int float_columns = 0;
@@ -504,17 +518,30 @@ do_analyze_rel(Relation onerel, VacuumStmt *vacstmt,
       unsigned int sample_size = 0;
       double total_rows, total_dead_rows;
       HeapTuple* sample;
+      
       AttrNumber* attributes = (AttrNumber*)malloc(float_columns * sizeof(AttrNumber));
+      
       for (i = 0; i < attr_cnt; i++) {
         if (vacattrstats[i]->attrtypid == FLOAT4OID || vacattrstats[i]->attrtypid == FLOAT8OID) {
           attributes[j++] = vacattrstats[i]->tupattnum;
         }
       }
+      
       /* Now determine how many rows we want in our sample */
       sample_size = ocl_maxSampleSize(float_columns);
       sample = (HeapTuple*) palloc(sample_size * sizeof(HeapTuple));
-      sample_size = acquire_sample_rows(onerel, elevel, sample, sample_size,
+      
+      
+      /* If postgresql indicates a horrible page per accepted tuple ratio , we won't use acceptance/rejection sampling*/
+      if(ocl_isSafeToSample(onerel,totalrows)){
+	sample_size = acquire_sample_rows(onerel, elevel, sample, sample_size,
                                         &total_rows, &total_dead_rows);
+      }
+      else{
+	sample_size = ocl_createSample(onerel,sample,&total_rows,sample_size);
+      }
+	
+	
       if (sample_size > 0)
         ocl_constructEstimator(onerel, (unsigned int)total_rows, float_columns,
                                attributes, sample_size, sample);
@@ -523,19 +550,6 @@ do_analyze_rel(Relation onerel, VacuumStmt *vacstmt,
     }
   }
 #endif /* USE_OPENCL */
-
-	/*
-	 * Acquire the sample rows
-	 */
-	rows = (HeapTuple *) palloc(targrows * sizeof(HeapTuple));
-	if (inh)
-		numrows = acquire_inherited_sample_rows(onerel, elevel,
-												rows, targrows,
-												&totalrows, &totaldeadrows);
-	else
-		numrows = (*acquirefunc) (onerel, elevel,
-								  rows, targrows,
-								  &totalrows, &totaldeadrows);
 
 	/*
 	 * Compute the statistics.	Temporary results during the calculations for
