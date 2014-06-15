@@ -10,6 +10,7 @@
 
 #include "postgres.h"
 
+#include "access/tupdesc.h"
 #include "access/attnum.h"
 #include "access/htup.h"
 #include "nodes/nodes.h"
@@ -132,5 +133,14 @@ extern void ocl_notifySampleMaintenanceOfDeletion(Relation rel);
  */
 extern void ocl_notifyModelMaintenanceOfSelectivity(Oid rel, double selectivity);
 
+
+/* Create a sample based on rejection/acceptance sampling
+ */
+extern int ocl_createSample(Relation rel, HeapTuple *sample, double* estimated_rows, int sample_size);
+
+/*
+ * Check if the relation has a not to bad living tuple per block ratio
+ */
+extern int ocl_isSafeToSample(Relation rel, double total_rows);
 #endif /* USE_OPENCL */
 #endif /* OCL_ESTIMATOR_API_H_ */
