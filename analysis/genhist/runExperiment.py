@@ -20,6 +20,9 @@ parser.add_argument("--trainqueries", action="store", type=int, default=25, help
 parser.add_argument("--log", action="store", required=True, help="Where to append the experimental results?")
 parser.add_argument("--noanalyze", action="store_true",default=False,help="Don't run the analyze command. Continue to use existing estimator.")
 parser.add_argument("--dumpqueries", action="store_true",default=False,help="Dump workload queries to /tmp/queries.sql?")
+parser.add_argument("--sample_maintenance", action="store", choices=["threshold", "periodic","none"], default="none", help="Desired query based sample maintenance option.")
+parser.add_argument("--threshold", action="store", type=float, default=1.0, help="Negative karma limit causing a point to be resampled.")
+parser.add_argument("--period", action="store", type=int, default=25, help="Queries until we resample the worst sample point.")
 args = parser.parse_args()
 
 # Fetch the arguments.
@@ -34,6 +37,9 @@ optimization = args.optimization
 trainqueries = args.trainqueries
 dumpqueries = args.dumpqueries
 noanalyze = args.noanalyze
+period = args.period
+sample_maintenance = args.sample_maintenance
+threshold = args.threshold
 log = args.log
 
 # Open a connection to postgres.
@@ -115,6 +121,13 @@ if (errortype == "relative"):
 elif (errortype == "absolute"):
     cur.execute("SET kde_error_metric TO Quadratic;")
 cur.execute("SET kde_samplesize TO %i;" % samplesize)
+if(sample_maintenance == "threshold"):
+    cur.execute("SET kde_sample_maintenance_query_propagation TO Threshold;")	
+    cur.execute("SET kde_sample_maintenance_threshold TO %s;" % threshold)	
+if(sample_maintenance == "periodic"):
+    print "Periodic!"
+    cur.execute("SET kde_sample_maintenance_query_option TO Periodic;")	
+    cur.execute("SET kde_sample_maintenance_period  TO %s;" % period )	
 # Set the optimization strategy.
 if (optimization == "adaptive"):
     cur.execute("SET kde_enable_adaptive_bandwidth TO true;")
