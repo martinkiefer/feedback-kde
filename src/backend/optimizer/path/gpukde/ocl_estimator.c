@@ -854,7 +854,7 @@ void ocl_pushEntryToSampleBufer(ocl_estimator_t* estimator, int position,
   clEnqueueWriteBuffer(context->queue, estimator->sample_buffer, CL_FALSE,
                        offset, transfer_size, data_item, 0, NULL, NULL);
   clEnqueueWriteBuffer(context->queue, estimator->sample_penalty_buffer, CL_FALSE,
-                       position, sizeof(kde_float_t), &zero, 0, NULL, NULL);  
+                       position*sizeof(kde_float_t), sizeof(kde_float_t), &zero, 0, NULL, NULL);  
   clFinish(context->queue);
 }
 
