@@ -125,8 +125,7 @@ if(sample_maintenance == "threshold"):
     cur.execute("SET kde_sample_maintenance_query_propagation TO Threshold;")	
     cur.execute("SET kde_sample_maintenance_threshold TO %s;" % threshold)	
 if(sample_maintenance == "periodic"):
-    print "Periodic!"
-    cur.execute("SET kde_sample_maintenance_query_option TO Periodic;")	
+    cur.execute("SET kde_sample_maintenance_query_propagation TO Periodic;")	
     cur.execute("SET kde_sample_maintenance_period  TO %s;" % period )	
 # Set the optimization strategy.
 if (optimization == "adaptive"):
