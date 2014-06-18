@@ -55,10 +55,9 @@ static unsigned int getMinPenaltyIndex(ocl_context_t*  ctxt, ocl_estimator_t* es
                     min_val,min_ix, 0,
                     NULL);
   
-  clReleaseEvent(event);  
   clEnqueueReadBuffer(ctxt->queue,min_ix, CL_TRUE, 0,
 	                    sizeof(unsigned int), &index, 1, &event, NULL);  
-  
+  clReleaseEvent(event);  
   clReleaseMemObject(min_ix);
   clReleaseMemObject(min_val);
   
@@ -417,6 +416,7 @@ void ocl_notifySampleMaintenanceOfSelectivity(ocl_estimator_t* estimator,
     
     heap_freetuple(sample_point);
     pfree(item);
+    relation_close(onerel, ShareUpdateExclusiveLock);
   } 
 }
 #endif
