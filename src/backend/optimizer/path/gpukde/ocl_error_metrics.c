@@ -114,6 +114,7 @@ void assign_kde_estimation_quality_logfile_name(const char *newval, void *extra)
   for (i=0; i<sizeof(error_metrics)/sizeof(error_metric_t); ++i) {
     fprintf(estimation_quality_log_file, " ; %s", error_metrics[i].name);
   }
+  fprintf(estimation_quality_log_file, " ; Tuples");
   fprintf(estimation_quality_log_file, "\n");
   fflush(estimation_quality_log_file);
 }
@@ -130,8 +131,9 @@ void ocl_reportErrorToLogFile(
   fprintf(estimation_quality_log_file, "%u", relation);
   for (i=0; i<sizeof(error_metrics)/sizeof(error_metric_t); ++i) {
     double error = (*(error_metrics[i].function))(actual, expected, nrows);
-    fprintf(estimation_quality_log_file, " ; %.4f", error);
+    fprintf(estimation_quality_log_file, " ; %.8f", error);
    }
+   fprintf(estimation_quality_log_file, " ; %d", nrows);
    fprintf(estimation_quality_log_file, "\n");
    fflush(estimation_quality_log_file);
 }
