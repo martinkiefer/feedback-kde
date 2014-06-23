@@ -413,6 +413,8 @@ static void ocl_freeEstimator(ocl_estimator_t* estimator, bool materialize) {
     free(estimator->scale_factors);
   if (estimator->sample_buffer)
     clReleaseMemObject(estimator->sample_buffer);
+  if(estimator->sample_penalty_buffer)
+    clReleaseMemObject(estimator->sample_penalty_buffer);
   if (estimator->bandwidth_buffer)
     clReleaseMemObject(estimator->bandwidth_buffer);
     // Release all buffers for the online optimization.
@@ -453,7 +455,7 @@ static void ocl_releaseRegistry() {
   for (i=0; i<registry->estimator_directory->entries; ++i) {
     ocl_estimator_t* estimator = (ocl_estimator_t*)directory_valueAt(
         registry->estimator_directory, i);
-    ocl_freeEstimator(estimator, true);
+    ocl_freeEstimator(estimator,true);
   }
   // Now release the registry.
   directory_release(registry->estimator_directory, false);
@@ -484,7 +486,7 @@ static void ocl_initializeRegistry() {
 
 	// Allocate a new descriptor.
 	registry = calloc(1, sizeof(ocl_estimator_registry_t));
-	registry->estimator_bitmap = calloc(1, 4096); // Enough bits for 32768 tables.
+	registry->estimator_bitmap = calloc(1, 16384); // Enough bits for 131072 tables.
 	registry->estimator_directory = directory_init(sizeof(Oid), 20);
 
 	// Now open the KDE estimator table, read in all stored estimators and
@@ -684,6 +686,7 @@ void ocl_constructEstimator(
 	fprintf(stderr, "\tUsing a backing sample of %i out of %i tuples.\n",
 	        sample_size, rows_in_table);
 	// Insert a new estimator.
+	Assert(rel->rd_node.relNode / 8 >= 16384); //If the oids are to large, bad things will hapen.
 	ocl_estimator_t* estimator = calloc(1, sizeof(ocl_estimator_t));
 	ocl_estimator_t* old_estimator = directory_insert(
 	    registry->estimator_directory, &(rel->rd_node.relNode), estimator);
@@ -826,12 +829,18 @@ bool ocl_useKDE(void) {
 }
 
 ocl_estimator_t* ocl_getEstimator(Oid relation) {
-  if (!ocl_useKDE()) return NULL;
+  if (!ocl_useKDE()){
+	return NULL;
+  }
   ocl_estimator_registry_t* registry = ocl_getRegistry();
-  if (registry == NULL) return NULL;
+  if (registry == NULL){
+	return NULL;
+  }
   // Check the bitmap whether we have an estimator for this relation.
   if (!(registry->estimator_bitmap[relation / 8]
-          & (0x1 << (relation % 8)))) return NULL;
+          & (0x1 << (relation % 8)))){
+	return NULL;
+  }
   return DIRECTORY_FETCH(registry->estimator_directory, &relation,
                          ocl_estimator_t);
 }
