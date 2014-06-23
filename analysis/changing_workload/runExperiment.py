@@ -15,10 +15,13 @@ parser.add_argument("--dimensions", action="store", required=True, type=int, hel
 #parser.add_argument("--workload", action="store", required=True, type=int, help="Which workload should be run?")
 #parser.add_argument("--queries", action="store", required=True, type=int, help="How many queries from the workload should be run?")
 parser.add_argument("--samplesize", action="store", type=int, default=2400, help="How many rows should the generated model sample?")
-parser.add_argument("--error", action="store", choices=["relative"], default="relative", help="Which error metric should be optimized / reported?")
+parser.add_argument("--error", action="store", choices=["relative","absolute"], default="relative", help="Which error metric should be optimized / reported?")
 parser.add_argument("--optimization", action="store", choices=["none", "adaptive"], default="none", help="How should the model be optimized?")
 parser.add_argument("--trainqueries", action="store", type=int, default=25, help="How many queries should be used to train the model?")
 parser.add_argument("--log", action="store", required=True, help="Where to append the experimental results?")
+parser.add_argument("--sample_maintenance", action="store", choices=["threshold", "periodic","none"], default="none", help="Desired query based sample maintenance option.")
+parser.add_argument("--threshold", action="store", type=float, default=0.01, help="Negative karma limit causing a point to be resampled.")
+parser.add_argument("--period", action="store", type=int, default=25, help="Queries until we resample the worst sample point.")
 args = parser.parse_args()
 
 # Fetch the arguments.
@@ -30,6 +33,9 @@ samplesize = args.samplesize
 errortype = args.error
 optimization = args.optimization
 trainqueries = args.trainqueries
+period = args.period
+sample_maintenance = args.sample_maintenance
+threshold = args.threshold
 log = args.log
 
 # Open a connection to postgres.
@@ -82,6 +88,8 @@ if (optimization != "none" and optimization != "adaptive"):
 cur.execute("SELECT COUNT(*) FROM %s;" % table)
 nrows = int(cur.fetchone()[0])
 
+cur.execute("SELECT pg_backend_pid();")
+print cur.fetchone()[0]
 # Now open the query file and select a random query set.
 f = open(os.path.join(querypath, queryfile), "r")
 #for linecount, _ in enumerate(f):
@@ -91,6 +99,13 @@ f = open(os.path.join(querypath, queryfile), "r")
 #selected_queries = range(1,linecount)
 #random.shuffle(selected_queries)
 #selected_queries = set(selected_queries[0:queries])
+
+if(sample_maintenance == "threshold"):
+    cur.execute("SET kde_sample_maintenance_query_propagation TO Threshold;")	
+    cur.execute("SET kde_sample_maintenance_threshold TO %s;" % threshold)	
+if(sample_maintenance == "periodic"):
+    cur.execute("SET kde_sample_maintenance_query_propagation TO Periodic;")	
+    cur.execute("SET kde_sample_maintenance_period  TO %s;" % period )	
 
 # Set all required options.
 cur.execute("SET ocl_use_gpu TO false;")
@@ -142,31 +157,33 @@ ifile  = open("/tmp/error.log", "rb")
 reader = csv.reader(ifile, delimiter=";")
 
 header = True
-selected_col = 0
-
+selected_col = -1
+tuple_col = -1
 sum = 0.0
 row_count = 0
 
+column = 0
 for row in reader:
     if header:
         for col in row:
-            if (col.strip().lower() != errortype):
-                selected_col += 1
-            else:
-                break
-        if (selected_col == len(row)):
-            print "Error-type %s not present in given file!" % errortype
+            if (col.strip().lower() == errortype):
+                selected_col = column
+            if (col.strip().lower() == "tuples"):
+                tuple_col = column
+    	    column = column + 1
+		
+        if (selected_col == -1 or tuple_col == -1):
+            print "Error-type %s or absolute tuple value not present in given file!" % errortype
             sys.exit()
         header = False
     else:
-        sum += float(row[selected_col])
-        row_count += 1
+       	row_count += 1
+	if errortype == "absolute":
+        	sum += float(row[selected_col])*float(row[tuple_col])
+	else:
+		sum += float(row[selected_col])
 
-if errortype == "absolute":
-    error = nrows * sum / row_count
-if errortype == "relative":
-    error = 100 * sum / row_count
-
+error = sum / row_count
 # Now append to the error log.
 f = open(log, "a")
 if os.path.getsize(log) == 0:
