@@ -156,8 +156,9 @@ extern bool kde_enable_adaptive_bandwidth;
 extern int kde_adaptive_bandwidth_minibatch_size;
 /* Determines the threshold for removing elements for the threshold option */ 
 extern double kde_sample_maintenance_threshold;
-/* Determines the threshold for removing elements for the threshold option */ 
-extern double kde_sample_maintenance_exponential_decay;
+/* Determines the threshold for decaying information for the quality metrics */
+extern double kde_sample_maintenance_karma_decay;
+extern double kde_sample_maintenance_contribution_decay;
 /* Determines the number of queries until the worst sample point is replaced */
 extern int kde_sample_maintenance_period;
 /* Determines the error metric that is used to optimize the bandwidth. */
@@ -2730,12 +2731,22 @@ static struct config_real ConfigureNamesReal[] =
 	  NULL, NULL, NULL
 	},
 	{
-	  {"kde_sample_maintenance_exponential_decay", PGC_USERSET, DEVELOPER_OPTIONS,
-	    gettext_noop("Value every sample point penalty is multiplied with after a query."),
+	  { "kde_sample_maintenance_karma_decay", PGC_USERSET, DEVELOPER_OPTIONS,
+	    gettext_noop("Value every sample point karma is multiplied by after a query."),
 	    NULL,
 	    GUC_NOT_IN_SAMPLE
 	  },
-	  &kde_sample_maintenance_exponential_decay,
+	  &kde_sample_maintenance_karma_decay,
+	  1.0, 0.0, 1.0,
+	  NULL, NULL, NULL
+	},
+	{
+	  { "kde_sample_maintenance_contribution_decay", PGC_USERSET, DEVELOPER_OPTIONS,
+	    gettext_noop("Value every sample point contribution is multiplied by after a query."),
+	    NULL,
+	    GUC_NOT_IN_SAMPLE
+	  },
+	  &kde_sample_maintenance_karma_decay,
 	  1.0, 0.0, 1.0,
 	  NULL, NULL, NULL
 	},

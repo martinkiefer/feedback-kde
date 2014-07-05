@@ -31,7 +31,8 @@
 extern ocl_kernel_type_t global_kernel_type;
 // GUC configuration variable.
 double kde_sample_maintenance_threshold;
-double kde_sample_maintenance_exponential_decay;
+double kde_sample_maintenance_karma_decay;
+double kde_sample_maintenance_contribution_decay;
 int kde_sample_maintenance_period;
 int kde_sample_maintenance_insert_option;
 int kde_sample_maintenance_query_option;
@@ -51,7 +52,7 @@ static unsigned int getMinPenaltyIndex(ocl_context_t*  ctxt, ocl_estimator_t* es
           ctxt->context, CL_MEM_READ_WRITE,
           sizeof(kde_float_t), NULL, NULL);
   
-  event = minOfArray(estimator->sample_penalty_buffer, estimator->rows_in_sample,
+  event = minOfArray(estimator->sample_karma_buffer, estimator->rows_in_sample,
                     min_val,min_ix, 0,
                     NULL);
   
@@ -64,9 +65,11 @@ static unsigned int getMinPenaltyIndex(ocl_context_t*  ctxt, ocl_estimator_t* es
   return index;
 }
 
-//Helper method to get the minimum index below a certain threshold.
-//Returns a NULL pointer if there is none.
-static unsigned int *getMinPenaltyIndexBelowThreshold(ocl_context_t*  ctxt, ocl_estimator_t* estimator, kde_float_t threshold, cl_event wait_event){
+// Helper method to get the minimum index below a certain threshold.
+// Returns a NULL pointer if there is none.
+static unsigned int *getMinPenaltyIndexBelowThreshold(
+    ocl_context_t*  ctxt, ocl_estimator_t* estimator,
+    double threshold, cl_event wait_event){
   cl_event event;
   unsigned int *index = palloc(sizeof(unsigned int));
   kde_float_t val;
@@ -79,8 +82,8 @@ static unsigned int *getMinPenaltyIndexBelowThreshold(ocl_context_t*  ctxt, ocl_
           ctxt->context, CL_MEM_READ_WRITE,
           sizeof(kde_float_t), NULL, NULL);
   
-  event = minOfArray(estimator->sample_penalty_buffer, estimator->rows_in_sample,
-                    min_val,min_ix, 0, wait_event);
+  event = minOfArray(estimator->sample_karma_buffer, estimator->rows_in_sample,
+                    min_val, min_ix, 0, wait_event);
   
   clEnqueueReadBuffer(ctxt->queue,min_ix, CL_TRUE, 0,
 	                    sizeof(unsigned int), index, 1, &event, NULL);
@@ -165,7 +168,7 @@ static unsigned int min_tuple_size(TupleDesc desc){
 
 
 /*
- * The following method fetches a truely random living tuple from a table
+ * The following method fetches a truly random living tuple from a table
  * and does not need a full table scan.
  * However, it needs an upper bound on the number of tuple per page.
  * Use this method with caution as its performance is highly dependent
@@ -177,15 +180,16 @@ static unsigned int min_tuple_size(TupleDesc desc){
  * And, yes, it will loop forever if there are no alive tuples.
  * 
  */
-static HeapTuple sampleTuple(Relation rel,BlockNumber blocks,unsigned int max_tuples, TransactionId OldestXmin, 
-			     double *visited_blocks, double* live_rows){
+static HeapTuple sampleTuple(
+    Relation rel, BlockNumber blocks, unsigned int max_tuples,
+    TransactionId OldestXmin, double *visited_blocks, double* live_rows){
   *visited_blocks = 0;
   *live_rows = 0;
  
   //Very well, he have an upper bound on the number of tuples. So:
   HeapTupleData *used_tuples = (HeapTupleData *) palloc(max_tuples * sizeof(HeapTupleData));
   
-  while(1){
+  while(1) {
     //Step 3: Select a random page.
     //Can this still be blocks by rounding errors?
     BlockNumber bn = (BlockNumber) (anl_random_fract()*(double) blocks);
@@ -301,12 +305,10 @@ int ocl_createSample(Relation rel, HeapTuple *sample,double* estimated_rows,int 
 
   int i = 0;
   
-  for(i = 0; i < sample_size; i++){
+  for (i = 0; i < sample_size; i++){
     tmp_blocks = 0.0;
     tmp_tuples = 0.0;
-      
     sample[i] = sampleTuple(rel,blocks,max_tuples, oldestXmin,&tmp_blocks,&tmp_tuples);
-      
     total_seen_blocks += tmp_blocks;
     total_seen_tuples += tmp_tuples;
   }
@@ -323,15 +325,14 @@ int ocl_isSafeToSample(Relation rel, double total_rows){
 //For the moment, we will keep only track of the penalties here.
 void ocl_notifySampleMaintenanceOfSelectivity(ocl_estimator_t* estimator,
                                               double actual_selectivity) {
-  
   if (estimator == NULL) return;
   
   estimator->nr_of_estimations++;
   
   size_t global_size = estimator->rows_in_sample;
-  cl_event penalty_event;
+  cl_event quality_update_event;
 
-  
+  // Compute the (kernel-specific) normalization factor.
   kde_float_t normalization_factor;
   if(global_kernel_type == EPANECHNIKOV){
     normalization_factor = (kde_float_t) pow(0.75, estimator->nr_of_dimensions);
@@ -339,34 +340,42 @@ void ocl_notifySampleMaintenanceOfSelectivity(ocl_estimator_t* estimator,
   else {
     normalization_factor = (kde_float_t) pow(0.5, estimator->nr_of_dimensions);
   }
-
-  cl_kernel kernel = ocl_getKernel("udate_sample_penalties_absolute",estimator->nr_of_dimensions);
+  // Schedule the kernel to update the quality factors
+  cl_kernel kernel = ocl_getKernel("udate_sample_quality_metrics",estimator->nr_of_dimensions);
   ocl_context_t * ctxt = ocl_getContext();
-  kde_float_t samplesize_f = (kde_float_t) estimator->rows_in_sample;
   cl_int err = 0;
-  err |= clSetKernelArg(kernel, 0, sizeof(cl_mem), &(ctxt->result_buffer));
-  err |= clSetKernelArg(kernel, 1, sizeof(cl_mem), &(estimator->sample_penalty_buffer));
-  err |= clSetKernelArg(kernel, 2, sizeof(kde_float_t), &(samplesize_f));
-  err |= clSetKernelArg(kernel, 3, sizeof(kde_float_t), &(normalization_factor));
-  err |= clSetKernelArg(kernel, 4, sizeof(kde_float_t), &(estimator->last_selectivity));
-  err |= clSetKernelArg(kernel, 5, sizeof(kde_float_t), &(actual_selectivity));
-  err |= clSetKernelArg(kernel, 6, sizeof(kde_float_t), &(kde_sample_maintenance_exponential_decay));
-  
-  err |= clEnqueueNDRangeKernel(ctxt->queue, kernel, 1, NULL, &global_size,
-	                         NULL, 0, NULL, &penalty_event);
-  
-  Assert(err == 0);
-  
-  clReleaseEvent(penalty_event);  
-  
+  err |= clSetKernelArg(
+      kernel, 0, sizeof(cl_mem), &(ctxt->result_buffer));
+  err |= clSetKernelArg(
+      kernel, 1, sizeof(cl_mem), &(estimator->sample_karma_buffer));
+  err |= clSetKernelArg(
+      kernel, 1, sizeof(cl_mem), &(estimator->sample_contribution_buffer));
+  err |= clSetKernelArg(
+      kernel, 2, sizeof(unsigned int), &(estimator->rows_in_sample));
+  err |= clSetKernelArg(
+      kernel, 3, sizeof(kde_float_t), &(normalization_factor));
+  err |= clSetKernelArg(
+      kernel, 4, sizeof(double), &(estimator->last_selectivity));
+  err |= clSetKernelArg(
+      kernel, 5, sizeof(double), &(actual_selectivity));
+  err |= clSetKernelArg(
+      kernel, 6, sizeof(double), &(kde_sample_maintenance_karma_decay));
+  err |= clSetKernelArg(
+      kernel, 6, sizeof(double), &(kde_sample_maintenance_contribution_decay));
 
-  
-  if(kde_sample_maintenance_query_option == THRESHOLD){
+  err |= clEnqueueNDRangeKernel(ctxt->queue, kernel, 1, NULL, &global_size,
+	                         NULL, 0, NULL, &quality_update_event);
+
+  Assert(err == 0);
+
+  if (kde_sample_maintenance_query_option == THRESHOLD) {
     //It might be more efficient to first determine the number of elements to replace
     //and then create a random sample with sufficient size. Maybe later.
-    unsigned int *insert_position = getMinPenaltyIndexBelowThreshold(ctxt, estimator, kde_sample_maintenance_threshold * -1, penalty_event);
+    unsigned int *insert_position = getMinPenaltyIndexBelowThreshold(
+        ctxt, estimator, kde_sample_maintenance_threshold,
+        quality_update_event);
     
-    if(insert_position == NULL) return;
+    if (insert_position == NULL) return;
     
     //We have got work todo. Get structures to obtain random rows.
     kde_float_t* item = palloc(ocl_sizeOfSampleItem(estimator));
@@ -376,27 +385,25 @@ void ocl_notifySampleMaintenanceOfSelectivity(ocl_estimator_t* estimator,
     Relation onerel = try_relation_open(estimator->table, ShareUpdateExclusiveLock);
     
     //If the table is in a bad condition, we won't do anything.
-    if(insert_position != NULL && ocl_isSafeToSample(onerel,(double) estimator->rows_in_table)){
-	pfree(insert_position);
-	insert_position = NULL;
+    if (insert_position != NULL &&
+        ocl_isSafeToSample(onerel,(double) estimator->rows_in_table)){
+      pfree(insert_position);
+      insert_position = NULL;
     }
     
-    while(insert_position != NULL){
-	ocl_createSample(onerel,&sample_point,&total_rows,1);
-	
-	ocl_extractSampleTuple(estimator, onerel, sample_point,item);
-	
-	ocl_pushEntryToSampleBufer(estimator, *insert_position, item);
-	
-	pfree(insert_position);
-	heap_freetuple(sample_point);
-	
-	insert_position = getMinPenaltyIndexBelowThreshold(ctxt, estimator, kde_sample_maintenance_threshold*-1, NULL);
+    while (insert_position != NULL) {
+      ocl_createSample(onerel,&sample_point,&total_rows,1);
+      ocl_extractSampleTuple(estimator, onerel, sample_point,item);
+      ocl_pushEntryToSampleBufer(estimator, *insert_position, item);
+      pfree(insert_position);
+      heap_freetuple(sample_point);
+      insert_position = getMinPenaltyIndexBelowThreshold(
+          ctxt, estimator, kde_sample_maintenance_threshold*-1, NULL);
     }
     pfree(item); 
     relation_close(onerel, ShareUpdateExclusiveLock);
-  }
-  else if(kde_sample_maintenance_query_option == PERIODIC && estimator->nr_of_estimations % kde_sample_maintenance_period == 0 ){
+  } else if (kde_sample_maintenance_query_option == PERIODIC &&
+      estimator->nr_of_estimations % kde_sample_maintenance_period == 0 ){
     kde_float_t* item;
     
     HeapTuple sample_point;
@@ -405,10 +412,10 @@ void ocl_notifySampleMaintenanceOfSelectivity(ocl_estimator_t* estimator,
     Relation onerel = try_relation_open(estimator->table, ShareUpdateExclusiveLock); 
     unsigned insert_position = getMinPenaltyIndex(ctxt,estimator);
     
-    if(ocl_isSafeToSample(onerel,(double) estimator->rows_in_table)){
+    if (ocl_isSafeToSample(onerel,(double) estimator->rows_in_table)) {
         relation_close(onerel, ShareUpdateExclusiveLock);
-	return;
-    }    
+        return;
+    }
     item = palloc(ocl_sizeOfSampleItem(estimator));
     ocl_createSample(onerel,&sample_point,&total_rows,1);
     ocl_extractSampleTuple(estimator, onerel, sample_point,item);

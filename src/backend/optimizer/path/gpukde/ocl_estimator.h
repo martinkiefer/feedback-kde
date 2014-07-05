@@ -32,7 +32,8 @@ typedef struct ocl_estimator {
   unsigned int rows_in_sample;  // Current number of tuples in the sample.
   size_t sample_buffer_size;      // Size of the sample buffer in bytes.
   cl_mem sample_buffer;           // Buffer that stores the data sample.
-  cl_mem sample_penalty_buffer;   // Buffer storing the penalties for every sample
+  cl_mem sample_karma_buffer;     // Buffer to track the karma of the sample points.
+  cl_mem sample_contribution_buffer; // Buffer to track the total probability contributions for the sample points.
   /* Fields for tracking mini-batch updates to the bandwidth. */
   cl_mem gradient_accumulator;
   cl_mem squared_gradient_accumulator;
@@ -68,7 +69,6 @@ typedef enum ocl_kernel_type {
   GAUSS,
   EPANECHNIKOV
 } ocl_kernel_type_t;
-
 
 /*
  * Registry of all known estimators.
