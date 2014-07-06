@@ -40,26 +40,28 @@ int kde_sample_maintenance_query_option;
 const double sample_match_learning_rate = 0.02f;
 
 //Convenience method for retrieving the index of the smallest element
-static unsigned int getMinPenaltyIndex(ocl_context_t*  ctxt, ocl_estimator_t* estimator){
+static unsigned int getMinPenaltyIndex(
+    ocl_context_t*  ctxt, ocl_estimator_t* estimator){
   cl_event event;
   unsigned int index = 0;
   
-  //Allocate device memory for indizes and values
-  cl_mem min_ix = clCreateBuffer(
+  // Allocate device memory for indices and values.
+  cl_mem min_idx = clCreateBuffer(
           ctxt->context, CL_MEM_READ_WRITE,
           sizeof(unsigned int), NULL, NULL);
   cl_mem min_val = clCreateBuffer(
           ctxt->context, CL_MEM_READ_WRITE,
           sizeof(kde_float_t), NULL, NULL);
   
-  event = minOfArray(estimator->sample_karma_buffer, estimator->rows_in_sample,
-                    min_val,min_ix, 0,
-                    NULL);
-  
-  clEnqueueReadBuffer(ctxt->queue,min_ix, CL_TRUE, 0,
-	                    sizeof(unsigned int), &index, 1, &event, NULL);  
+  event = minOfArray(
+      estimator->sample_karma_buffer, estimator->rows_in_sample,
+      min_val, min_idx, 0, NULL);
+  clEnqueueReadBuffer(
+      ctxt->queue, min_idx, CL_TRUE, 0, sizeof(unsigned int),
+      &index, 1, &event, NULL);
+
   clReleaseEvent(event);  
-  clReleaseMemObject(min_ix);
+  clReleaseMemObject(min_idx);
   clReleaseMemObject(min_val);
   
   return index;
@@ -74,8 +76,8 @@ static unsigned int *getMinPenaltyIndexBelowThreshold(
   unsigned int *index = palloc(sizeof(unsigned int));
   kde_float_t val;
   
-  //Allocate device memory for indizes and values
-  cl_mem min_ix = clCreateBuffer(
+  //Allocate device memory for indices and values.
+  cl_mem min_idx = clCreateBuffer(
           ctxt->context, CL_MEM_READ_WRITE,
           sizeof(unsigned int), NULL, NULL);
   cl_mem min_val = clCreateBuffer(
@@ -83,17 +85,17 @@ static unsigned int *getMinPenaltyIndexBelowThreshold(
           sizeof(kde_float_t), NULL, NULL);
   
   event = minOfArray(estimator->sample_karma_buffer, estimator->rows_in_sample,
-                    min_val, min_ix, 0, wait_event);
+                    min_val, min_idx, 0, wait_event);
   
-  clEnqueueReadBuffer(ctxt->queue,min_ix, CL_TRUE, 0,
+  clEnqueueReadBuffer(ctxt->queue,min_idx, CL_TRUE, 0,
 	                    sizeof(unsigned int), index, 1, &event, NULL);
   clEnqueueReadBuffer(ctxt->queue,min_val, CL_TRUE, 0,
 	               sizeof(kde_float_t), &val, 1, &event, NULL);
 
-  clReleaseMemObject(min_ix);
+  clReleaseMemObject(min_idx);
   clReleaseMemObject(min_val);
   
-  if(val < threshold){
+  if(val < threshold) {
     clReleaseEvent(event);
     return index;
   }
@@ -116,22 +118,20 @@ void ocl_notifySampleMaintenanceOfInsertion(Relation rel, HeapTuple new_tuple) {
   // First, check whether we still have size in the sample.
   if (estimator->rows_in_sample < ocl_maxRowsInSample(estimator)) {
     insert_position = estimator->rows_in_sample++;
-  } 
-  else if(kde_sample_maintenance_insert_option == RESERVOIR){
+  } else if (kde_sample_maintenance_insert_option == RESERVOIR) {
     // The sample is full, use reservoir sampling.
     double rnd = (((double) random()) / ((double) MAX_RANDOM_VALUE));
     if (rnd > 1/(double) estimator->rows_in_table) return;
     insert_position = random() % estimator->rows_in_sample;
-  }
-  //TODO: This is not the best idea.
-  //Think of something more flexible and clever.
-  else if(kde_sample_maintenance_insert_option == RANDOM){
+  } else if(kde_sample_maintenance_insert_option == RANDOM) {
+    //TODO: This is not the best idea.
+    //Think of something more flexible and clever.
     // The sample is full, use random sampling
     double rnd = (((double) random()) / ((double) MAX_RANDOM_VALUE));
     if (rnd > 1/(double)estimator->rows_in_sample) return;
-    insert_position = getMinPenaltyIndex(ctxt,estimator);
+    insert_position = getMinPenaltyIndex(ctxt, estimator);
   }
-  
+
   // Finally, extract the item and send it to the sample.
   kde_float_t* item = palloc(ocl_sizeOfSampleItem(estimator));
   ocl_extractSampleTuple(estimator, rel, new_tuple, item);
@@ -150,13 +150,12 @@ static unsigned int min_tuple_size(TupleDesc desc){
   unsigned int min_tuple_size = 0;
   
   int i = 0;
-  for(i=0; i < desc->natts; i++){
+  for (i=0; i < desc->natts; i++) {
     int16 attlen = desc->attrs[i]->attlen;
     
-    if(attlen > 0){
+    if(attlen > 0) {
       min_tuple_size += attlen;
-    }
-    else {
+    } else {
       //This is one of those filthy variable data types. 
       //There should be at least one byte of overhead.
       //Maybe we can get a better minimum storage requirement bound from somewhere.
@@ -209,7 +208,7 @@ static HeapTuple sampleTuple(
     int qualifying_rows = 0;
     
     /* Inner loop over all tuples on the selected page */
-    for (targoffset = FirstOffsetNumber; targoffset <= maxoffset; targoffset++){
+    for (targoffset = FirstOffsetNumber; targoffset <= maxoffset; targoffset++) {
       
       ItemId itemid;
       //HeapTupleData targtuple;
@@ -224,49 +223,46 @@ static HeapTuple sampleTuple(
       used_tuples[qualifying_rows].t_data = (HeapTupleHeader) PageGetItem(targpage, itemid);
       used_tuples[qualifying_rows].t_len = ItemIdGetLength(itemid);
 
-      switch (HeapTupleSatisfiesVacuum(used_tuples[qualifying_rows].t_data, OldestXmin,targbuffer))
-      {
-	
-	
-	case HEAPTUPLE_LIVE:
-	  qualifying_rows += 1;
-	  ++*live_rows;
-	  continue;
+      switch (HeapTupleSatisfiesVacuum(
+          used_tuples[qualifying_rows].t_data, OldestXmin,targbuffer)) {
+        case HEAPTUPLE_LIVE:
+          qualifying_rows += 1;
+          ++(*live_rows);
+          continue;
 
+        case HEAPTUPLE_INSERT_IN_PROGRESS:
+          if (TransactionIdIsCurrentTransactionId(
+                HeapTupleHeaderGetXmin(used_tuples[qualifying_rows].t_data))) {
+            qualifying_rows += 1;
+            ++(*live_rows);
+            continue;
+          }
+        case HEAPTUPLE_DELETE_IN_PROGRESS:
+          if (!TransactionIdIsCurrentTransactionId(
+                HeapTupleHeaderGetUpdateXid(used_tuples[qualifying_rows].t_data))) {
+            ++(*live_rows);
+          }
+        case HEAPTUPLE_DEAD:
+        case HEAPTUPLE_RECENTLY_DEAD:
+          continue;
 
-	case HEAPTUPLE_INSERT_IN_PROGRESS:
-	  if (TransactionIdIsCurrentTransactionId(HeapTupleHeaderGetXmin(used_tuples[qualifying_rows].t_data)))
-	  {
-	    qualifying_rows += 1;
-	    ++*live_rows;
-	    continue;
-	  }
-	case HEAPTUPLE_DELETE_IN_PROGRESS:
-	  if (!TransactionIdIsCurrentTransactionId(HeapTupleHeaderGetUpdateXid(used_tuples[qualifying_rows].t_data)))
-	      ++*live_rows;
-	case HEAPTUPLE_DEAD:
-	case HEAPTUPLE_RECENTLY_DEAD:
-	  continue;
-
-	default:
-	  elog(ERROR, "unexpected HeapTupleSatisfiesVacuum result");
-	  continue;
+        default:
+          elog(ERROR, "unexpected HeapTupleSatisfiesVacuum result");
+          continue;
       }
-
     }
     
-    //Very well, we know the number of interesting tuples in the page
-    //Step 4: Calculate the acceptance rate:
+    // Very well, we know the number of interesting tuples in the page
+    // Step 4: Calculate the acceptance rate:
     double acceptance_rate = qualifying_rows/(double) max_tuples;
-    if(anl_random_fract() > acceptance_rate){
+    if (anl_random_fract() > acceptance_rate){
       UnlockReleaseBuffer(targbuffer);
       continue;
     }
       
-    //And we didn't even got rejected, so pick a block.
+    // And we didn't even got rejected, so pick a block.
     int selected_tuple = (int) (anl_random_fract()*(double) (qualifying_rows));
-    if(selected_tuple >= qualifying_rows) selected_tuple = qualifying_rows-1;
-   
+    if (selected_tuple >= qualifying_rows) selected_tuple = qualifying_rows-1;
 
     HeapTuple tup = heap_copytuple(used_tuples + selected_tuple);
     
@@ -274,7 +270,6 @@ static HeapTuple sampleTuple(
     UnlockReleaseBuffer(targbuffer);
     return tup;
   }
-  
 }
 
 static int ocl_maxTuplesPerBlock(TupleDesc desc){
@@ -305,43 +300,47 @@ int ocl_createSample(Relation rel, HeapTuple *sample,double* estimated_rows,int 
 
   int i = 0;
   
-  for (i = 0; i < sample_size; i++){
+  for (i = 0; i < sample_size; i++) {
     tmp_blocks = 0.0;
     tmp_tuples = 0.0;
-    sample[i] = sampleTuple(rel,blocks,max_tuples, oldestXmin,&tmp_blocks,&tmp_tuples);
+    sample[i] = sampleTuple(
+        rel, blocks, max_tuples, oldestXmin, &tmp_blocks, &tmp_tuples);
     total_seen_blocks += tmp_blocks;
     total_seen_tuples += tmp_tuples;
   }
   
-  *estimated_rows = vac_estimate_reltuples(rel, true,blocks,total_seen_blocks,total_seen_tuples);
+  *estimated_rows = vac_estimate_reltuples(
+      rel, true,blocks, total_seen_blocks, total_seen_tuples);
   return sample_size;
 }
 
-int ocl_isSafeToSample(Relation rel, double total_rows){
+int ocl_isSafeToSample(Relation rel, double total_rows) {
     BlockNumber blocks = RelationGetNumberOfBlocks(rel);
-    return blocks == 0 || total_rows == 0 || (ocl_maxTuplesPerBlock(rel->rd_att) / (total_rows / (double) blocks)) > 1.75 ;
-}  
+    return blocks == 0 ||
+        total_rows == 0 ||
+        (ocl_maxTuplesPerBlock(rel->rd_att) / (total_rows / (double) blocks)) > 1.75;
+}
 
-//For the moment, we will keep only track of the penalties here.
-void ocl_notifySampleMaintenanceOfSelectivity(ocl_estimator_t* estimator,
-                                              double actual_selectivity) {
+void ocl_notifySampleMaintenanceOfSelectivity(
+    ocl_estimator_t* estimator, double actual_selectivity) {
   if (estimator == NULL) return;
-  
+
   estimator->nr_of_estimations++;
-  
+
   size_t global_size = estimator->rows_in_sample;
   cl_event quality_update_event;
 
   // Compute the (kernel-specific) normalization factor.
   kde_float_t normalization_factor;
-  if(global_kernel_type == EPANECHNIKOV){
+  if (global_kernel_type == EPANECHNIKOV){
     normalization_factor = (kde_float_t) pow(0.75, estimator->nr_of_dimensions);
-  }
-  else {
+  } else {
     normalization_factor = (kde_float_t) pow(0.5, estimator->nr_of_dimensions);
   }
+
   // Schedule the kernel to update the quality factors
-  cl_kernel kernel = ocl_getKernel("udate_sample_quality_metrics",estimator->nr_of_dimensions);
+  cl_kernel kernel = ocl_getKernel(
+      "udate_sample_quality_metrics", estimator->nr_of_dimensions);
   ocl_context_t * ctxt = ocl_getContext();
   cl_int err = 0;
   err |= clSetKernelArg(
@@ -362,7 +361,6 @@ void ocl_notifySampleMaintenanceOfSelectivity(ocl_estimator_t* estimator,
       kernel, 6, sizeof(double), &(kde_sample_maintenance_karma_decay));
   err |= clSetKernelArg(
       kernel, 6, sizeof(double), &(kde_sample_maintenance_contribution_decay));
-
   err |= clEnqueueNDRangeKernel(ctxt->queue, kernel, 1, NULL, &global_size,
 	                         NULL, 0, NULL, &quality_update_event);
 
@@ -392,7 +390,7 @@ void ocl_notifySampleMaintenanceOfSelectivity(ocl_estimator_t* estimator,
     }
     
     while (insert_position != NULL) {
-      ocl_createSample(onerel,&sample_point,&total_rows,1);
+      ocl_createSample(onerel, &sample_point, &total_rows, 1);
       ocl_extractSampleTuple(estimator, onerel, sample_point,item);
       ocl_pushEntryToSampleBufer(estimator, *insert_position, item);
       pfree(insert_position);

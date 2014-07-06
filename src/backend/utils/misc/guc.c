@@ -2721,8 +2721,8 @@ static struct config_real ConfigureNamesReal[] =
 	},
 #ifdef USE_OPENCL	
 	{
-	  {"kde_sample_maintenance_threshold", PGC_USERSET, DEVELOPER_OPTIONS,
-	    gettext_noop("Threshold causing a sample point to be replaced."),
+	  {"kde_sample_maintenance_karma_threshold", PGC_USERSET, DEVELOPER_OPTIONS,
+	    gettext_noop("Karma Threshold causing a sample point to be replaced."),
 	    NULL,
 	    GUC_NOT_IN_SAMPLE
 	  },
@@ -2746,7 +2746,7 @@ static struct config_real ConfigureNamesReal[] =
 	    NULL,
 	    GUC_NOT_IN_SAMPLE
 	  },
-	  &kde_sample_maintenance_karma_decay,
+	  &kde_sample_maintenance_contribution_decay,
 	  1.0, 0.0, 1.0,
 	  NULL, NULL, NULL
 	},
