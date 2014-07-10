@@ -13,7 +13,8 @@ top_builddir = ../../../../..
 include $(top_builddir)/src/Makefile.global
 
 OBJS = ocl_adaptive_bandwidth.o ocl_error_metrics.o ocl_estimator.o \
-       ocl_model_maintenance.o ocl_sample_maintenance.o ocl_utilities.o
+       ocl_model_maintenance.o ocl_sample_maintenance.o ocl_utilities.o \
+       stholes.o
 
 SUBDIRS = container lbfgs
 

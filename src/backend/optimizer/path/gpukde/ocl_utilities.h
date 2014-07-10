@@ -70,7 +70,7 @@ void ocl_dumpBufferToFile(const char* file, cl_mem buffer, int dimensions, int i
 void ocl_printBuffer(const char* message, cl_mem buffer, int dimensions, int items);
 
 // Returns true if debugging is enabled.
-bool ocl_isDebug();
+bool ocl_isDebug(void);
 
 // #########################################################################
 // ################## FUNCTIONS FOR OCL CONTEXT MANAGEMENT #################

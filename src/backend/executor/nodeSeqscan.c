@@ -28,6 +28,7 @@
 #include "executor/execdebug.h"
 #include "executor/nodeSeqscan.h"
 #include "utils/rel.h"
+#include "optimizer/path/gpukde/stholes_estimator_api.h"
 
 static void InitScanRelation(SeqScanState *node, EState *estate, int eflags);
 static TupleTableSlot *SeqNext(SeqScanState *node);
@@ -110,9 +111,16 @@ SeqRecheck(SeqScanState *node, TupleTableSlot *slot)
 TupleTableSlot *
 ExecSeqScan(SeqScanState *node)
 {
-	return ExecScan((ScanState *) node,
+	
+	TupleTableSlot * slot = ExecScan((ScanState *) node,
 					(ExecScanAccessMtd) SeqNext,
 					(ExecScanRecheckMtd) SeqRecheck);
+	if(stholes_enabled() && ! TupIsNull(slot)){
+	  stholes_propagateTuple(((ScanState *) node)->ss_currentRelation,slot);
+	  Assert(slot->tts_tuple);
+	}  
+	return slot;
+	 
 }
 
 /* ----------------------------------------------------------------

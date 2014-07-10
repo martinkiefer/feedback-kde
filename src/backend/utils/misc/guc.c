@@ -129,7 +129,8 @@ extern int	ssl_renegotiation_limit;
 extern char *SSLCipherSuites;
 
 #ifdef USE_OPENCL
-
+/* Flag to determine whether we should use the stholes estimator or not */
+extern bool stholes_enable;
 /* Flag to determine whether we should use the OpenCL KDE estimator or not. */
 extern bool kde_enable;
 extern void assign_kde_enable(bool newval, void *extra);
@@ -161,6 +162,8 @@ extern double kde_sample_maintenance_karma_decay;
 extern double kde_sample_maintenance_contribution_decay;
 /* Determines the number of queries until the worst sample point is replaced */
 extern int kde_sample_maintenance_period;
+/* Determines the maximum number of buckets in the stholes histogram */
+extern int stholes_hole_limit;
 /* Determines the error metric that is used to optimize the bandwidth. */
 static const struct config_enum_entry kde_error_metric_options[] = {
   {"Absolute", ABSOLUTE, false},
@@ -1526,6 +1529,16 @@ static struct config_bool ConfigureNamesBool[] =
 		false,
 		NULL, assign_kde_enable, NULL
 	},
+	{
+		{"stholes_enable", PGC_USERSET, DEVELOPER_OPTIONS,
+			gettext_noop("Enable stholes for selectvity estimation."),
+			NULL,
+			GUC_NOT_IN_SAMPLE
+		},
+		&stholes_enable,
+		false,
+		NULL, NULL, NULL
+	},
   {
     {"kde_debug", PGC_USERSET, DEVELOPER_OPTIONS,
       gettext_noop("Enable the KDE debug mode."),
@@ -2575,6 +2588,16 @@ static struct config_int ConfigureNamesInt[] =
     },
     &kde_sample_maintenance_period,
     64, 1, INT_MAX,
+    NULL, NULL, NULL
+  },
+  {
+    {"stholes_hole_limit", PGC_USERSET, DEVELOPER_OPTIONS,
+      gettext_noop("Maximum number of buckets in the stholes histogram."),
+      NULL,
+      GUC_NOT_IN_SAMPLE
+    },
+    &stholes_hole_limit,
+    10, 1, INT_MAX,
     NULL, NULL, NULL
   },
 #endif /* USE_OPENCL */
