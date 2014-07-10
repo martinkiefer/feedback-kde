@@ -114,6 +114,7 @@
 #include "miscadmin.h"
 
 #include "kde_feedback/kde_feedback.h"
+#include "optimizer/path/gpukde/stholes_estimator_api.h"
 
 /* ------------------------------------------------------------------------
  *		ExecInitNode
@@ -343,7 +344,7 @@ ExecInitNode(Plan *node, EState *estate, int eflags)
 		result->instrument = InstrAlloc(1, estate->es_instrument);
 	
 	//KDE
-	if(kde_feedback_use_collection()){
+	if(kde_feedback_use_collection() || stholes_enabled()){
 	    if (nodeTag(node) == T_SeqScan){
 		RQClauseList *rq = kde_get_rqlist(node->qual);
 		if(rq != NULL){
@@ -611,7 +612,11 @@ ExecEndNode(PlanState *node)
 		node->chgParam = NULL;
 	}
 	if(nodeTag(node) == T_SeqScanState){
+	      if(stholes_enabled()){
+		stholes_process_feedback((PlanState *) node);
+	      }
 	      kde_finish(node);
+	      
 	}  
 	switch (nodeTag(node))
 	{

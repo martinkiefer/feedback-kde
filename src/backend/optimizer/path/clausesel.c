@@ -22,6 +22,7 @@
 #include "optimizer/pathnode.h"
 #include "optimizer/plancat.h"
 #include "optimizer/path/gpukde/ocl_estimator_api.h"
+#include "optimizer/path/gpukde/stholes_estimator_api.h"
 #include "utils/fmgroids.h"
 #include "utils/lsyscache.h"
 #include "utils/selfuncs.h"
@@ -109,7 +110,7 @@ clauselist_selectivity(PlannerInfo *root,
    *  a) We have a model for the relation.
    *  b) The clause is a conjunction of not more than one interval per dimension.
    */
-  if (ocl_useKDE()) {
+  if (ocl_useKDE() || stholes_enabled()) {
     /* Estimator request, that is used to aggregate the range requests */
     ocl_estimator_request_t ocl_request;
     unsigned int total_clauses = 0;
@@ -204,19 +205,34 @@ clauselist_selectivity(PlannerInfo *root,
     }
     // If we have identified a request, try to run it on the device:
     if (ocl_request.table_identifier) {
-      if (!ocl_estimateSelectivity(&ocl_request, &s1)) {
-        // Ok... we were unable to evaluate this. Remove the flags from the nodes.
-        foreach(l, clauses) {
-          Node* clause = (Node *) lfirst(l);
-          if (clause->type == T_Invalid)
-            clause->type = T_RestrictInfo;
-        }
+      if(ocl_useKDE()){
+	if (!ocl_estimateSelectivity(&ocl_request, &s1)) {
+	  // Ok... we were unable to evaluate this. Remove the flags from the nodes.
+	  foreach(l, clauses) {
+	    Node* clause = (Node *) lfirst(l);
+	    if (clause->type == T_Invalid)
+	      clause->type = T_RestrictInfo;
+	  }
+	  if (ocl_request.ranges) {
+	    free(ocl_request.ranges);
+	  }
+	}
       }
-      if (ocl_request.ranges) {
-        free(ocl_request.ranges);
+      else if(stholes_enabled()){
+	if (! stholes_est(ocl_request.table_identifier,&ocl_request,&s1)) {
+	  // Ok... we were unable to evaluate this. Remove the flags from the nodes.
+	  foreach(l, clauses) {
+	    Node* clause = (Node *) lfirst(l);
+	    if (clause->type == T_Invalid)
+	      clause->type = T_RestrictInfo;
+	  }
+	  if (ocl_request.ranges) {
+	    free(ocl_request.ranges);
+	  }	
+	}  
       }
     }
-  }
+  }  
 #endif
 
 	/*
@@ -225,7 +241,7 @@ clauselist_selectivity(PlannerInfo *root,
 	 */
 	if (list_length(clauses) == 1) {
 #ifdef USE_OPENCL
-    if (ocl_useKDE() && ((Node*)linitial(clauses))->type == T_Invalid) {
+    if ((ocl_useKDE() || stholes_enabled()) && ((Node*)linitial(clauses))->type == T_Invalid) {
         ((Node*)linitial(clauses))->type = T_RestrictInfo;
         return s1;
     } else {
@@ -250,7 +266,7 @@ clauselist_selectivity(PlannerInfo *root,
 
 		/* Always compute the selectivity using clause_selectivity */
 #ifdef USE_OPENCL
-    if (ocl_useKDE() && clause->type == T_Invalid) {
+    if ((ocl_useKDE() || stholes_enabled()) && clause->type == T_Invalid) {
       // This clause was pre-processed by the GPU. Ignore it
       s2 = 1.0;
       clause->type = T_RestrictInfo; // Remove the tag, so Postgres doesn't die.

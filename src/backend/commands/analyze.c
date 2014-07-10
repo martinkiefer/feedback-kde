@@ -35,6 +35,7 @@
 #include "miscadmin.h"
 #include "nodes/nodeFuncs.h"
 #include "optimizer/path/gpukde/ocl_estimator_api.h"
+#include "optimizer/path/gpukde/stholes_estimator_api.h"
 #include "parser/parse_oper.h"
 #include "parser/parse_relation.h"
 #include "pgstat.h"
@@ -503,7 +504,11 @@ do_analyze_rel(Relation onerel, VacuumStmt *vacstmt,
 		
 /* Check if we want to generate a KDE estimator */
 #ifdef USE_OPENCL
-  if (ocl_useKDE()) {
+  if(stholes_enabled() && ocl_useKDE()){
+    fprintf(stderr,"You can't use stholes and gpukde at the same time.\n");
+    goto error;
+  }  
+  if (ocl_useKDE() || stholes_enabled()) {
     unsigned int float_columns = 0;
     /* Count how many float columns this table has. */
     for (i = 0; i < attr_cnt; i++) {
@@ -514,6 +519,9 @@ do_analyze_rel(Relation onerel, VacuumStmt *vacstmt,
       /*
        * We build an estimator! Extract the actual attributes.
        */
+      
+      
+      
       unsigned int j = 0;
       unsigned int sample_size = 0;
       double total_rows, total_dead_rows;
@@ -527,10 +535,15 @@ do_analyze_rel(Relation onerel, VacuumStmt *vacstmt,
         }
       }
       
+      if(stholes_enabled()){
+	stholes_addhistogram(onerel->rd_id,attributes,float_columns);
+	goto finish;
+      }
+      
       /* Now determine how many rows we want in our sample */
       sample_size = ocl_maxSampleSize(float_columns);
       sample = (HeapTuple*) palloc(sample_size * sizeof(HeapTuple));
-      
+	
       
       /* If postgresql indicates a horrible page per accepted tuple ratio , we won't use acceptance/rejection sampling*/
       if(ocl_isSafeToSample(onerel,totalrows)){
@@ -545,10 +558,13 @@ do_analyze_rel(Relation onerel, VacuumStmt *vacstmt,
       if (sample_size > 0)
         ocl_constructEstimator(onerel, (unsigned int)total_rows, float_columns,
                                attributes, sample_size, sample);
+      
       pfree(sample);
+      finish:
       free(attributes);
     }
   }
+  error:
 #endif /* USE_OPENCL */
 
 	/*
