@@ -133,7 +133,7 @@ void ocl_reportErrorToLogFile(
     double error = (*(error_metrics[i].function))(actual, expected, nrows);
     fprintf(estimation_quality_log_file, " ; %.8f", error);
    }
-   fprintf(estimation_quality_log_file, " ; %d", nrows);
+   fprintf(estimation_quality_log_file, " ; %lu", (unsigned long ) nrows);
    fprintf(estimation_quality_log_file, "\n");
    fflush(estimation_quality_log_file);
 }
