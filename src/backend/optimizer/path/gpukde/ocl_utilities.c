@@ -258,7 +258,8 @@ static cl_program buildProgram(ocl_context_t* context, const char* build_params)
 	strcat(device_params, build_params);
 	// Ok, build the program
 	cl_program program = clCreateProgramWithSource(
-	    context->context, 1, &kernel_file, &kernel_file_length, NULL);
+	    context->context, 1, (const char**)&kernel_file,
+	    &kernel_file_length, NULL);
 	fprintf(stderr, "Compiling OpenCL kernels: %s\n", device_params);
 	cl_int err = clBuildProgram(program, 1, &(context->device), device_params, NULL, NULL);
 	if (err != CL_SUCCESS) {
