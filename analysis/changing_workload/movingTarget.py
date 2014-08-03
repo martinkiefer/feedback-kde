@@ -11,12 +11,12 @@ import moving_common as mc
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--table", action="store", required=True, help="Table for which the workload will be generated.")
-parser.add_argument("--dataoutput", action="store", required=True, help="Table for which the workload will be generated.")
+parser.add_argument("--dataoutput", action="store", required=True, help="File to dump the queries in.")
 parser.add_argument("--queryoutput", action="store", required=True, help="Table for which the workload will be generated.")
 parser.add_argument("--sigma", action="store", required=True, type=float, help="Standard deviation for clusters")
 parser.add_argument("--margin", action="store", required=True, type=float, help="Maximum absolute distance for each dimension of a cluster center from the generating point on the line")
 parser.add_argument("--clusters", action="store", type=int,required=True,help="Number of clusters")
-parser.add_argument("--points", action="store", type=int,required=True,help="Total number of data points")
+parser.add_argument("--points", action="store", type=int,required=True,help="Points per cluster.")
 parser.add_argument("--steps", action="store", type=int,required=True,help="Steps along the line")
 parser.add_argument("--dimensions", action="store", type=int,required=True,help="Number of dimensions")
 parser.add_argument("--queriesperstep", action="store", type=int,required=True,help="Number of queries per step")
@@ -65,7 +65,7 @@ for i in range(1,clusters+1):
 #Create data points around the clusters
 tuples = []
 for c in centers:    
-    r = random.normal(0,sigma,(points/clusters,dimension))
+    r = random.normal(0,sigma,(points,dimension))
     tuples.extend(r+c)    
     
 current = 0

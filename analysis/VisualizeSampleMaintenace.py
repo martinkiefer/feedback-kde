@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 Nice little script to run experiments and plot data, sample, karma and queries.
-Needs an existing estimator and a two-dimensional data set.
+Needs an existing estimator and a two-dimensional data set with columns c1 and c2.
 @author: martin
 """
 
@@ -10,9 +10,10 @@ from matplotlib.patches import Rectangle
 import matplotlib.pyplot as plt
 import matplotlib.cm as cm
 import psycopg2
-import os
+import argparse
+import random
 import time
-
+    
 #Read rectangle boundaries from query
 def parseRectBoundaries(query):
     first = -1
@@ -103,105 +104,169 @@ class SamplePlotter:
         #Save and close
         plt.savefig("%s/image%s.png" % (image_folder,number))
         plt.close();
+        
+parser = argparse.ArgumentParser()
+parser.add_argument("--dbname", action="store", required=True, help="Database to which the script will connect.")
+parser.add_argument("--query_file", action="store", required=True, help="File to draw queries from.")
+parser.add_argument("--table", action="store", required=True, help="Table the script will visualize.")
+parser.add_argument("--delete_constraint", action="store",default="", help="Constraint removing tuples from the data set after taking the first picture (Appended after SQL WHERE)")
+parser.add_argument("--resolution", action="store", required=True, type=int, help="Number of points to visualize the existing data.")
+parser.add_argument("--steps", action="store", required=True, type=int, help="Total number of pictures to create.")
+parser.add_argument("--queries_per_step", action="store", required=True, type=int, help="Queries executed before a picture is taken.")
+parser.add_argument("--folder", action="store", required=True, help="Folder to drop the pictures in.")
+parser.add_argument("--sample_maintenance", action="store", choices=["threshold", "periodic","none"], default="none", help="Desired query based sample maintenance option.")
+parser.add_argument("--threshold", action="store", type=float, default=1.0, help="Negative karma limit causing a point to be resampled.")
+parser.add_argument("--period", action="store", type=int, default=25, help="Queries until we resample the worst sample point.")
+args = parser.parse_args()
 
+database_name=args.dbname             #Database name
 
-pg_folder = "/home/martin/Dokumente/HiWi/current_data"
-sample_size = 512                       #Number of points in the sample
-table_oid = 16947                     #Table oid to locate the sample file
-database_name="xy"                      #Database name
-table_name="gen1_d2"                    #Table name
-data_sample_size = 10000                #Size of sample used to visualize data
-image_folder="/home/martin"             #Put the images in here
-number_of_pictures = 15
+query_file = args.query_file
+table_name=args.table
+delete_constraint =  args.delete_constraint                 
+data_sample_size = args.resolution      
+image_folder= args.folder               
+number_of_pictures = args.steps+1         
+queries_per_step = args.queries_per_step  
+threshold = args.threshold
+period = args.period
+sample_maintenance = args.sample_maintenance
 
-#Command that is executed before a new diagram is generated
-experiment_command = "python /home/martin/Dokumente/HiWi/Repository/feedback-kde/analysis/genhist/runExperiment.py --dbname xy --dataset set1 --dimensions 2 --workload 2 --queries 25 --optimization none --log log --noanalyze --dumpqueries --samplesize 512 --error absolute"
-#File to fetch the last executed queries from
-query_file = "/tmp/queries.sql"
-#File to read the sample from
-sample_file = "%s/pg_kde_samples/rel%s_kde.sample" % (pg_folder,table_oid)
-#Query that changes the data after the first picture
-changing_query = "delete from %s where c1 > 0.25 and c2 > 0.25 and c1 < 0.75 and c2 < 0.75;;" % table_name
+#Grab some queries and shuffle them.    
+f = open(query_file, "r")
+selected_queries = f.read().splitlines()
+random.shuffle(selected_queries)
+selected_queries = selected_queries[0:queries_per_step*number_of_pictures]
+
+f.close()
 
 ploti = SamplePlotter()    
 conn = psycopg2.connect("dbname=%s host=localhost" % database_name)
 
+cur = conn.cursor()
+#File to read the sample from
+cur.execute("SELECT pg_kdemodels.sample_file, pg_kdemodels.rowcount_sample FROM pg_kdemodels INNER JOIN pg_class on pg_kdemodels.table = pg_class.oid where pg_class.relname = '%s';" % table_name)
+tup = cur.fetchone()
+sample_file = tup[0] 
+sample_size = tup[1]
+cur.close()
+
+sample_query = "select * from %s order by random() limit %s" % (table_name,data_sample_size)
+
 #Fetch data sample
 cur = conn.cursor()
-cur.execute("select * from %s order by random() limit %s;" % (table_name,data_sample_size))
+cur.execute("select setseed(0.5);");
+cur.execute(sample_query)
 data_points = cur.fetchall()
 for tuple in data_points:
     ploti.addDataPoint(tuple)
 cur.close()
+data_points = None
 
 #Create initial picture with no experiment
 f = open(sample_file,"rb")
 sample_points = []
 penalties = []
-    
+print "Plot intitial state..."    
 #Read sample file    
 for i in range(0,sample_size):
     sample_points.append(struct.unpack("2d",f.read(8*2)))
-    
+
 for i in range(0,sample_size):
     penalties.append(struct.unpack('d',f.read(8))[0])
     
 for i in range(0,sample_size):
     ploti.addSamplePoint(sample_points[i],penalties[i])
-
-#Read query file      
-#q = open(query_file, "r")
-#for line in q:
-#    ploti.addQuery(parseRectBoundaries(line))
-#q.close()
       
 f.close();    
  
 ploti.plot(0,image_folder)
 ploti.clearQueries()
 ploti.clearSample()
-ploti.clearData();
+
 
 #Run changing query
-cur = conn.cursor()
-cur.execute(changing_query)
-cur.close();
+#Query that changes the data after the first picture
+remove_clause = ""
+if delete_constraint != "":
+    print "Applying data changes..."
+    ploti.clearData();
 
-#Grab new data sample
-cur = conn.cursor()
-cur.execute("select * from %s order by random() limit %s;" % (table_name,data_sample_size))
-data_points = cur.fetchall()
-for tuple in data_points:
-    ploti.addDataPoint(tuple)
-cur.close()
+    #Before we execute the actual query, we reduce the sample 
+    cur = conn.cursor()
+    cur.execute("set SEED to 0.5")
+    cur.execute("with sample as ( %s ) select * from sample where not ( %s )" % (sample_query, delete_constraint))
+    
+    data_points = cur.fetchall()
+    for tuple in data_points:
+        ploti.addDataPoint(tuple)
+    data_points = None    
+    cur.close()
+    
+    cur = conn.cursor()
+    cur.execute("delete from %s where %s" % (table_name, delete_constraint))
+    cur.close();
+    
 conn.commit()
 conn.close()
 
 
+
+
+offset = 0
 for j in range(1,number_of_pictures):
-    os.system(experiment_command)
+    print "Executing step %i..." % j
+    #We need a new connection every time, as we need the estimator persisted
+    conn = psycopg2.connect("dbname=%s host=localhost" % database_name)
+    cur = conn.cursor()
+
+    #Set the gpukde options
+    cur.execute("SET ocl_use_gpu TO false;")
+    if(sample_maintenance == "threshold"):
+        cur.execute("SET kde_sample_maintenance_query_propagation TO Threshold;")	
+        cur.execute("SET kde_sample_maintenance_threshold TO %s;" % threshold)	
+    if(sample_maintenance == "periodic"):
+        cur.execute("SET kde_sample_maintenance_query_propagation TO Periodic;")	
+        cur.execute("SET kde_sample_maintenance_period  TO %s;" % period )	
+    cur.execute("SET kde_estimation_quality_logfile TO '/tmp/error.log';")
+    cur.execute("SET kde_debug TO false;")    
+    cur.execute("set kde_enable to 1;")
+    
+    #Execute queries and tell the plotter about it
+    for i in range(0,queries_per_step):
+        cur.execute(selected_queries[offset + i])
+        ploti.addQuery(parseRectBoundaries(selected_queries[offset + i]))
+    offset += queries_per_step
+    
+    #Close the connection
+    cur.close()
+    conn.commit()
+    conn.close()        
+    #Give postgres some time to write the sample and penalties
     time.sleep(1)
+    
+    print "Plotting the state..."    
     f = open(sample_file,"rb")
     sample_points = []
     penalties = []
     
-    
+    #Tell the plotter about it
     for i in range(0,sample_size):
         sample_points.append(struct.unpack("2d",f.read(8*2)))
-    
+        
     for i in range(0,sample_size):
         penalties.append(struct.unpack('d',f.read(8))[0])
     
     for i in range(0,sample_size):
         ploti.addSamplePoint(sample_points[i],penalties[i])
         
-    q = open(query_file, "r")
-    for line in q:
-        ploti.addQuery(parseRectBoundaries(line))
-    q.close()
     f.close();    
+ 
  
     ploti.plot(j,image_folder)
     ploti.clearQueries()
     ploti.clearSample()
+    print "Done"
+
+
     
