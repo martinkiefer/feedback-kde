@@ -409,8 +409,6 @@ void ocl_runOnlineLearningStep(ocl_estimator_t* estimator,
       err |= clEnqueueNDRangeKernel(
           context->queue, updateModel, 1, NULL, &global_size, NULL, 1,
           &accumulator_event, &(estimator->online_learning_event));
-      estimator->learning_boost_rate = Max(
-          1.0, estimator->learning_boost_rate * 0.95);
     } else {
       // In order to initialize the algorithm, we simply use the accumulated averages.
       if (initModel == NULL) {
