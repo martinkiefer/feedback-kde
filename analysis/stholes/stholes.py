@@ -6,17 +6,19 @@ from numpy import random
 import numpy
 import itertools
 import time
-
+import sys
 
 #Classes generating data centers (Data,Uniform,Gauss)
 class DataCenterGenerator:
-    def __init__(self,cur,table,rows):
+    def __init__(self,cur,table,rows,database):
         self._cur = cur
         self._table = table
         self._rows = rows
-        #Might not be working on Monet
-        self._cur.execute("SELECT * FROM %s ORDER BY RANDOM()" % self._table)
-        
+        if (database == "postgres"):
+          self._cur.execute("SELECT * FROM %s ORDER BY RANDOM()" % self._table)
+        else:
+          self._cur.execute("SELECT * FROM %s ORDER BY RAND()" % self._table)
+          
     def getNextCenter(self):
         
         self._cur.scroll(random.randint(0,rows),'absolute')
@@ -69,7 +71,6 @@ parser.add_argument("--sigma", action="store",type=float,default=25, help="Stand
 parser.add_argument("--tolerance", action="store", default=0.1, type=float, help="Tolerance around the target selectivity.")
 parser.add_argument("--queries", action="store", required=True, type=int, help="Number of queries in the target workload.")
 parser.add_argument("--output", action="store", required=True, help="Name of the output sql file.")
-parser.add_argument("--method", action="store", choices=["random"], default="random", help="Which method should be used to construct the queries?")
 parser.add_argument("--database", action="store", choices=["postgres", "monetdb"], default="postgres", help="Which database system should be used to construct the queries (MonetDB will be drastically faster)?")
 args = parser.parse_args()
 
@@ -82,7 +83,6 @@ sigma = args.sigma
 clusters = args.clusters
 queries = args.queries
 output_file = args.output
-method = args.method
 mcenter = args.mcenter
 mrange = args.mrange
 database = args.database
@@ -137,15 +137,15 @@ high =  numpy.array(high)
 centers = []
 
 cur.close()
-conn.commit()
 # Tell Postgres that we don't need transaction support.
 if (database == "postgres"):
+    conn.commit()
     conn.set_session('read uncommitted', readonly=True, autocommit=True)
 
 generator = None
 
 if(mcenter == "Data"):
-    generator = DataCenterGenerator(conn.cursor(),table,rows)
+    generator = DataCenterGenerator(conn.cursor(),table,rows,database)
 
 elif(mcenter == "Uniform"):
     generator = UniformDataCenterGenerator(low,high,columns)
@@ -186,15 +186,15 @@ elif(mrange == "Tuples"):
 
     last_len = 0
     last_print_time = time.time()
-    while(len(workload) < queries):
+    while (len(workload) < queries):
         c = generator.getNextCenter()
 
         #Take the maximum range
         range = numpy.minimum(c-low,high-c)
         
         cur = conn.cursor()
-        cur.execute(template, createBoundsList(c-range,c+range))
-    
+        cur.execute(template, map(str, createBoundsList(c-range,c+range)))
+
         selectivity = cur.fetchone()[0] / float(rows)
         cur.close()
         last_query_batch += 1
