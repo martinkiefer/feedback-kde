@@ -227,9 +227,7 @@ struct timeval opt_start;
 /*
  * Function to compute the gradient for a penalized objective function that will
  * add a strong penalty factor to negative bandwidth values. This function is
- * used so we can optimize the constrained optimization problem with a regular
- * unconstrained lbfgs solver.
- *
+ * passed to nlopt to compute the gradient and evaluate the function.
  */
 
 /*
@@ -375,17 +373,19 @@ static double computeGradient(unsigned n, const double* bandwidth,
           "(started at %f), took: %ld ms.",
           evaluations, error, start_error, mtime);
   // Finally, cast back to double.
-  for (i = 0; i<estimator->nr_of_dimensions; ++i) {
+  if (gradient) {
+    for (i = 0; i<estimator->nr_of_dimensions; ++i) {
     // Apply the gradient normalization.
-    double h = bandwidth[i] <= 0 ? 1e-10 : bandwidth[i];
-    gradient[i] = tmp_gradient[i] * M_SQRT2 / (
-        sqrt(M_PI) * h * h * pow(2.0, estimator->nr_of_dimensions) *
-        conf->nr_of_observations * estimator->rows_in_sample);
-  }
-  if (ocl_isDebug()) {
-    fprintf(stderr, "\n\tGradient:");
-    for (i=0; i<n; ++i) fprintf(stderr, " %f", gradient[i]);
-    fprintf(stderr, "\n", error);
+      double h = bandwidth[i] <= 0 ? 1e-10 : bandwidth[i];
+      gradient[i] = tmp_gradient[i] * M_SQRT2 / (
+          sqrt(M_PI) * h * h * pow(2.0, estimator->nr_of_dimensions) *
+          conf->nr_of_observations * estimator->rows_in_sample);
+    }
+    if (ocl_isDebug()) {
+      fprintf(stderr, "\n\tGradient:");
+      for (i=0; i<n; ++i) fprintf(stderr, " %e", gradient[i]);
+      fprintf(stderr, "\n", error);
+    }
   }
   // Ok, clean everything up.
   for (i=0; i<estimator->nr_of_dimensions; ++i) {
@@ -424,10 +424,13 @@ void ocl_runModelOptimization(ocl_estimator_t* estimator) {
   clEnqueueReadBuffer(context->queue, estimator->bandwidth_buffer, CL_TRUE, 0,
                       sizeof(kde_float_t) * estimator->nr_of_dimensions,
                       fbandwidth, 0, NULL, NULL);
-  // Cast to double (lbfgs operates on double.
+  // Cast to double (nlopt operates on double).
   double* bandwidth = lbfgs_malloc(estimator->nr_of_dimensions);
   unsigned int i;
-  for (i=0; i<estimator->nr_of_dimensions; ++i) bandwidth[i] = fbandwidth[i];
+  for (i=0; i<estimator->nr_of_dimensions; ++i) {
+    bandwidth[i] = fbandwidth[i];
+  }
+
   // Package all required buffers.
   optimization_config_t params;
   params.estimator = estimator;
@@ -466,17 +469,17 @@ void ocl_runModelOptimization(ocl_estimator_t* estimator) {
   fprintf(stderr, "> Starting numerical optimization of the model:\n");
   // Prepare the bound constraints.
   double* lower_bounds = palloc(sizeof(double) * estimator->nr_of_dimensions);
-  for (i=0; i<estimator->nr_of_dimensions; ++i)
+  for (i=0; i<estimator->nr_of_dimensions; ++i) {
     lower_bounds[i] = 1e-10;
+  }
   // Create the optimization parameter.
-  nlopt_opt optimizer_parameters = nlopt_create(
-      NLOPT_LD_LBFGS, estimator->nr_of_dimensions);
-  nlopt_set_lower_bounds(optimizer_parameters, lower_bounds);
-  nlopt_set_min_objective(optimizer_parameters, computeGradient, &params);
-  nlopt_set_ftol_abs(optimizer_parameters, 1e-10);
-  nlopt_set_maxeval(optimizer_parameters, 100);
+  nlopt_opt global_optimizer= nlopt_create(
+      NLOPT_LD_MMA, estimator->nr_of_dimensions);
+  nlopt_set_lower_bounds(global_optimizer, lower_bounds);
+  nlopt_set_min_objective(global_optimizer, computeGradient, &params);
+  nlopt_set_ftol_abs(global_optimizer, 1e-10);
   double tmp;
-  int err = nlopt_optimize(optimizer_parameters, bandwidth, &tmp);
+  int err = nlopt_optimize(global_optimizer, bandwidth, &tmp);
   if (err < 0) {
     fprintf(stderr, "\nOptimization failed: %i!", err);
   } else {
@@ -485,7 +488,7 @@ void ocl_runModelOptimization(ocl_estimator_t* estimator) {
       fprintf(stderr, " %f", bandwidth[i]);
     fprintf(stderr, "\n");
   }
-  nlopt_destroy(optimizer_parameters);
+  nlopt_destroy(global_optimizer);
   // Transfer the bandwidth to the device.
   for (i=0; i<estimator->nr_of_dimensions; ++i) {
     fbandwidth[i] = bandwidth[i];
@@ -496,10 +499,10 @@ void ocl_runModelOptimization(ocl_estimator_t* estimator) {
   // Clean up.
   pfree(fbandwidth);
   lbfgs_free(bandwidth);
-  clReleaseMemObject(device_ranges);
-  clReleaseMemObject(device_selectivites);
   clReleaseMemObject(params.error_buffer);
   clReleaseMemObject(params.gradient_buffer);
   clReleaseMemObject(params.error_accumulator_buffer);
   clReleaseMemObject(params.gradient_accumulator_buffer);
+  clReleaseMemObject(device_ranges);
+  clReleaseMemObject(device_selectivites);
 }
