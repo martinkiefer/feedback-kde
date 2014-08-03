@@ -367,9 +367,12 @@ static void ocl_updateEstimatorInCatalog(ocl_estimator_t* estimator) {
       context->queue, estimator->sample_contribution_buffer, CL_TRUE, 0,
       sizeof(kde_float_t) * estimator->rows_in_sample,
       contribution_buffer, 0, NULL, NULL);
+  // Open the sample file for this table.
   char sample_file_name[1024];
-  sprintf(sample_file_name, "%s/pg_kde_samples/rel%i_kde.sample", DataDir, estimator->table);
+  sprintf(sample_file_name, "%s/pg_kde_samples/rel%i_kde.sample",
+          DataDir, estimator->table);
   FILE* sample_file = fopen(sample_file_name, "wb");
+  // Now store all buffers to the location.
   if (sizeof(kde_float_t) == sizeof(double)) {
     fwrite(sample_buffer, sizeof(kde_float_t)*estimator->nr_of_dimensions,
            estimator->rows_in_sample, sample_file);
@@ -532,7 +535,7 @@ static void ocl_initializeRegistry() {
 
 	// Allocate a new descriptor.
 	registry = calloc(1, sizeof(ocl_estimator_registry_t));
-	registry->estimator_bitmap = calloc(1, 16384); // Enough bits for 131072 tables.
+	registry->estimator_bitmap = calloc(1, 512*1024); // Enough bits for ~4M tables.
 	registry->estimator_directory = directory_init(sizeof(Oid), 20);
 
 	// Now open the KDE estimator table, read in all stored estimators and
