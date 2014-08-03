@@ -314,9 +314,14 @@ int kde_finish(PlanState *node){
 	    bytea* rq_buffer = materialize_rqlist_to_buffer(
 	        node->instrument->kde_rq, &attribute_bitmap);
       release_rqlist(node->instrument->kde_rq);
-	    float8 qual_tuples = (float8)(node->instrument->tuplecount + node->instrument->ntuples)/(node->instrument->nloops+1);
-	    float8 all_tuples = (float8)(node->instrument->tuplecount + node->instrument->nfiltered2 + node->instrument->nfiltered1 + node->instrument->ntuples)/(node->instrument->nloops+1);
-	    
+	    float8 qual_tuples =
+	        (float8)(node->instrument->tuplecount + node->instrument->ntuples) /
+	        (node->instrument->nloops+1);
+	    float8 all_tuples =
+	        (float8)(node->instrument->tuplecount + node->instrument->nfiltered2 +
+	                 node->instrument->nfiltered1 + node->instrument->ntuples) /
+	        (node->instrument->nloops+1);
+
 	    //Hack for swallowing output when explain without analyze is called. 
 	    //However, empty tables are not that interesting from a selectivity estimators point of view anyway.
 	    if(qual_tuples == 0.0 && all_tuples == 0.0){
@@ -326,7 +331,8 @@ int kde_finish(PlanState *node){
 	    }
 
 	    // Notify the model maintenance of this observation.
-	    ocl_notifyModelMaintenanceOfSelectivity(rte->relid, qual_tuples / all_tuples);
+	    ocl_notifyModelMaintenanceOfSelectivity(
+	        rte->relid, qual_tuples / all_tuples);
 
 	    if (!kde_collect_feedback) return 1;
 
