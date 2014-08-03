@@ -21,11 +21,13 @@ char* kde_estimation_quality_logfile_name;
 // ############################################################
 
 // Functions that implement the error metrics.
-static double QuadraticError(double actual, double expected, double nrows) {
+static double QuadraticError(
+    double actual, double expected, double nrows) {
   return (actual - expected) * (actual - expected);
 }
-static double QuadraticErrorGradientFactor(double actual, double expected, double nrows) {
-  return 2 * (actual - expected);
+static double QuadraticErrorGradientFactor(
+    double actual, double expected, double nrows) {
+  return 2 * nrows * (actual - expected);
 }
 static double SquaredQErrror(double actual, double expected, double nrows) {
   // Constants are required to avoid computing the log of 0.
@@ -33,7 +35,7 @@ static double SquaredQErrror(double actual, double expected, double nrows) {
   return tmp * tmp;
 }
 static double SquaredQErrorGradientFactor(double actual, double expected, double nrows) {
-  return 2 * (log(1e-5 + actual) - log(1e-5 + expected)) / (1e-5 + actual);
+  return 2 * (log(1 + nrows * actual) - log(1 + nrows * expected)) / (1 + nrows * actual);
 }
 static double AbsoluteError(double actual, double expected, double nrows) {
   return fabs(actual - expected);
@@ -53,11 +55,11 @@ static double RelativeError(double actual, double expected, double nrows) {
 }
 static double RelativeErrorGradientFactor(double actual, double expected, double nrows) {
   if (actual > expected) {
-    return 1.0 / Max(1.0 / nrows, expected);
+    return 1.0 / Max(1.0, nrows * expected);
   } else if (actual == expected) {
     return 0;
   } else {
-    return -1.0 / Max(1.0 / nrows, expected);
+    return -1.0 / Max(1.0, nrows * expected);
   }
 }
 static double SquaredRelativeError(double actual, double expected, double nrows) {
@@ -66,7 +68,7 @@ static double SquaredRelativeError(double actual, double expected, double nrows)
   return e*e;
 }
 static double SquaredRelativeErrorGradientFactor(double actual, double expected, double nrows) {
-  return 2 * (actual - expected) / (Max(1.0 / nrows, expected) * Max(1.0 / nrows, expected));
+  return 2 * nrows * (actual - expected) / (Max(1.0, nrows * expected) * Max(1.0, nrows * expected));
 }
 
 // Array of all available metrics.

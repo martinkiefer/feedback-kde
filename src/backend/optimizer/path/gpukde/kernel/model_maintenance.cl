@@ -31,7 +31,7 @@ __kernel void applyGradient(
         ranges[2 * (D * get_global_id(0) + i) + 1];                         \
     gradient_scratch[D * get_local_id(0) + i] = 0;                          \
   }                                                                         \
-  T estimation = 0;                                                         \
+  T estimate = 0;                                                           \
   /* Iterate over all sample points. */                                     \
   for (unsigned int i=0; i<nr_of_data_points; ++i) {                        \
     /* Compute the local contributions from this data point. */             \
@@ -53,13 +53,15 @@ __kernel void applyGradient(
         local_gradient[k] *= (k==j) ? factor1 : factor2;                    \
       }                                                                     \
     }                                                                       \
-    estimation += local_contribution;                                       \
+    estimate += local_contribution;                                         \
     for (unsigned int j=0; j<D; ++j) {                                      \
       gradient_scratch[D * get_local_id(0) + j] +=                          \
           local_gradient[j];                                                \
     }                                                                       \
   }                                                                         \
-  estimation /= pow((T)2.0, D) * nr_of_data_points;                         \
+  estimate /= pow((T)2.0, D) * nr_of_data_points;                           \
+  estimate *= nrows;                                                        \
+  T expected = nrows * observations[get_global_id(0)];                      \
 
 
 __kernel void computeBatchGradientAbsolute(
@@ -82,7 +84,7 @@ __kernel void computeBatchGradientAbsolute(
   // First, we compute the error-independent parts of the gradient.
   BATCH_GRADIENT_COMMON();
   // Next, compute the estimation error and the gradient scale factor.
-  T error = estimation - observations[get_global_id(0)];
+  T error = estimate - expected;
   T factor = error == 0 ? 0 : (error < 0 ? -1.0 : 1.0);
   cost_values[get_global_id(0)] = error * factor;
   // Finally, write the gradient from this observation to global memory.
@@ -112,8 +114,8 @@ __kernel void computeBatchGradientRelative(
   // First, we compute the error-independent parts of the gradient.
   BATCH_GRADIENT_COMMON();
   // Next, compute the estimation error and the gradient scale factor.
-  T error = estimation - observations[get_global_id(0)];
-  T factor = (error == 0 ? 0 : (error < 0 ? -1.0 : 1.0) / max((T)(1.0/nrows), observations[get_global_id(0)]));
+  T error = estimate - expected;
+  T factor = (error == 0 ? 0 : (error < 0 ? -1.0 : 1.0) / max((T)(1.0), expected));
   cost_values[get_global_id(0)] = error * factor;
   // Finally, write the gradient from this observation to global memory.
   for (unsigned int i=0; i<D; ++i) {
@@ -142,8 +144,8 @@ __kernel void computeBatchGradientSquaredRelative(
   // First, we compute the error-independent parts of the gradient.
   BATCH_GRADIENT_COMMON();
   // Next, compute the estimation error and the gradient scale factor.
-  T error = (estimation - observations[get_global_id(0)]) / max((T)(1.0/nrows), observations[get_global_id(0)]);
-  T factor = 2 * error / max((T)(1.0/nrows), observations[get_global_id(0)]);
+  T error = (estimate - expected) / max((T)(1.0), expected);
+  T factor = 2 * error / max((T)(1.0), expected);
   cost_values[get_global_id(0)] = error * error;
   // Finally, write the gradient from this observation to global memory.
   for (unsigned int i=0; i<D; ++i) {
@@ -172,7 +174,7 @@ __kernel void computeBatchGradientQuadratic(
   // First, we compute the error-independent parts of the gradient.
   BATCH_GRADIENT_COMMON();
   // Next, compute the estimation error and the gradient scale factor.
-  T error = estimation - observations[get_global_id(0)];
+  T error = estimate - expected;
   T factor = 2 * error;
   cost_values[get_global_id(0)] = error * error;
   // Finally, write the gradient from this observation to global memory.
@@ -202,8 +204,8 @@ __kernel void computeBatchGradientQ(
   // First, we compute the error-independent parts of the gradient.
   BATCH_GRADIENT_COMMON();
   // Next, compute the estimation error and the gradient scale factor.
-  T error = log(1e-5 + estimation) - log(1e-5 + observations[get_global_id(0)]);
-  T factor = 2 * error / (1e-5 + estimation);
+  T error = log(1 + estimate) - log(1 + expected);
+  T factor = 2 * error / (1 + estimate);
   cost_values[get_global_id(0)] = error * error;
   // Finally, write the gradient from this observation to global memory.
   for (unsigned int i=0; i<D; ++i) {

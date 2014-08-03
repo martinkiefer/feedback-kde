@@ -24,7 +24,7 @@ __kernel void udate_sample_quality_metrics(
 
   // Compute the estimate without the current point.
   double adjusted_estimate = estimated_selectivity * sample_size / normalization_factor;
-  adjusted_estimate -= contribution;
+  adjusted_estimate -= local_contribution;
   adjusted_estimate *= normalization_factor / (sample_size - 1);
 
   // Compute whether this improved or degraded the estimate.
