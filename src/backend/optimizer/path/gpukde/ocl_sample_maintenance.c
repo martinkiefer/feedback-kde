@@ -29,15 +29,36 @@
 #ifdef USE_OPENCL
 
 extern ocl_kernel_type_t global_kernel_type;
+
 // GUC configuration variable.
 double kde_sample_maintenance_threshold;
 double kde_sample_maintenance_karma_decay;
 double kde_sample_maintenance_contribution_decay;
+
+bool kde_sample_maintenance_track_impact;
+bool kde_sample_maintenance_track_karma;
 int kde_sample_maintenance_period;
 int kde_sample_maintenance_insert_option;
 int kde_sample_maintenance_query_option;
 
 const double sample_match_learning_rate = 0.02f;
+
+cl_mem getBufferForNextMetric(ocl_estimator_t* estimator) {
+  // Switch to the next sample maintenance metric.
+  if (kde_sample_maintenance_track_impact &&
+      estimator->last_optimized_sample_metric != IMPACT) {
+    estimator->last_optimized_sample_metric = IMPACT;
+  } else if (kde_sample_maintenance_track_karma &&
+      estimator->last_optimized_sample_metric != KARMA) {
+    estimator->last_optimized_sample_metric = KARMA;
+  }
+  // Now return the buffer for the chosen metric.
+  if (estimator->last_optimized_sample_metric == IMPACT) {
+    return estimator->sample_contribution_buffer;
+  } else if (estimator->last_optimized_sample_metric == KARMA) {
+    return estimator->sample_karma_buffer;
+  }
+}
 
 //Convenience method for retrieving the index of the smallest element
 static unsigned int getMinPenaltyIndex(
@@ -53,8 +74,10 @@ static unsigned int getMinPenaltyIndex(
           ctxt->context, CL_MEM_READ_WRITE,
           sizeof(kde_float_t), NULL, NULL);
   
+  // Now fetch the minimum penalty.
+  cl_mem target_metric_buffer = getBufferForNextMetric(estimator);
   event = minOfArray(
-      estimator->sample_karma_buffer, estimator->rows_in_sample,
+      target_metric_buffer, estimator->rows_in_sample,
       min_val, min_idx, 0, NULL);
   clEnqueueReadBuffer(
       ctxt->queue, min_idx, CL_TRUE, 0, sizeof(unsigned int),

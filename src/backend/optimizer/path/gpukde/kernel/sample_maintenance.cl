@@ -30,14 +30,14 @@ __kernel void udate_sample_quality_metrics(
   // Compute whether this improved or degraded the estimate.
   double improvement = fabs(actual_selectivity - estimated_selectivity);
   improvement -= fabs(actual_selectivity - (T)adjusted_estimate);
-  // Now compute the karma. For now, we do a very simplistic tracking:
+  // Now compute the karma, we use the followng, very simple approach:
   //  The karma is -1 if improvement < 0
   //  The karma is +1 if improvement > 0
   double local_karma = improvement < 0 ? -1 : 1;
 
   // Now update the arrays.
   contribution[get_global_id(0)] *= contribution_decay;
-  contribution[get_global_id(0)] += local_contribution;
+  contribution[get_global_id(0)] += (1 - contribution_decay) * local_contribution;
   karma[get_global_id(0)] *= karma_decay;
-  karma[get_global_id(0)] += local_karma;
+  karma[get_global_id(0)] += (1 - karma_decay) * local_karma;
 }
