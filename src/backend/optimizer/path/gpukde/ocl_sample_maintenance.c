@@ -61,10 +61,11 @@ static cl_mem getBufferForNextMetric(ocl_estimator_t* estimator) {
 }
 
 //Convenience method for retrieving the index of the smallest element
-static unsigned int getMinPenaltyIndex(
+static int getMinPenaltyIndex(
     ocl_context_t*  ctxt, ocl_estimator_t* estimator){
   cl_event event;
-  unsigned int index = 0;
+  unsigned int index;
+  kde_float_t val;
   
   // Allocate device memory for indices and values.
   cl_mem min_idx = clCreateBuffer(
@@ -82,12 +83,15 @@ static unsigned int getMinPenaltyIndex(
   clEnqueueReadBuffer(
       ctxt->queue, min_idx, CL_TRUE, 0, sizeof(unsigned int),
       &index, 1, &event, NULL);
+  clEnqueueReadBuffer(
+      ctxt->queue, min_val, CL_TRUE, 0, sizeof(unsigned int),
+      &val, 1, &event, NULL);
 
-  clReleaseEvent(event);  
+  clReleaseEvent(event);
   clReleaseMemObject(min_idx);
   clReleaseMemObject(min_val);
   
-  return index;
+  return val < 0.1 ? index : -1;
 }
 
 // Helper method to get the minimum index below a certain threshold.
@@ -144,7 +148,7 @@ void ocl_notifySampleMaintenanceOfInsertion(Relation rel, HeapTuple new_tuple) {
   } else if (kde_sample_maintenance_insert_option == RESERVOIR) {
     // The sample is full, use reservoir sampling.
     double rnd = (((double) random()) / ((double) MAX_RANDOM_VALUE));
-    if (rnd > 1/(double) estimator->rows_in_table) return;
+    if (rnd > 1.0/(double) estimator->rows_in_table) return;
     insert_position = random() % estimator->rows_in_sample;
   } else if(kde_sample_maintenance_insert_option == RANDOM) {
     //TODO: This is not the best idea.
@@ -431,20 +435,20 @@ void ocl_notifySampleMaintenanceOfSelectivity(
     double total_rows;
     
     Relation onerel = try_relation_open(estimator->table, ShareUpdateExclusiveLock); 
-    unsigned insert_position = getMinPenaltyIndex(ctxt,estimator);
-    
-    if (ocl_isSafeToSample(onerel,(double) estimator->rows_in_table)) {
+    int insert_position = getMinPenaltyIndex(ctxt,estimator);
+    if (insert_position >= 0) {
+      if (ocl_isSafeToSample(onerel,(double) estimator->rows_in_table)) {
         relation_close(onerel, ShareUpdateExclusiveLock);
         return;
+      }
+      item = palloc(ocl_sizeOfSampleItem(estimator));
+      ocl_createSample(onerel,&sample_point,&total_rows,1);
+      ocl_extractSampleTuple(estimator, onerel, sample_point,item);
+      ocl_pushEntryToSampleBufer(estimator, insert_position, item);
+      heap_freetuple(sample_point);
+      pfree(item);
+      relation_close(onerel, ShareUpdateExclusiveLock);
     }
-    item = palloc(ocl_sizeOfSampleItem(estimator));
-    ocl_createSample(onerel,&sample_point,&total_rows,1);
-    ocl_extractSampleTuple(estimator, onerel, sample_point,item);
-    ocl_pushEntryToSampleBufer(estimator, insert_position, item);
-    
-    heap_freetuple(sample_point);
-    pfree(item);
-    relation_close(onerel, ShareUpdateExclusiveLock);
   } 
 }
 #endif
