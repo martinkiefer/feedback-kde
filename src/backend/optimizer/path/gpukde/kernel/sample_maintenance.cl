@@ -37,7 +37,7 @@ __kernel void update_sample_quality_metrics(
 
   // Now update the arrays.
   contribution[get_global_id(0)] *= contribution_decay;
-  contribution[get_global_id(0)] += (1 - contribution_decay) * local_contribution;
+  contribution[get_global_id(0)] += (1 - contribution_decay) * local_contribution * normalization_factor;
   karma[get_global_id(0)] *= karma_decay;
   karma[get_global_id(0)] += (1 - karma_decay) * local_karma;
 }
