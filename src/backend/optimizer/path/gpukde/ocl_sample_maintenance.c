@@ -43,7 +43,7 @@ int kde_sample_maintenance_query_option;
 
 const double sample_match_learning_rate = 0.02f;
 
-cl_mem getBufferForNextMetric(ocl_estimator_t* estimator) {
+static cl_mem getBufferForNextMetric(ocl_estimator_t* estimator) {
   // Switch to the next sample maintenance metric.
   if (kde_sample_maintenance_track_impact &&
       estimator->last_optimized_sample_metric != IMPACT) {
@@ -363,7 +363,7 @@ void ocl_notifySampleMaintenanceOfSelectivity(
 
   // Schedule the kernel to update the quality factors
   cl_kernel kernel = ocl_getKernel(
-      "udate_sample_quality_metrics", estimator->nr_of_dimensions);
+      "update_sample_quality_metrics", estimator->nr_of_dimensions);
   ocl_context_t * ctxt = ocl_getContext();
   cl_int err = 0;
   err |= clSetKernelArg(
@@ -371,19 +371,19 @@ void ocl_notifySampleMaintenanceOfSelectivity(
   err |= clSetKernelArg(
       kernel, 1, sizeof(cl_mem), &(estimator->sample_karma_buffer));
   err |= clSetKernelArg(
-      kernel, 1, sizeof(cl_mem), &(estimator->sample_contribution_buffer));
+      kernel, 2, sizeof(cl_mem), &(estimator->sample_contribution_buffer));
   err |= clSetKernelArg(
-      kernel, 2, sizeof(unsigned int), &(estimator->rows_in_sample));
+      kernel, 3, sizeof(unsigned int), &(estimator->rows_in_sample));
   err |= clSetKernelArg(
-      kernel, 3, sizeof(kde_float_t), &(normalization_factor));
+      kernel, 4, sizeof(kde_float_t), &(normalization_factor));
   err |= clSetKernelArg(
-      kernel, 4, sizeof(double), &(estimator->last_selectivity));
+      kernel, 5, sizeof(double), &(estimator->last_selectivity));
   err |= clSetKernelArg(
-      kernel, 5, sizeof(double), &(actual_selectivity));
+      kernel, 6, sizeof(double), &(actual_selectivity));
   err |= clSetKernelArg(
-      kernel, 6, sizeof(double), &(kde_sample_maintenance_karma_decay));
+      kernel, 7, sizeof(double), &(kde_sample_maintenance_karma_decay));
   err |= clSetKernelArg(
-      kernel, 6, sizeof(double), &(kde_sample_maintenance_contribution_decay));
+      kernel, 8, sizeof(double), &(kde_sample_maintenance_contribution_decay));
   err |= clEnqueueNDRangeKernel(ctxt->queue, kernel, 1, NULL, &global_size,
 	                         NULL, 0, NULL, &quality_update_event);
 

@@ -814,11 +814,12 @@ void ocl_constructEstimator(
   }
   fprintf(stderr, "\n");
   free(bandwidth);
-  // Allocate a zero buffer to initialize karma and contribution.
-  kde_float_t* zero_buffer = (kde_float_t*) calloc(1,
-      sizeof(kde_float_t) * sample_size); // calloc zero-initializes.
+  // Allocate a buffer of ones to initialize karma and contribution.
+  kde_float_t* one_buffer = (kde_float_t*) malloc(
+      sizeof(kde_float_t) * sample_size);
   // Re-scale the data to unit variance.
   for ( j = 0; j < sample_size; ++j ) {
+    one_buffer[j] = 1.0f;
     for ( i = 0; i < dimensionality; ++i ) {
       host_buffer[j*dimensionality + i] *= estimator->scale_factors[i];
     }
@@ -841,14 +842,14 @@ void ocl_constructEstimator(
 	    0, NULL, NULL);
 	clEnqueueWriteBuffer(
 	    ctxt->queue, estimator->sample_karma_buffer, CL_TRUE, 0,
-	    sample_size * sizeof(kde_float_t), zero_buffer,
+	    sample_size * sizeof(kde_float_t), one_buffer,
 	    0, NULL, NULL);
   clEnqueueWriteBuffer(
       ctxt->queue, estimator->sample_contribution_buffer, CL_TRUE, 0,
-      sample_size * sizeof(kde_float_t), zero_buffer,
+      sample_size * sizeof(kde_float_t), one_buffer,
       0, NULL, NULL);
   free(host_buffer);
-  free(zero_buffer);
+  free(one_buffer);
     // Wait for the initialization to finish.
   clFinish(ocl_getContext()->queue);
 

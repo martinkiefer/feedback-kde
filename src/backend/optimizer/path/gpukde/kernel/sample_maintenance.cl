@@ -9,7 +9,7 @@
 #endif /* TYPE_DEFINED */
 
 // 
-__kernel void udate_sample_quality_metrics(
+__kernel void update_sample_quality_metrics(
     __global const T* local_results,
     __global T* karma,
     __global T* contribution,
