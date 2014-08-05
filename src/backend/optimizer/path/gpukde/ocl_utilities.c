@@ -317,7 +317,6 @@ cl_kernel ocl_getKernel(const char* kernel_name, int dimensions) {
 
 void ocl_dumpBufferToFile(const char* file, cl_mem buffer,
                           int dimensions, int items) {
-  if (!kde_debug) return;
 
   ocl_context_t* context = ocl_getContext();
   clFinish(context->queue);
@@ -333,7 +332,7 @@ void ocl_dumpBufferToFile(const char* file, cl_mem buffer,
   for (i=0; i<items; ++i) {
     fprintf(f, "%f", host_buffer[i*dimensions]);
     for (j=1; j<dimensions; ++j) {
-      fprintf(f, "; %f", host_buffer[i*dimensions + j]);
+      fprintf(f, "\t%f", host_buffer[i*dimensions + j]);
     }
     fprintf(f, "\n");
   }
