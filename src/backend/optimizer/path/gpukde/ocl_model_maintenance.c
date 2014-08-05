@@ -37,12 +37,16 @@ const double learning_rate = 0.01f;
 // # Code for adaptive bandwidth optimization (online learning).
 // ############################################################
 
-void ocl_notifyModelMaintenanceOfSelectivity(Oid relation, double selectivity) {
+void ocl_notifyModelMaintenanceOfSelectivity(
+    Oid relation, double selected, double allrows) {
+
   // Check if we have an estimator for this relation.
   ocl_estimator_t* estimator = ocl_getEstimator(relation);
   if (estimator == NULL) return;
   if (!estimator->open_estimation) return;  // No registered estimation.
 
+  double selectivity = selected / allrows;
+  estimator->rows_in_table = allrows;
   
   // Notify the sample maintenance of this observation so it can track the sample quality.
   ocl_notifySampleMaintenanceOfSelectivity(estimator, selectivity);
