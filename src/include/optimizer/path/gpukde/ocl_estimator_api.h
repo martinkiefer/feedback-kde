@@ -131,7 +131,8 @@ extern void ocl_notifySampleMaintenanceOfDeletion(Relation rel);
 /*
  * Propagate selectivity information to the model maintenance.
  */
-extern void ocl_notifyModelMaintenanceOfSelectivity(Oid rel, double selectivity);
+extern void ocl_notifyModelMaintenanceOfSelectivity(
+    Oid rel, double qualified, double allrows);
 
 
 /* Create a sample based on rejection/acceptance sampling

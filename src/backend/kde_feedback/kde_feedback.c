@@ -332,7 +332,7 @@ int kde_finish(PlanState *node){
 
 	    // Notify the model maintenance of this observation.
 	    ocl_notifyModelMaintenanceOfSelectivity(
-	        rte->relid, qual_tuples / all_tuples);
+	        rte->relid, qual_tuples, all_tuples);
 
 	    if (!kde_collect_feedback) return 1;
 
