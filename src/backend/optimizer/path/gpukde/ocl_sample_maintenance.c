@@ -84,14 +84,18 @@ static int getMinPenaltyIndex(
       ctxt->queue, min_idx, CL_TRUE, 0, sizeof(unsigned int),
       &index, 1, &event, NULL);
   clEnqueueReadBuffer(
-      ctxt->queue, min_val, CL_TRUE, 0, sizeof(unsigned int),
+      ctxt->queue, min_val, CL_TRUE, 0, sizeof(kde_float_t),
       &val, 1, &event, NULL);
 
   clReleaseEvent(event);
   clReleaseMemObject(min_idx);
   clReleaseMemObject(min_val);
-  
-  return val < 0.1 ? index : -1;
+
+  if (val < 0.1) {
+    return index;
+  } else {
+    return -1;
+  }
 }
 
 // Helper method to get the minimum index below a certain threshold.
@@ -136,7 +140,7 @@ void ocl_notifySampleMaintenanceOfInsertion(Relation rel, HeapTuple new_tuple) {
   // Check whether we have a table for this relation.
   ocl_estimator_t* estimator = ocl_getEstimator(rel->rd_id);
   ocl_context_t * ctxt = ocl_getContext();
-   
+
   if (estimator == NULL) return;
   estimator->rows_in_table++;
   if (! kde_sample_maintenance_insert_option) return;
@@ -147,15 +151,15 @@ void ocl_notifySampleMaintenanceOfInsertion(Relation rel, HeapTuple new_tuple) {
     insert_position = estimator->rows_in_sample++;
   } else if (kde_sample_maintenance_insert_option == RESERVOIR) {
     // The sample is full, use reservoir sampling.
-    double rnd = (((double) random()) / ((double) MAX_RANDOM_VALUE));
-    if (rnd > 1.0/(double) estimator->rows_in_table) return;
-    insert_position = random() % estimator->rows_in_sample;
+    unsigned int rnd = random() % estimator->rows_in_table;
+    if (rnd >= estimator->rows_in_sample) return;
+    insert_position = rnd;
   } else if(kde_sample_maintenance_insert_option == RANDOM) {
     //TODO: This is not the best idea.
     //Think of something more flexible and clever.
     // The sample is full, use random sampling
-    double rnd = (((double) random()) / ((double) MAX_RANDOM_VALUE));
-    if (rnd > 1/(double)estimator->rows_in_sample) return;
+    unsigned int rnd = random() % estimator->rows_in_table;
+    if (rnd > estimator->rows_in_sample) return;
     insert_position = getMinPenaltyIndex(ctxt, estimator);
   }
 
@@ -388,8 +392,9 @@ void ocl_notifySampleMaintenanceOfSelectivity(
       kernel, 7, sizeof(double), &(kde_sample_maintenance_karma_decay));
   err |= clSetKernelArg(
       kernel, 8, sizeof(double), &(kde_sample_maintenance_contribution_decay));
-  err |= clEnqueueNDRangeKernel(ctxt->queue, kernel, 1, NULL, &global_size,
-	                         NULL, 0, NULL, &quality_update_event);
+  err |= clEnqueueNDRangeKernel(
+      ctxt->queue, kernel, 1, NULL, &global_size,
+      NULL, 0, NULL, &quality_update_event);
 
   Assert(err == 0);
 
@@ -430,17 +435,19 @@ void ocl_notifySampleMaintenanceOfSelectivity(
   } else if (kde_sample_maintenance_query_option == PERIODIC &&
       estimator->nr_of_estimations % kde_sample_maintenance_period == 0 ){
     kde_float_t* item;
-    
+
     HeapTuple sample_point;
     double total_rows;
     
-    Relation onerel = try_relation_open(estimator->table, ShareUpdateExclusiveLock); 
-    int insert_position = getMinPenaltyIndex(ctxt,estimator);
+    int insert_position = getMinPenaltyIndex(ctxt, estimator);
     if (insert_position >= 0) {
-      if (ocl_isSafeToSample(onerel,(double) estimator->rows_in_table)) {
+      Relation onerel = try_relation_open(
+          estimator->table, ShareUpdateExclusiveLock);
+      // This often prevents Postgres from sampling.
+      /*if (ocl_isSafeToSample(onerel,(double) estimator->rows_in_table)) {
         relation_close(onerel, ShareUpdateExclusiveLock);
         return;
-      }
+      }*/
       item = palloc(ocl_sizeOfSampleItem(estimator));
       ocl_createSample(onerel,&sample_point,&total_rows,1);
       ocl_extractSampleTuple(estimator, onerel, sample_point,item);
@@ -449,6 +456,6 @@ void ocl_notifySampleMaintenanceOfSelectivity(
       pfree(item);
       relation_close(onerel, ShareUpdateExclusiveLock);
     }
-  } 
+  }
 }
 #endif
