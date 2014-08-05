@@ -916,14 +916,14 @@ void ocl_pushEntryToSampleBufer(ocl_estimator_t* estimator, int position,
   kde_float_t one = 1.0;
   size_t transfer_size = ocl_sizeOfSampleItem(estimator);
   size_t offset = position * transfer_size;
-  clEnqueueWriteBuffer(
+  cl_int err = clEnqueueWriteBuffer(
       context->queue, estimator->sample_buffer, CL_FALSE,
       offset, transfer_size, data_item, 0, NULL, NULL);
   // Initialize the metrics (both to one, so newly sampled items are not immediately replaced).
-  clEnqueueWriteBuffer(
+  err |= clEnqueueWriteBuffer(
       context->queue, estimator->sample_karma_buffer, CL_FALSE,
       position*sizeof(kde_float_t), sizeof(kde_float_t), &one, 0, NULL, NULL);
-  clEnqueueWriteBuffer(
+  err |= clEnqueueWriteBuffer(
       context->queue, estimator->sample_contribution_buffer, CL_FALSE,
       position*sizeof(kde_float_t), sizeof(kde_float_t), &one, 0, NULL, NULL);
   clFinish(context->queue);
