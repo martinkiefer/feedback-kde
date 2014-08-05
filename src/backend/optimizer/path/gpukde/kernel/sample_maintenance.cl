@@ -33,7 +33,12 @@ __kernel void update_sample_quality_metrics(
   // Now compute the karma, we use the followng, very simple approach:
   //  The karma is -1 if improvement < 0
   //  The karma is +1 if improvement > 0
-  double local_karma = improvement < 0 ? -1 : 1;
+  double local_karma;
+  if (actual_selectivity == 0 && local_contribution > 0.001) {
+    local_karma = -1;
+  } else {
+    local_karma = actual_selectivity == 0 && fabs(improvement) < 0.0005 ? 0 : improvement < 0 ? -1 : 1;
+  }
 
   // Now update the arrays.
   contribution[get_global_id(0)] *= contribution_decay;
