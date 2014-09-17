@@ -15,6 +15,11 @@
 
 #ifdef USE_OPENCL
 
+typedef enum ocl_estimator_quality_metric {
+  IMPACT = 0,
+  KARMA = 1
+} ocl_estimator_quality_metric_t;
+
 /*
  * Definition of a constructed KDE estimator.
  */
@@ -34,6 +39,7 @@ typedef struct ocl_estimator {
   cl_mem sample_buffer;           // Buffer that stores the data sample.
   cl_mem sample_karma_buffer;     // Buffer to track the karma of the sample points.
   cl_mem sample_contribution_buffer; // Buffer to track the total probability contributions for the sample points.
+  ocl_estimator_quality_metric_t last_optimized_sample_metric;
   /* Fields for tracking mini-batch updates to the bandwidth. */
   cl_mem gradient_accumulator;
   cl_mem squared_gradient_accumulator;

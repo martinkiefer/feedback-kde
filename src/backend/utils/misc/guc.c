@@ -164,6 +164,10 @@ extern double kde_sample_maintenance_contribution_decay;
 extern int kde_sample_maintenance_period;
 /* Determines the maximum number of buckets in the stholes histogram */
 extern int stholes_hole_limit;
+/* Determines whether we use impact tracking to remove sample points */
+extern bool kde_sample_maintenance_track_impact;
+/* Determines whether we use karma tracking to remove sample points */
+extern bool kde_sample_maintenance_track_karma;
 /* Determines the error metric that is used to optimize the bandwidth. */
 static const struct config_enum_entry kde_error_metric_options[] = {
   {"Absolute", ABSOLUTE, false},
@@ -1589,6 +1593,27 @@ static struct config_bool ConfigureNamesBool[] =
 		true,
 		NULL, assign_ocl_use_gpu, NULL
 	},
+	{
+	  {"kde_sample_maintenance_track_impact", PGC_USERSET, DEVELOPER_OPTIONS,
+	    gettext_noop("Use impact tracking to maintain the sample."),
+	    NULL,
+	    GUC_NOT_IN_SAMPLE
+	  },
+	  &kde_sample_maintenance_track_impact,
+	  false,
+	  NULL, NULL, NULL
+  },
+	{
+	  {"kde_sample_maintenance_track_karma", PGC_USERSET, DEVELOPER_OPTIONS,
+	    gettext_noop("Use karma tracking to maintain the sample."),
+	    NULL,
+	    GUC_NOT_IN_SAMPLE
+	  },
+	  &kde_sample_maintenance_track_karma,
+	  false,
+	  NULL, NULL, NULL
+	},
+
 
 #endif
 
@@ -2760,7 +2785,7 @@ static struct config_real ConfigureNamesReal[] =
 	    GUC_NOT_IN_SAMPLE
 	  },
 	  &kde_sample_maintenance_karma_decay,
-	  1.0, 0.0, 1.0,
+	  0.8, 0.0, 1.0,
 	  NULL, NULL, NULL
 	},
 	{
@@ -2770,7 +2795,7 @@ static struct config_real ConfigureNamesReal[] =
 	    GUC_NOT_IN_SAMPLE
 	  },
 	  &kde_sample_maintenance_contribution_decay,
-	  1.0, 0.0, 1.0,
+	  0.8, 0.0, 1.0,
 	  NULL, NULL, NULL
 	},
 #endif /* USE_OPENCL */

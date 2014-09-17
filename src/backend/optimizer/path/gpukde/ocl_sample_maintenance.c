@@ -29,21 +29,43 @@
 #ifdef USE_OPENCL
 
 extern ocl_kernel_type_t global_kernel_type;
+
 // GUC configuration variable.
 double kde_sample_maintenance_threshold;
 double kde_sample_maintenance_karma_decay;
 double kde_sample_maintenance_contribution_decay;
+
+bool kde_sample_maintenance_track_impact;
+bool kde_sample_maintenance_track_karma;
 int kde_sample_maintenance_period;
 int kde_sample_maintenance_insert_option;
 int kde_sample_maintenance_query_option;
 
 const double sample_match_learning_rate = 0.02f;
 
+static cl_mem getBufferForNextMetric(ocl_estimator_t* estimator) {
+  // Switch to the next sample maintenance metric.
+  if (kde_sample_maintenance_track_impact &&
+      estimator->last_optimized_sample_metric != IMPACT) {
+    estimator->last_optimized_sample_metric = IMPACT;
+  } else if (kde_sample_maintenance_track_karma &&
+      estimator->last_optimized_sample_metric != KARMA) {
+    estimator->last_optimized_sample_metric = KARMA;
+  }
+  // Now return the buffer for the chosen metric.
+  if (estimator->last_optimized_sample_metric == IMPACT) {
+    return estimator->sample_contribution_buffer;
+  } else if (estimator->last_optimized_sample_metric == KARMA) {
+    return estimator->sample_karma_buffer;
+  }
+}
+
 //Convenience method for retrieving the index of the smallest element
-static unsigned int getMinPenaltyIndex(
+static int getMinPenaltyIndex(
     ocl_context_t*  ctxt, ocl_estimator_t* estimator){
   cl_event event;
-  unsigned int index = 0;
+  unsigned int index;
+  kde_float_t val;
   
   // Allocate device memory for indices and values.
   cl_mem min_idx = clCreateBuffer(
@@ -53,18 +75,27 @@ static unsigned int getMinPenaltyIndex(
           ctxt->context, CL_MEM_READ_WRITE,
           sizeof(kde_float_t), NULL, NULL);
   
+  // Now fetch the minimum penalty.
+  cl_mem target_metric_buffer = getBufferForNextMetric(estimator);
   event = minOfArray(
-      estimator->sample_karma_buffer, estimator->rows_in_sample,
+      target_metric_buffer, estimator->rows_in_sample,
       min_val, min_idx, 0, NULL);
   clEnqueueReadBuffer(
       ctxt->queue, min_idx, CL_TRUE, 0, sizeof(unsigned int),
       &index, 1, &event, NULL);
+  clEnqueueReadBuffer(
+      ctxt->queue, min_val, CL_TRUE, 0, sizeof(kde_float_t),
+      &val, 1, &event, NULL);
 
-  clReleaseEvent(event);  
+  clReleaseEvent(event);
   clReleaseMemObject(min_idx);
   clReleaseMemObject(min_val);
-  
-  return index;
+
+  if (val < 0.1) {
+    return index;
+  } else {
+    return -1;
+  }
 }
 
 // Helper method to get the minimum index below a certain threshold.
@@ -109,7 +140,7 @@ void ocl_notifySampleMaintenanceOfInsertion(Relation rel, HeapTuple new_tuple) {
   // Check whether we have a table for this relation.
   ocl_estimator_t* estimator = ocl_getEstimator(rel->rd_id);
   ocl_context_t * ctxt = ocl_getContext();
-   
+
   if (estimator == NULL) return;
   estimator->rows_in_table++;
   if (! kde_sample_maintenance_insert_option) return;
@@ -120,15 +151,15 @@ void ocl_notifySampleMaintenanceOfInsertion(Relation rel, HeapTuple new_tuple) {
     insert_position = estimator->rows_in_sample++;
   } else if (kde_sample_maintenance_insert_option == RESERVOIR) {
     // The sample is full, use reservoir sampling.
-    double rnd = (((double) random()) / ((double) MAX_RANDOM_VALUE));
-    if (rnd > 1/(double) estimator->rows_in_table) return;
-    insert_position = random() % estimator->rows_in_sample;
+    unsigned int rnd = random() % estimator->rows_in_table;
+    if (rnd >= estimator->rows_in_sample) return;
+    insert_position = rnd;
   } else if(kde_sample_maintenance_insert_option == RANDOM) {
     //TODO: This is not the best idea.
     //Think of something more flexible and clever.
     // The sample is full, use random sampling
-    double rnd = (((double) random()) / ((double) MAX_RANDOM_VALUE));
-    if (rnd > 1/(double)estimator->rows_in_sample) return;
+    unsigned int rnd = random() % estimator->rows_in_table;
+    if (rnd > estimator->rows_in_sample) return;
     insert_position = getMinPenaltyIndex(ctxt, estimator);
   }
 
@@ -340,7 +371,7 @@ void ocl_notifySampleMaintenanceOfSelectivity(
 
   // Schedule the kernel to update the quality factors
   cl_kernel kernel = ocl_getKernel(
-      "udate_sample_quality_metrics", estimator->nr_of_dimensions);
+      "update_sample_quality_metrics", estimator->nr_of_dimensions);
   ocl_context_t * ctxt = ocl_getContext();
   cl_int err = 0;
   err |= clSetKernelArg(
@@ -348,21 +379,22 @@ void ocl_notifySampleMaintenanceOfSelectivity(
   err |= clSetKernelArg(
       kernel, 1, sizeof(cl_mem), &(estimator->sample_karma_buffer));
   err |= clSetKernelArg(
-      kernel, 1, sizeof(cl_mem), &(estimator->sample_contribution_buffer));
+      kernel, 2, sizeof(cl_mem), &(estimator->sample_contribution_buffer));
   err |= clSetKernelArg(
-      kernel, 2, sizeof(unsigned int), &(estimator->rows_in_sample));
+      kernel, 3, sizeof(unsigned int), &(estimator->rows_in_sample));
   err |= clSetKernelArg(
-      kernel, 3, sizeof(kde_float_t), &(normalization_factor));
+      kernel, 4, sizeof(kde_float_t), &(normalization_factor));
   err |= clSetKernelArg(
-      kernel, 4, sizeof(double), &(estimator->last_selectivity));
+      kernel, 5, sizeof(double), &(estimator->last_selectivity));
   err |= clSetKernelArg(
-      kernel, 5, sizeof(double), &(actual_selectivity));
+      kernel, 6, sizeof(double), &(actual_selectivity));
   err |= clSetKernelArg(
-      kernel, 6, sizeof(double), &(kde_sample_maintenance_karma_decay));
+      kernel, 7, sizeof(double), &(kde_sample_maintenance_karma_decay));
   err |= clSetKernelArg(
-      kernel, 6, sizeof(double), &(kde_sample_maintenance_contribution_decay));
-  err |= clEnqueueNDRangeKernel(ctxt->queue, kernel, 1, NULL, &global_size,
-	                         NULL, 0, NULL, &quality_update_event);
+      kernel, 8, sizeof(double), &(kde_sample_maintenance_contribution_decay));
+  err |= clEnqueueNDRangeKernel(
+      ctxt->queue, kernel, 1, NULL, &global_size,
+      NULL, 0, NULL, &quality_update_event);
 
   Assert(err == 0);
 
@@ -403,25 +435,27 @@ void ocl_notifySampleMaintenanceOfSelectivity(
   } else if (kde_sample_maintenance_query_option == PERIODIC &&
       estimator->nr_of_estimations % kde_sample_maintenance_period == 0 ){
     kde_float_t* item;
-    
+
     HeapTuple sample_point;
     double total_rows;
     
-    Relation onerel = try_relation_open(estimator->table, ShareUpdateExclusiveLock); 
-    unsigned insert_position = getMinPenaltyIndex(ctxt,estimator);
-    
-    if (ocl_isSafeToSample(onerel,(double) estimator->rows_in_table)) {
+    int insert_position = getMinPenaltyIndex(ctxt, estimator);
+    if (insert_position >= 0) {
+      Relation onerel = try_relation_open(
+          estimator->table, ShareUpdateExclusiveLock);
+      // This often prevents Postgres from sampling.
+      /*if (ocl_isSafeToSample(onerel,(double) estimator->rows_in_table)) {
         relation_close(onerel, ShareUpdateExclusiveLock);
         return;
+      }*/
+      item = palloc(ocl_sizeOfSampleItem(estimator));
+      ocl_createSample(onerel,&sample_point,&total_rows,1);
+      ocl_extractSampleTuple(estimator, onerel, sample_point,item);
+      ocl_pushEntryToSampleBufer(estimator, insert_position, item);
+      heap_freetuple(sample_point);
+      pfree(item);
+      relation_close(onerel, ShareUpdateExclusiveLock);
     }
-    item = palloc(ocl_sizeOfSampleItem(estimator));
-    ocl_createSample(onerel,&sample_point,&total_rows,1);
-    ocl_extractSampleTuple(estimator, onerel, sample_point,item);
-    ocl_pushEntryToSampleBufer(estimator, insert_position, item);
-    
-    heap_freetuple(sample_point);
-    pfree(item);
-    relation_close(onerel, ShareUpdateExclusiveLock);
-  } 
+  }
 }
 #endif
