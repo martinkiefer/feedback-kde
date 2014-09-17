@@ -3,6 +3,7 @@
 # Postgres specific variables:
 PSQL="psql"
 PGDATABASE="mheimel"
+PDATAFOLDER="/home/mheimel/postgres-kde/data"
 
 # MonetDB specific variables:
 MONETDATABASE=""
