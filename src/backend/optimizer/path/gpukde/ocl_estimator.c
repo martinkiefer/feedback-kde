@@ -886,16 +886,16 @@ bool ocl_useKDE(void) {
 
 ocl_estimator_t* ocl_getEstimator(Oid relation) {
   if (!ocl_useKDE()){
-	return NULL;
+    return NULL;
   }
   ocl_estimator_registry_t* registry = ocl_getRegistry();
   if (registry == NULL){
-	return NULL;
+    return NULL;
   }
   // Check the bitmap whether we have an estimator for this relation.
   if (!(registry->estimator_bitmap[relation / 8]
           & (0x1 << (relation % 8)))){
-	return NULL;
+    return NULL;
   }
   return DIRECTORY_FETCH(registry->estimator_directory, &relation,
                          ocl_estimator_t);
@@ -947,6 +947,107 @@ void ocl_extractSampleTuple(ocl_estimator_t* estimator, Relation rel,
       target[wpos] = DatumGetFloat8(heap_getattr(tuple, colno, rel->rd_att,
                                                  &isNull));
   }
+}
+
+/* Helper function to interact with the sample using stored procedures */
+Datum ocl_dumpKDESample(PG_FUNCTION_ARGS) {
+  Oid table_oid = PG_GETARG_OID(0);
+  (void)table_oid;
+  char *file_name = text_to_cstring(PG_GETARG_TEXT_PP(1));
+  (void)file_name;
+  // Try to fetch the estimator:
+  ocl_estimator_t* estimator = ocl_getEstimator(table_oid);
+  if (estimator == NULL) {
+    ereport(ERROR,
+            (errcode(ERRCODE_DATATYPE_MISMATCH),
+             errmsg("no KDE estimator exists for table %i", table_oid)));
+    PG_RETURN_BOOL(false);
+  }
+  // Try to open the file:
+  FILE* fout = fopen(file_name, "w");
+  if (fout == NULL) {
+    ereport(ERROR,
+            (errcode(ERRCODE_DATATYPE_MISMATCH),
+             errmsg("could not open file %s", file_name)));
+    PG_RETURN_BOOL(false);
+  }
+  // Fetch the sample buffer.
+  kde_float_t* sample_buffer = malloc(
+      estimator->rows_in_sample * ocl_sizeOfSampleItem(estimator));
+  ocl_context_t* context = ocl_getContext();
+  clEnqueueReadBuffer(
+      context->queue, estimator->sample_buffer, CL_TRUE, 0,
+      estimator->rows_in_sample * ocl_sizeOfSampleItem(estimator),
+      sample_buffer, 0, NULL, NULL);
+  // Now print all samples.
+  int i=0;
+  for (; i<estimator->rows_in_sample; ++i) {
+    // Fetch the first data item.
+    kde_float_t elem = sample_buffer[i*estimator->nr_of_dimensions];
+    fprintf(fout, "%f", elem);
+    int j=1;
+    for (; j<estimator->nr_of_dimensions; ++j) {
+      elem = sample_buffer[i*estimator->nr_of_dimensions + j];
+      fprintf(fout, ",%f", elem);
+    }
+    fprintf(fout, "\n");
+  }
+  fclose(fout);
+  free(sample_buffer);
+  PG_RETURN_BOOL(true);
+}
+
+Datum ocl_setKDEBandwidth(PG_FUNCTION_ARGS) {
+  Oid table_oid = PG_GETARG_OID(0);
+  ArrayType *provided_bandwidth = PG_GETARG_ARRAYTYPE_P(1);
+  Oid element_type = ARR_ELEMTYPE(provided_bandwidth);
+  // Ensure that the bandwidth is passed in a valid type:
+  if (element_type != NUMERICOID) {
+    ereport(ERROR,
+            (errcode(ERRCODE_DATATYPE_MISMATCH),
+             errmsg("bandwidth array elements must be numeric")));
+    PG_RETURN_BOOL(false);
+  }
+  // Try to fetch the estimator:
+  ocl_estimator_t* estimator = ocl_getEstimator(table_oid);
+  if (estimator == NULL) {
+    ereport(ERROR,
+            (errcode(ERRCODE_DATATYPE_MISMATCH),
+             errmsg("no KDE estimator exists for table %i", table_oid)));
+    PG_RETURN_BOOL(false);
+  }
+  // Check that the bandwidth array has the correct size.
+  int items_in_array = ArrayGetNItems(
+      ARR_NDIM(provided_bandwidth), ARR_DIMS(provided_bandwidth));
+  if (items_in_array != estimator->nr_of_dimensions) {
+    ereport(ERROR,
+            (errcode(ERRCODE_DATATYPE_MISMATCH),
+             errmsg("expected bandwidth vector of size %i",
+                    estimator->nr_of_dimensions)));
+    PG_RETURN_BOOL(false);
+  }
+  // Ok, extract the bandwidths and build a buffer to store them.
+  kde_float_t* new_bandwidth = malloc(
+      sizeof(kde_float_t) * estimator->nr_of_dimensions);
+  Datum *bandwidth_datum_array;
+  deconstruct_array(
+      provided_bandwidth, NUMERICOID, -1, false, 'i',
+      &bandwidth_datum_array, NULL, &items_in_array);
+  int i = 0;
+  for (; i<items_in_array; ++i) {
+    new_bandwidth[i] = DatumGetFloat8(
+        DirectFunctionCall1(
+            numeric_float8_no_overflow, bandwidth_datum_array[i]));
+  }
+  // Transfer the bandwidth to the estimator.
+  ocl_context_t* context = ocl_getContext();
+  clEnqueueWriteBuffer(
+      context->queue, estimator->bandwidth_buffer, CL_TRUE, 0,
+      sizeof(kde_float_t) * estimator->nr_of_dimensions,
+      new_bandwidth, 0, NULL, NULL);
+  // We are done, clean up.
+  free(new_bandwidth);
+  PG_RETURN_BOOL(true);
 }
 
 #endif /* USE_OPENCL */

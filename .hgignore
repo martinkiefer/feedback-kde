@@ -31,3 +31,7 @@ pgsql.sln
 pgsql.sln.cache
 config.log
 config.status
+src/backend/catalog/postgres.bki
+src/backend/catalog/postgres.description
+src/backend/utils/fmgroids.h
+src/backend/utils/fmgrtab.c
