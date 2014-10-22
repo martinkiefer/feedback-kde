@@ -39,3 +39,5 @@ src/backend/parser/gram.c
 src/backend/parser/gram.h
 src/interfaces/ecpg/preproc/preproc.c
 src/interfaces/ecpg/preproc/preproc.h
+src/pl/plpgsql/src/pl_gram.c
+src/pl/plpgsql/src/pl_gram.h
