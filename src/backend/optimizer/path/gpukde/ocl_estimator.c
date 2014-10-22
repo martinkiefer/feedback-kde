@@ -83,23 +83,25 @@ static double rangeKDE(ocl_context_t* ctxt, ocl_estimator_t* estimator) {
   size_t global_size = estimator->rows_in_sample;
   cl_event kde_event;
   if (estimator->online_learning_event) {
-	  clEnqueueNDRangeKernel(ctxt->queue, kde_kernel, 1, NULL, &global_size,
-	                         NULL, 1, &(estimator->online_learning_event),
-                           &kde_event);
-	  clReleaseEvent(estimator->online_learning_event);
-	  estimator->online_learning_event = NULL;
+    clEnqueueNDRangeKernel(
+        ctxt->queue, kde_kernel, 1, NULL, &global_size,
+        NULL, 1, &(estimator->online_learning_event), &kde_event);
+    clReleaseEvent(estimator->online_learning_event);
+    estimator->online_learning_event = NULL;
   } else {
-	  clEnqueueNDRangeKernel(ctxt->queue, kde_kernel, 1, NULL, &global_size,
-	                         NULL, 0, NULL, &kde_event);
+    clEnqueueNDRangeKernel(
+        ctxt->queue, kde_kernel, 1, NULL, &global_size,
+        NULL, 0, NULL, &kde_event);
   }
   cl_mem result_buffer = clCreateBuffer(
 	    ctxt->context, CL_MEM_READ_WRITE, sizeof(kde_float_t), NULL, NULL);
   cl_event sum_event = sumOfArray(
-	    ctxt->result_buffer, estimator->rows_in_sample, result_buffer, 0,
-	    kde_event);
+      ctxt->result_buffer, estimator->rows_in_sample, result_buffer, 0,
+      kde_event);
   kde_float_t result;
-  clEnqueueReadBuffer(ctxt->queue, result_buffer, CL_TRUE, 0,
-	                    sizeof(kde_float_t), &result, 1, &sum_event, NULL);
+  clEnqueueReadBuffer(
+      ctxt->queue, result_buffer, CL_TRUE, 0,
+      sizeof(kde_float_t), &result, 1, &sum_event, NULL);
   result *= normalization_factor / estimator->rows_in_sample;
   clReleaseMemObject(result_buffer);
   clReleaseEvent(kde_event);
@@ -529,35 +531,35 @@ ocl_cleanUpRegistry(int code, Datum arg) {
  * Initialize the registry.
  */
 static void ocl_initializeRegistry() {
-	if (registry) return; // Don't reintialize.
+  if (registry) return; // Don't reintialize.
   if (IsBootstrapProcessingMode()) return; // Don't initialize during bootstrap.
-  if (ocl_getContext() == NULL) return; // Don't run if OpenCl is not initialized.
+  if (ocl_getContext() == NULL) return; // Don't run without OpenCl.
 
-	// Allocate a new descriptor.
-	registry = calloc(1, sizeof(ocl_estimator_registry_t));
-	registry->estimator_bitmap = calloc(1, 512*1024); // Enough bits for ~4M tables.
-	registry->estimator_directory = directory_init(sizeof(Oid), 20);
+  // Allocate a new descriptor.
+  registry = calloc(1, sizeof(ocl_estimator_registry_t));
+  registry->estimator_bitmap = calloc(1, 512 * 1024); // Enough for ~4M tables.
+  registry->estimator_directory = directory_init(sizeof(Oid), 20);
 
-	// Now open the KDE estimator table, read in all stored estimators and
-	// register their descriptors.
-	Relation kdeRel = heap_open(KdeModelRelationID, RowExclusiveLock);
-	HeapScanDesc scan = heap_beginscan(kdeRel, SnapshotNow, 0, NULL);
-	HeapTuple tuple;
-	while ((tuple = heap_getnext(scan, ForwardScanDirection)) != NULL) {  // Compute the normalization factor.
-	  ocl_estimator_t* estimator = ocl_buildEstimatorFromCatalogEntry(
-	      kdeRel, tuple);
+  // Now open the KDE estimator table, read in all stored estimators and
+  // register their descriptors.
+  Relation kdeRel = heap_open(KdeModelRelationID, RowExclusiveLock);
+  HeapScanDesc scan = heap_beginscan(kdeRel, SnapshotNow, 0, NULL);
+  HeapTuple tuple;
+  while ((tuple = heap_getnext(scan, ForwardScanDirection)) != NULL) { // Compute the normalization factor.
+    ocl_estimator_t* estimator = ocl_buildEstimatorFromCatalogEntry(
+        kdeRel, tuple);
     if (estimator == NULL) continue;
     // Register the estimator.
-    directory_insert(registry->estimator_directory, &(estimator->table),
-                     estimator);
-	  registry->estimator_bitmap[estimator->table / 8]
-	                             |= (0x1 << estimator->table % 8);
-	}
-	heap_endscan(scan);
-	heap_close(kdeRel, RowExclusiveLock);
-	// Finally, register a cleanup function to ensure we write any estimator
-	// changes back to the catalogue.
-	on_shmem_exit(ocl_cleanUpRegistry, 0);
+    directory_insert(
+        registry->estimator_directory, &(estimator->table), estimator);
+    registry->estimator_bitmap[estimator->table / 8] |=
+        (0x1 << estimator->table % 8);
+  }
+  heap_endscan(scan);
+  heap_close(kdeRel, RowExclusiveLock);
+  // Finally, register a cleanup function to ensure we write any estimator
+  // changes back to the catalogue.
+  on_shmem_exit(ocl_cleanUpRegistry, 0);
 }
 
 // Helper function to fetch (and initialize if it does not exist) the registry
@@ -569,144 +571,156 @@ static ocl_estimator_registry_t* ocl_getRegistry(void) {
 
 /* Custom comparator for a range request */
 static int compareRange(const void* a, const void* b) {
-	if ( *(AttrNumber*)a > *(AttrNumber*)b )
-		return 1;
-	else if ( *(AttrNumber*)a == *(AttrNumber*)b )
-		return 0;
-	else
-		return -1;
+  if (*(AttrNumber*) a > *(AttrNumber*) b) {
+    return 1;
+  } else if (*(AttrNumber*) a == *(AttrNumber*) b) {
+    return 0;
+  } else {
+    return -1;
+  }
 }
 
 // Helper function to print a request to stderr.
 static void ocl_dumpRequest(const ocl_estimator_request_t* request) {
-	unsigned int i;
-	if (!request) return;
-	fprintf(stderr, "Received estimation request for table: %i:\n",
-	        request->table_identifier);
-	for (i=0; i<request->range_count; ++i)
-		fprintf(stderr, "\tColumn %i in: [%f , %f]\n", request->ranges[i].colno,
-		        request->ranges[i].lower_bound, request->ranges[i].upper_bound);
+  unsigned int i;
+  if (!request)
+    return;
+  fprintf(
+      stderr, "Received estimation request for table: %i:\n",
+      request->table_identifier);
+  for (i = 0; i < request->range_count; ++i)
+    fprintf(
+        stderr, "\tColumn %i in: [%f , %f]\n", request->ranges[i].colno,
+        request->ranges[i].lower_bound, request->ranges[i].upper_bound);
 }
 
-int ocl_updateRequest(ocl_estimator_request_t* request,
-		AttrNumber colno, double* lower_bound, bool lower_included,
-		double* upper_bound, bool upper_included) {
-	/*
-	 * First, make sure to find the range entry for the given column.
-	 * If no column exists, insert a new one.
-	 */
-	ocl_colrange_t* column_range = NULL;
-	if (request->ranges == NULL) {
-		/* We have added no ranges so far. Add this range as the first entry. */
-		request->ranges = (ocl_colrange_t*)malloc(sizeof(ocl_colrange_t));
-		request->range_count++;
-		request->ranges->colno = colno;
-		request->ranges->lower_bound = -1.0 * INFINITY;
-		request->ranges->upper_bound = INFINITY;
-		column_range = request->ranges;
-	} else {
-		/* Check whether we already have a range for this column */
-		column_range = bsearch(
-				&colno, request->ranges, request->range_count,
-				sizeof(ocl_colrange_t), &compareRange);
-		if (column_range == NULL) {
-			/* We have to add the column. Add storage for a new value */
-			request->range_count++;
-			request->ranges = (ocl_colrange_t*)realloc(
-			    request->ranges, sizeof(ocl_colrange_t)*(request->range_count));
-			/* Initialize the new column range */
-			column_range = &(request->ranges[request->range_count-1]);
-			column_range->colno = colno;
-			column_range->lower_bound = -1.0 * INFINITY;
-			column_range->upper_bound = INFINITY;
-			/* Now we have to re-sort the array */
-			qsort(request->ranges, request->range_count,
-			      sizeof(ocl_colrange_t), &compareRange);
-			/* Ok, we inserted the value. Use bsearch again to get the final position of our newly inserted range. */
-			column_range = bsearch(
-							&colno, request->ranges, request->range_count,
-							sizeof(ocl_colrange_t), &compareRange);
-		}
-	}
-	/* Now update the found range entry with the new information */
-	if (lower_bound) {
-		if (column_range->lower_bound <= *lower_bound) {
-			column_range->lower_bound = *lower_bound;
-		}
-	}
-	if (upper_bound) {
-		if (column_range->upper_bound >= *upper_bound) {
-			column_range->upper_bound = *upper_bound;
-		}
-	}
-	column_range->lower_included = lower_included;
-	column_range->upper_included = upper_included;
-	return 1;
+int ocl_updateRequest(
+    ocl_estimator_request_t* request, AttrNumber colno,
+    double* lower_bound, bool lower_included, double* upper_bound,
+    bool upper_included) {
+  /*
+   * First, make sure to find the range entry for the given column.
+   * If no column exists, insert a new one.
+   */
+  ocl_colrange_t* column_range = NULL;
+  if (request->ranges == NULL) {
+    /* We have added no ranges so far. Add this range as the first entry. */
+    request->ranges = (ocl_colrange_t*) malloc(sizeof(ocl_colrange_t));
+    request->range_count++;
+    request->ranges->colno = colno;
+    request->ranges->lower_bound = -1.0 * INFINITY;
+    request->ranges->upper_bound = INFINITY;
+    column_range = request->ranges;
+  } else {
+    /* Check whether we already have a range for this column */
+    column_range = bsearch(&colno, request->ranges, request->range_count,
+        sizeof(ocl_colrange_t), &compareRange);
+    if (column_range == NULL) {
+      /* We have to add the column. Add storage for a new value */
+      request->range_count++;
+      request->ranges = (ocl_colrange_t*) realloc(request->ranges,
+          sizeof(ocl_colrange_t) * (request->range_count));
+      /* Initialize the new column range */
+      column_range = &(request->ranges[request->range_count - 1]);
+      column_range->colno = colno;
+      column_range->lower_bound = -1.0 * INFINITY;
+      column_range->upper_bound = INFINITY;
+      /* Now we have to re-sort the array */
+      qsort(request->ranges, request->range_count, sizeof(ocl_colrange_t),
+          &compareRange);
+      /* Ok, we inserted the value. Use bsearch again to get the final position
+       * of our newly inserted range. */
+      column_range = bsearch(&colno, request->ranges, request->range_count,
+          sizeof(ocl_colrange_t), &compareRange);
+    }
+  }
+  /* Now update the found range entry with the new information */
+  if (lower_bound) {
+    if (column_range->lower_bound <= *lower_bound) {
+      column_range->lower_bound = *lower_bound;
+    }
+  }
+  if (upper_bound) {
+    if (column_range->upper_bound >= *upper_bound) {
+      column_range->upper_bound = *upper_bound;
+    }
+  }
+  column_range->lower_included = lower_included;
+  column_range->upper_included = upper_included;
+  return 1;
 }
 
 int ocl_estimateSelectivity(const ocl_estimator_request_t* request,
-		Selectivity* selectivity) {
-	struct timeval start; gettimeofday(&start, NULL); 
-	unsigned int i;
-	// Fetch the OpenCL context, initializing it if requested.
-	ocl_context_t* ctxt = ocl_getContext();
-	if (ctxt == NULL)	return 0;
-	// Make sure that the registry is initialized
-	if (registry == NULL)	ocl_initializeRegistry();
-	// Check the registry, whether we have an estimator for the requested table.
-	if (!(registry->estimator_bitmap[request->table_identifier / 8]
-	                                 & (0x1 << request->table_identifier % 8)))
-	  return 0;
-	ocl_estimator_t* estimator = DIRECTORY_FETCH(
-	    registry->estimator_directory, &(request->table_identifier),
-	    ocl_estimator_t);
-	if (estimator == NULL) return 0;
-	// Check if the request can potentially be answered by the estimator:
-	if (request->range_count > estimator->nr_of_dimensions) return 0;
-	// Now check if all columns in the request are covered by the estimator:
-	int request_columns = 0;
-	for (i = 0; i < request->range_count; ++i) {
-	  request_columns |= 0x1 << request->ranges[i].colno;
-	}
-	if ((estimator->columns | request_columns) != estimator->columns) return 0;
-	// Cool, prepare a request to the estimator
-	kde_float_t* row_ranges = (kde_float_t*)malloc(
-	    2*sizeof(kde_float_t)*estimator->nr_of_dimensions);
-	for (i = 0; i < estimator->nr_of_dimensions; ++i) {
-		row_ranges[2*i] = -1.0 * INFINITY;
-		row_ranges[2*i+1] = INFINITY;
-	}
-	for (i = 0; i < request->range_count; ++i) {
-		unsigned int range_pos = estimator->column_order[request->ranges[i].colno];
-		row_ranges[2*range_pos] =
-		request->ranges[i].lower_bound * estimator->scale_factors[range_pos];
-		row_ranges[2*range_pos + 1] =
-		request->ranges[i].upper_bound * estimator->scale_factors[range_pos];
-		if (request->ranges[i].lower_included)
-			row_ranges[2*range_pos] -= 0.001;
-	if (request->ranges[i].upper_included)
-		row_ranges[2*range_pos + 1] += 0.001;
-	}
-	// Prepare the request.
-	clEnqueueWriteBuffer(ctxt->queue, ctxt->input_buffer, CL_TRUE, 0,
-               2*estimator->nr_of_dimensions*sizeof(kde_float_t), row_ranges,
-               0, NULL, NULL);
-	*selectivity = rangeKDE(ctxt, estimator);
-	estimator->last_selectivity = *selectivity;
-	estimator->open_estimation = true;
-	// Print timing:
-	struct timeval now; gettimeofday(&now, NULL);
-	long seconds = now.tv_sec - start.tv_sec;
-	long useconds = now.tv_usec - start.tv_usec;
-	long mtime = ((seconds) * 1000 + useconds/1000.0) + 0.5;
-	if (ocl_isDebug()) {
-		ocl_dumpRequest(request);
-		fprintf(stderr, "Estimated selectivity: %f, took: %ld ms.\n", *selectivity, mtime);
-	}
-	free(row_ranges);
-	// Finally, prepare the online update of the bandwidth.
-	ocl_prepareOnlineLearningStep(estimator);
-	return 1;
+    Selectivity* selectivity) {
+  struct timeval start;
+  gettimeofday(&start, NULL);
+  unsigned int i;
+  // Fetch the OpenCL context, initializing it if requested.
+  ocl_context_t* ctxt = ocl_getContext();
+  if (ctxt == NULL)
+    return 0;
+  // Make sure that the registry is initialized
+  if (registry == NULL)
+    ocl_initializeRegistry();
+  // Check the registry, whether we have an estimator for the requested table.
+  if (!(registry->estimator_bitmap[request->table_identifier / 8]
+      & (0x1 << request->table_identifier % 8)))
+    return 0;
+  ocl_estimator_t* estimator = DIRECTORY_FETCH(registry->estimator_directory,
+      &(request->table_identifier), ocl_estimator_t);
+  if (estimator == NULL)
+    return 0;
+  // Check if the request can potentially be answered by the estimator:
+  if (request->range_count > estimator->nr_of_dimensions)
+    return 0;
+  // Now check if all columns in the request are covered by the estimator:
+  int request_columns = 0;
+  for (i = 0; i < request->range_count; ++i) {
+    request_columns |= 0x1 << request->ranges[i].colno;
+  }
+  if ((estimator->columns | request_columns) != estimator->columns)
+    return 0;
+  // Cool, prepare a request to the estimator
+  kde_float_t* row_ranges = (kde_float_t*) malloc(
+      2 * sizeof(kde_float_t) * estimator->nr_of_dimensions);
+  for (i = 0; i < estimator->nr_of_dimensions; ++i) {
+    row_ranges[2 * i] = -1.0 * INFINITY;
+    row_ranges[2 * i + 1] = INFINITY;
+  }
+  for (i = 0; i < request->range_count; ++i) {
+    unsigned int range_pos = estimator->column_order[request->ranges[i].colno];
+    row_ranges[2 * range_pos] = request->ranges[i].lower_bound
+        * estimator->scale_factors[range_pos];
+    row_ranges[2 * range_pos + 1] = request->ranges[i].upper_bound
+        * estimator->scale_factors[range_pos];
+    if (request->ranges[i].lower_included)
+      row_ranges[2 * range_pos] -= 0.001;
+    if (request->ranges[i].upper_included)
+      row_ranges[2 * range_pos + 1] += 0.001;
+  }
+  // Prepare the request.
+  clEnqueueWriteBuffer(
+      ctxt->queue, ctxt->input_buffer, CL_TRUE, 0,
+      2 * estimator->nr_of_dimensions * sizeof(kde_float_t), row_ranges, 0,
+      NULL, NULL);
+  *selectivity = rangeKDE(ctxt, estimator);
+  estimator->last_selectivity = *selectivity;
+  estimator->open_estimation = true;
+  // Print timing:
+  struct timeval now;
+  gettimeofday(&now, NULL);
+  long seconds = now.tv_sec - start.tv_sec;
+  long useconds = now.tv_usec - start.tv_usec;
+  long mtime = ((seconds) * 1000 + useconds / 1000.0) + 0.5;
+  if (ocl_isDebug()) {
+    ocl_dumpRequest(request);
+    fprintf(stderr, "Estimated selectivity: %f, took: %ld ms.\n", *selectivity,
+        mtime);
+  }
+  free(row_ranges);
+  // Finally, prepare the online update of the bandwidth.
+  ocl_prepareOnlineLearningStep(estimator);
+  return 1;
 }
 
 unsigned int ocl_maxSampleSize(unsigned int dimensionality) {
@@ -716,96 +730,104 @@ unsigned int ocl_maxSampleSize(unsigned int dimensionality) {
 void ocl_constructEstimator(
     Relation rel, unsigned int rows_in_table, unsigned int dimensionality,
     AttrNumber* attributes, unsigned int sample_size, HeapTuple* sample) {
-	unsigned int i, j;
-	if (dimensionality > 10) {
-	  fprintf(stderr, "We only support models for up to 10 dimensions!\n");
-	  return;
-	}
-	// Make sure we have a context
-	ocl_context_t* ctxt = ocl_getContext();
-	if (ctxt == NULL)	return;
-	// Make sure the registry exists.
-	if (!registry) ocl_initializeRegistry();
-	// Some Debug output
-	fprintf(stderr, "Constructing an estimator for table %i.\n",
-	        rel->rd_node.relNode);
-	fprintf(stderr, "\tColumns:");
-	for (i=0; i<dimensionality; ++i) fprintf(stderr, " %i", attributes[i]);
-	fprintf(stderr, "\n");
-	fprintf(stderr, "\tUsing a backing sample of %i out of %i tuples.\n",
-	        sample_size, rows_in_table);
-	// Insert a new estimator.
-	Assert(rel->rd_node.relNode / 8 >= 16384); //If the oids are to large, bad things will hapen.
-	ocl_estimator_t* estimator = calloc(1, sizeof(ocl_estimator_t));
-	ocl_estimator_t* old_estimator = directory_insert(
-	    registry->estimator_directory, &(rel->rd_node.relNode), estimator);
-	// If there was an existing estimator, release it.
-	if (old_estimator) {
-	  ocl_freeEstimator(old_estimator, false);
-	}
-	// Update the bitmap.
-	registry->estimator_bitmap[rel->rd_node.relNode / 8]
-                             |= (0x1 << rel->rd_node.relNode % 8);
-	// Update the descriptor info.
-	estimator->table = rel->rd_node.relNode;
-	estimator->nr_of_dimensions = dimensionality;
-	estimator->column_order = calloc(1, 32 * sizeof(unsigned int));
-	for (i = 0; i<dimensionality; ++i) {
-	  estimator->columns |= 0x1 << attributes[i];
-	  estimator->column_order[attributes[i]] = i;
-	}
-	estimator->rows_in_sample = sample_size;
-	estimator->rows_in_table = rows_in_table;
-	/* 
-    * Ok, we set up the estimator. Prepare the sample for shipping it to the device. 
-    * While preparing the sample, we compute the variance for each column on the fly.
- 	 * The variance is then used to normalize the data to unit variance in each dimension.
-    */
-	kde_float_t* host_buffer = (kde_float_t*)malloc(
-	    ocl_sizeOfSampleItem(estimator) * sample_size);
-	double* mean = (double*)calloc(1, sizeof(double) * dimensionality);
-	double* M2 = (double*)calloc(1, sizeof(double) * dimensionality);
-	for ( i = 0; i < sample_size; ++i ) {
-	  // Extract the item.
-	  ocl_extractSampleTuple(estimator, rel, sample[i],
-	                         &(host_buffer[i*estimator->nr_of_dimensions]));
-	  // And update the attributes.
-	  for ( j = 0; j < estimator->nr_of_dimensions; ++j ) {
-	    double delta = host_buffer[i*estimator->nr_of_dimensions + j] - mean[j];
-	    mean[j] = mean[j] + delta / (i + 1);
-	    M2[j] += delta * (host_buffer[i*estimator->nr_of_dimensions + j] - mean[j]);
-	  }
-	}
-	// Compute the scale factors (this is just the standard deviation per dimension).
-	free(mean);
-	estimator->scale_factors = M2;
-	for ( i = 0; i < estimator->nr_of_dimensions; ++i ) {
-	  estimator->scale_factors[i] /= (sample_size - 1);
-	  estimator->scale_factors[i] = sqrt(estimator->scale_factors[i]);
-	}
-	// Compute an initial bandwidth estimate using Scott's rule.
-	kde_float_t* bandwidth = (kde_float_t*)malloc(
-	    sizeof(kde_float_t)*dimensionality);
-	for ( i = 0; i < dimensionality; ++i ) {
-	  if (!scale_to_unit_variance) {
-	    // If data scaling is deactivated, the scale factor is simply one - and
-	    // the bandwidth is computed from the stdev.
-	    bandwidth[i] = estimator->scale_factors[i] *
-	        pow(sample_size, -1.0 /((double)(dimensionality + 4)));
-	    if (global_kernel_type == EPANECHNIKOV) bandwidth[i] *= sqrt(5);
-	    estimator->scale_factors[i] = 1;
-	  } else {
-	    // If data scaling is activated, we scale the data to unit variance.
-	    bandwidth[i] = 100*pow(sample_size, -1.0 /((double)(dimensionality + 4)));
-      if (global_kernel_type == EPANECHNIKOV) bandwidth[i] *= sqrt(5);
+  unsigned int i, j;
+  if (dimensionality > 10) {
+    fprintf(stderr, "We only support models for up to 10 dimensions!\n");
+    return;
+  }
+  // Make sure we have a context
+  ocl_context_t* ctxt = ocl_getContext();
+  if (ctxt == NULL)
+    return;
+  // Make sure the registry exists.
+  if (!registry)
+    ocl_initializeRegistry();
+  // Some Debug output
+  fprintf(stderr, "Constructing an estimator for table %i.\n",
+      rel->rd_node.relNode);
+  fprintf(stderr, "\tColumns:");
+  for (i = 0; i < dimensionality; ++i)
+    fprintf(stderr, " %i", attributes[i]);
+  fprintf(stderr, "\n");
+  fprintf(
+      stderr, "\tUsing a backing sample of %i out of %i tuples.\n",
+      sample_size, rows_in_table);
+  // Insert a new estimator.
+  Assert(rel->rd_node.relNode / 8 >= 16384); // If the oids are to large, bad things will hapen.
+  ocl_estimator_t* estimator = calloc(1, sizeof(ocl_estimator_t));
+  ocl_estimator_t* old_estimator = directory_insert(
+      registry->estimator_directory, &(rel->rd_node.relNode), estimator);
+  // If there was an existing estimator, release it.
+  if (old_estimator) {
+    ocl_freeEstimator(old_estimator, false);
+  }
+  // Update the bitmap.
+  registry->estimator_bitmap[rel->rd_node.relNode / 8] |= (0x1
+      << rel->rd_node.relNode % 8);
+  // Update the descriptor info.
+  estimator->table = rel->rd_node.relNode;
+  estimator->nr_of_dimensions = dimensionality;
+  estimator->column_order = calloc(1, 32 * sizeof(unsigned int));
+  for (i = 0; i < dimensionality; ++i) {
+    estimator->columns |= 0x1 << attributes[i];
+    estimator->column_order[attributes[i]] = i;
+  }
+  estimator->rows_in_sample = sample_size;
+  estimator->rows_in_table = rows_in_table;
+  /*
+   * Ok, we set up the estimator. Prepare the sample for shipping it to the
+   * device. While preparing the sample, we compute the variance for each column
+   * on the fly. The variance is then used to compute the rule-of-thumb
+   * bandwidth and to normalize the data to unit variance in each dimension.
+   */
+  kde_float_t* host_buffer = (kde_float_t*) malloc(
+      ocl_sizeOfSampleItem(estimator) * sample_size);
+  double* mean = (double*) calloc(1, sizeof(double) * dimensionality);
+  double* M2 = (double*) calloc(1, sizeof(double) * dimensionality);
+  for (i = 0; i < sample_size; ++i) {
+    // Extract the item.
+    ocl_extractSampleTuple(estimator, rel, sample[i],
+        &(host_buffer[i * estimator->nr_of_dimensions]));
+    // And update the attributes.
+    for (j = 0; j < estimator->nr_of_dimensions; ++j) {
+      double delta = host_buffer[i * estimator->nr_of_dimensions + j] - mean[j];
+      mean[j] = mean[j] + delta / (i + 1);
+      M2[j] += delta
+          * (host_buffer[i * estimator->nr_of_dimensions + j] - mean[j]);
+    }
+  }
+  // Compute the scale factors (this is just the standard deviation per dimension).
+  free(mean);
+  estimator->scale_factors = M2;
+  for (i = 0; i < estimator->nr_of_dimensions; ++i) {
+    estimator->scale_factors[i] /= (sample_size - 1);
+    estimator->scale_factors[i] = sqrt(estimator->scale_factors[i]);
+  }
+  // Compute an initial bandwidth estimate using Scott's rule.
+  kde_float_t* bandwidth = (kde_float_t*) malloc(
+      sizeof(kde_float_t) * dimensionality);
+  for (i = 0; i < dimensionality; ++i) {
+    if (!scale_to_unit_variance) {
+      // If data scaling is deactivated, the scale factor is simply one - and
+      // the bandwidth is computed from the stdev.
+      bandwidth[i] = estimator->scale_factors[i]
+          * pow(sample_size, -1.0 / ((double) (dimensionality + 4)));
+      if (global_kernel_type == EPANECHNIKOV)
+        bandwidth[i] *= sqrt(5);
+      estimator->scale_factors[i] = 1;
+    } else {
+      // If data scaling is activated, we scale the data to unit variance.
+      bandwidth[i] = 100
+          * pow(sample_size, -1.0 / ((double) (dimensionality + 4)));
+      if (global_kernel_type == EPANECHNIKOV)
+        bandwidth[i] *= sqrt(5);
       estimator->scale_factors[i] = 1.0 / estimator->scale_factors[i];
-	  }
-	}
-	estimator->bandwidth_buffer = clCreateBuffer(
-	    ctxt->context, CL_MEM_READ_WRITE, sizeof(kde_float_t) * dimensionality,
-	    NULL, NULL);
-  clEnqueueWriteBuffer(
-      ctxt->queue, estimator->bandwidth_buffer, CL_TRUE, 0,
+    }
+  }
+  estimator->bandwidth_buffer = clCreateBuffer(ctxt->context, CL_MEM_READ_WRITE,
+      sizeof(kde_float_t) * dimensionality,
+      NULL, NULL);
+  clEnqueueWriteBuffer(ctxt->queue, estimator->bandwidth_buffer, CL_TRUE, 0,
       sizeof(kde_float_t) * dimensionality, bandwidth, 0, NULL, NULL);
   // Print some debug info.
   fprintf(stderr, "\tInitial bandwidth guess:");
@@ -836,14 +858,14 @@ void ocl_constructEstimator(
   estimator->sample_contribution_buffer = clCreateBuffer(
       ctxt->context, CL_MEM_READ_WRITE, estimator->sample_buffer_size,
       NULL, NULL);
-	clEnqueueWriteBuffer(
-	    ctxt->queue, estimator->sample_buffer, CL_TRUE, 0,
-	    sample_size * ocl_sizeOfSampleItem(estimator), host_buffer,
-	    0, NULL, NULL);
-	clEnqueueWriteBuffer(
-	    ctxt->queue, estimator->sample_karma_buffer, CL_TRUE, 0,
-	    sample_size * sizeof(kde_float_t), one_buffer,
-	    0, NULL, NULL);
+  clEnqueueWriteBuffer(
+      ctxt->queue, estimator->sample_buffer, CL_TRUE, 0,
+      sample_size * ocl_sizeOfSampleItem(estimator), host_buffer,
+      0, NULL, NULL);
+  clEnqueueWriteBuffer(
+      ctxt->queue, estimator->sample_karma_buffer, CL_TRUE, 0,
+      sample_size * sizeof(kde_float_t), one_buffer,
+      0, NULL, NULL);
   clEnqueueWriteBuffer(
       ctxt->queue, estimator->sample_contribution_buffer, CL_TRUE, 0,
       sample_size * sizeof(kde_float_t), one_buffer,
