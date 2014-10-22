@@ -59,3 +59,39 @@ __kernel void gauss_kde(
 	}
 	result[get_global_id(0)] = res;
 }
+
+// Used to extract all values for a single dimension from the data sample.
+__kernel void extract_dimension(
+  __global const T* const data,
+  __global T* result,
+  unsigned int selected_dimension,
+  unsigned int dimensions
+) {
+  T my_value = data[get_global_id(0)*dimensions + selected_dimension];
+  result[get_global_id(0)] = my_value;
+}
+
+// Used to compute the local contributions to the variance.
+__kernel void precompute_variance(
+  __global T* data,
+  __global T* average_buffer,
+  unsigned int dimension,
+  unsigned int points_in_sample
+) {
+  T average = average_buffer[dimension] / points_in_sample;
+  T my_value = data[get_global_id(0)] - average;
+  data[get_global_id(0)] = my_value * my_value;
+}
+
+__kernel void set_scotts_bandwidth(
+  __global T* variance_buffer,
+  __global T* bandwidth_buffer,
+  unsigned int selected_dimension,
+  unsigned int dimensions,
+  unsigned int points_in_sample
+) {
+  T stddev = sqrt(variance_buffer[selected_dimension] / points_in_sample);
+  //T bandwidth = stddev * pow(
+  //    4.0 / ((dimensions + 2.0) * points_in_sample), 1.0/(dimensions + 4.0);
+  bandwidth_buffer[selected_dimension] = stddev;
+}

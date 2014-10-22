@@ -1168,5 +1168,7 @@ extern Datum pg_cursor(PG_FUNCTION_ARGS);
 /* backend/optimizer/path/gpukde/ocl_estimator.c */
 extern Datum ocl_dumpKDESample(PG_FUNCTION_ARGS);
 extern Datum ocl_setKDEBandwidth(PG_FUNCTION_ARGS);
+extern Datum ocl_reoptimizeBandwidth(PG_FUNCTION_ARGS);
+extern Datum ocl_getBandwidth(PG_FUNCTION_ARGS);
 
 #endif   /* BUILTINS_H */

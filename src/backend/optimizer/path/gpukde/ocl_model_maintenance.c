@@ -388,7 +388,7 @@ static double computeGradient(unsigned n, const double* bandwidth,
     if (ocl_isDebug()) {
       fprintf(stderr, "\n\tGradient:");
       for (i=0; i<n; ++i) fprintf(stderr, " %e", gradient[i]);
-      fprintf(stderr, "\n", error);
+      fprintf(stderr, "\n");
     }
   }
   // Ok, clean everything up.
@@ -408,12 +408,93 @@ static double computeGradient(unsigned n, const double* bandwidth,
   return error;
 }
 
+static void ocl_setScottsBandwidth(ocl_estimator_t* estimator) {
+  ocl_context_t* context = ocl_getContext();
+  // First, we need to compute the variance for each dimension.
+  unsigned int i;
+  kde_float_t* variances = malloc(
+      sizeof(kde_float_t) * estimator->nr_of_dimensions);
+  cl_mem* buffers = malloc(sizeof(cl_mem) * estimator->nr_of_dimensions);
+  cl_mem averages = clCreateBuffer(
+      context->context, CL_MEM_READ_WRITE,
+      sizeof(kde_float_t) * estimator->nr_of_dimensions, NULL, NULL);
+  cl_event* events = malloc(sizeof(cl_event) * estimator->nr_of_dimensions);
+  size_t sample_size = estimator->rows_in_sample;
+  size_t dimensions = estimator->nr_of_dimensions;
+  for (i=0; i<estimator->nr_of_dimensions; ++i) {
+    // Allocate all required buffers.
+    buffers[i] = clCreateBuffer(
+        context->context, CL_MEM_READ_WRITE,
+        sizeof(kde_float_t) * estimator->rows_in_sample, NULL, NULL);
+    // First we extract all sample components for this dimension.
+    cl_kernel extractComponents = ocl_getKernel("extract_dimension", 0);
+    clSetKernelArg(
+        extractComponents, 0, sizeof(cl_mem), &(estimator->sample_buffer));
+    clSetKernelArg(extractComponents, 1, sizeof(cl_mem), &(buffers[i]));
+    clSetKernelArg(extractComponents, 2, sizeof(unsigned int), &i);
+    clSetKernelArg(extractComponents, 3, sizeof(unsigned int),
+        &(estimator->nr_of_dimensions));
+    cl_event extraction_event;
+    clEnqueueNDRangeKernel(
+        context->queue, extractComponents, 1, NULL, &sample_size, NULL,
+        0, NULL, &extraction_event);
+    // Now we sum them up, so we can compute the average.
+    cl_event average_summation_event = sumOfArray(
+        buffers[i], estimator->rows_in_sample, averages, i, extraction_event);
+    // Alright, we can compute the variance contributions from each point.
+    cl_kernel precomputeVariance = ocl_getKernel("precompute_variance", 0);
+    clSetKernelArg(precomputeVariance, 0, sizeof(cl_mem), &(buffers[i]));
+    clSetKernelArg(precomputeVariance, 1, sizeof(cl_mem), &averages);
+    clSetKernelArg(precomputeVariance, 2, sizeof(unsigned int), &i);
+    clSetKernelArg(precomputeVariance, 3, sizeof(unsigned int),
+        &(estimator->rows_in_sample));
+    cl_event variance_event;
+    clEnqueueNDRangeKernel(
+        context->queue, precomputeVariance, 1, NULL, &sample_size, NULL,
+        1, &average_summation_event, &variance_event);
+    // We now sum up the single contributions to compute the variance.
+    cl_event variance_summation_event = sumOfArray(
+        buffers[i], estimator->rows_in_sample, averages, i, variance_event);
+    // Finally, we can compute and store the bandwidth for this value.
+    cl_kernel finalizeBandwidth = ocl_getKernel("set_scotts_bandwidth", 0);
+    clSetKernelArg(finalizeBandwidth, 0, sizeof(cl_mem), &averages);
+    clSetKernelArg(finalizeBandwidth, 1, sizeof(cl_mem),
+        &(estimator->bandwidth_buffer));
+    clSetKernelArg(finalizeBandwidth, 2, sizeof(unsigned int), &i);
+    clSetKernelArg(finalizeBandwidth, 3, sizeof(unsigned int),
+        &(estimator->nr_of_dimensions));
+    clSetKernelArg(finalizeBandwidth, 4, sizeof(unsigned int),
+        &(estimator->rows_in_sample));
+    clEnqueueNDRangeKernel(
+        context->queue, finalizeBandwidth, 1, NULL, &dimensions, NULL,
+        1, &variance_summation_event, &events[i]);
+    // Clean up.
+    clReleaseMemObject(buffers[i]);
+    clReleaseEvent(extraction_event);
+    clReleaseEvent(average_summation_event);
+    clReleaseEvent(variance_event);
+    clReleaseEvent(variance_summation_event);
+  }
+  clReleaseMemObject(averages);
+  // Wait for the events to finalize:
+  clWaitForEvents(estimator->nr_of_dimensions, events);
+  for (i=0; i<estimator->nr_of_dimensions; ++i) {
+    clReleaseEvent(events[i]);
+  }
+  // Clean up.
+  free(variances);
+  free(events);
+}
+
 void ocl_runModelOptimization(ocl_estimator_t* estimator) {
   if (estimator == NULL) return;
+  // Set the rule-of-thumb bandwidth to initialize the estimator.
+  ocl_setScottsBandwidth(estimator);
+  // Now check if we do a full bandwidth optimization.
   if (!kde_enable_bandwidth_optimization) return;
-  fprintf(stderr, "Beginning model optimization for estimator on "
+  fprintf(
+      stderr, "Beginning model optimization for estimator on "
       "table %i\n", estimator->table);
-
   // First, we need to fetch the feedback records for this table and push them
   // to the device.
   cl_mem device_ranges, device_selectivites;
@@ -425,9 +506,10 @@ void ocl_runModelOptimization(ocl_estimator_t* estimator) {
   kde_float_t* fbandwidth = palloc(
       sizeof(kde_float_t) * estimator->nr_of_dimensions);
   ocl_context_t* context = ocl_getContext();
-  clEnqueueReadBuffer(context->queue, estimator->bandwidth_buffer, CL_TRUE, 0,
-                      sizeof(kde_float_t) * estimator->nr_of_dimensions,
-                      fbandwidth, 0, NULL, NULL);
+  clEnqueueReadBuffer(
+      context->queue, estimator->bandwidth_buffer, CL_TRUE, 0,
+      sizeof(kde_float_t) * estimator->nr_of_dimensions,
+      fbandwidth, 0, NULL, NULL);
   // Cast to double (nlopt operates on double).
   double* bandwidth = lbfgs_malloc(estimator->nr_of_dimensions);
   unsigned int i;
@@ -497,9 +579,10 @@ void ocl_runModelOptimization(ocl_estimator_t* estimator) {
   for (i=0; i<estimator->nr_of_dimensions; ++i) {
     fbandwidth[i] = bandwidth[i];
   }
-  clEnqueueWriteBuffer(context->queue, estimator->bandwidth_buffer, CL_TRUE, 0,
-                       sizeof(kde_float_t) * estimator->nr_of_dimensions,
-                       fbandwidth, 0, NULL, NULL);
+  clEnqueueWriteBuffer(
+      context->queue, estimator->bandwidth_buffer, CL_TRUE, 0,
+      sizeof(kde_float_t) * estimator->nr_of_dimensions,
+      fbandwidth, 0, NULL, NULL);
   // Clean up.
   pfree(fbandwidth);
   lbfgs_free(bandwidth);
