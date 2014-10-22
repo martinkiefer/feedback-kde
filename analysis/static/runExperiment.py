@@ -6,9 +6,11 @@ import os
 import psycopg2
 import random
 import re
+import rpy2
 import sys
 import time
 
+from rpy2.robjects.packages import importr
 
 #Extracts the hyperrectangle size from a query string
 #This function relies on a fixed query format:
@@ -121,12 +123,8 @@ selected_training_queries = set(selected_training_queries[0:trainqueries])
 selected_test_queries = range(1, total_queries)
 random.shuffle(selected_test_queries)
 selected_test_queries = set(selected_test_queries[0:queries])
-# If we run optimal KDE training, the training set should equal the test set.
-if (model == "kde_optimal"):
-    selected_training_queries = selected_test_queries
-    trainqueries = queries
-# If we run heuristic KDE, we do not need a training set.
-if (model == "kde_heuristic"):
+# If we run heuristic or optimal KDE, we do not need a training set.
+if (model == "kde_heuristic" or model == "kde_optimal"):
     trainqueries = 0
 print "done!"
 
@@ -149,7 +147,7 @@ else:
     cur.execute("SET kde_enable TO true;")
 
 # Initialize the training phase.
-if (model == "kde_batch" or model == "kde_optimal"):
+if (model == "kde_batch"):
     # Drop all existing feedback and start feedback collection.
     cur.execute("DELETE FROM pg_kdefeedback;")
     cur.execute("SET kde_collect_feedback TO true;")
@@ -169,12 +167,28 @@ if (trainqueries > 0):
             sys.stdout.write("\r\tFinished %i of %i training queries." % (finished_queries, trainqueries))
             sys.stdout.flush()
     sys.stdout.write("\n")
-if (model == "kde_batch" or model == "kde_optimal"):
+if (model == "kde_batch"):
     cur.execute("SET kde_collect_feedback TO false;") # We don't need further feedback collection.    
     cur.execute("SET kde_enable_bandwidth_optimization TO true;")
     cur.execute("SET kde_optimization_feedback_window TO %i;" % trainqueries)
 if (model != "kde_adaptive" and model != "stholes"):
     createModel(table, dimensions)
+# If this is the optimal estimator, we need to compute the PI bandwidth estimate.
+if (model == "kde_optimal"):
+  print "Extracting sample for offline bandwidth optimization ..."
+  cur.execute("SELECT kde_dump_sample('%s', '/tmp/sample.csv');" % table)
+  print "Importing the sample into R ..."
+  m = robjects.r['read.csv']('/tmp/sample.csv')
+  print "Calling PI bandwidth estimator ..."
+  ks = importr("ks")
+  bw = robjects.r['diag'](robjects.r('Hpi.diag')(m))
+  print "Setting bandwidth estimate ..."
+  bw_array = 'ARRAY[%f' % bw[0]
+  for v in bw[1:]:
+    bw_array += ',%f' % v
+  bw_array += ']'
+  cur.execute("SELECT kde_set_bandwidth('%s',%s);" % (table, bw_array))
+
 print "done!"
 
 print "Running experiment ... "
