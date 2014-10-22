@@ -11,6 +11,7 @@ import sys
 import time
 
 from rpy2.robjects.packages import importr
+from rpy2 import robjects
 
 #Extracts the hyperrectangle size from a query string
 #This function relies on a fixed query format:
