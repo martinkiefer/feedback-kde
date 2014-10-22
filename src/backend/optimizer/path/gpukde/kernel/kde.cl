@@ -90,8 +90,8 @@ __kernel void set_scotts_bandwidth(
   unsigned int dimensions,
   unsigned int points_in_sample
 ) {
-  T stddev = sqrt(variance_buffer[selected_dimension] / points_in_sample);
-  //T bandwidth = stddev * pow(
-  //    4.0 / ((dimensions + 2.0) * points_in_sample), 1.0/(dimensions + 4.0);
+  T stddev = sqrt(variance_buffer[selected_dimension] / (points_in_sample - 1));
+  T bandwidth = stddev * pow(
+    4.0 / ((dimensions + 2.0) * points_in_sample), 1.0/(dimensions + 4.0);
   bandwidth_buffer[selected_dimension] = stddev;
 }
