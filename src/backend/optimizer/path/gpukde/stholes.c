@@ -730,13 +730,18 @@ static void performParentChildMerge(
   int pos = 0;
   parent->tuples += child->tuples;
   
-  // Remember the position because registerChild might invalidate the child.
-  pos = child - parent->children;
+  // Remember some info about the child, since registerChild might realloc the
+  // parent's children buffer, which leads to our child pointer becoming
+  // invalid.
+  int pos_in_parent_child_array = child - parent->children;
+  st_hole_t* child_children = child->children;
+  unsigned int child_nr_children = child->nr_children;
   
+
   // Migrate all children.
   int i = 0;
-  for (; i < child->nr_children; i++) {
-    registerChild(head, parent, child->children+i);
+  for (; i < child_nr_children; i++) {
+    registerChild(head, parent, child_children + i);
   }
   
   releaseResources(parent->children + pos);
@@ -938,7 +943,7 @@ static void _getSmallestMerge(
 
   // Now check the merge costs between our children.
   // First, check whether we need to build or update the cache.
-  if (hole->children_merge_cost == NULL) {
+  if (hole->nr_children && hole->children_merge_cost == NULL) {
     hole->children_merge_cost = malloc(
         sizeof(kde_float_t) * hole->nr_children * hole->nr_children);
     for (i = 0; i < hole->nr_children; ++i) {
