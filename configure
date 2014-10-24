@@ -4122,13 +4122,13 @@ if test "$ac_test_CFLAGS" = set; then
   CFLAGS=$ac_save_CFLAGS
 elif test $ac_cv_prog_cc_g = yes; then
   if test "$GCC" = yes; then
-    CFLAGS="-g -O2"
+    CFLAGS="-g -O0"
   else
     CFLAGS="-g"
   fi
 else
   if test "$GCC" = yes; then
-    CFLAGS="-O2"
+    CFLAGS="-O0"
   else
     CFLAGS=
   fi
@@ -4299,7 +4299,7 @@ elif test "${CFLAGS+set}" = set; then
 elif test "$enable_coverage" = yes; then
   : # no optimization by default
 elif test "$GCC" = yes; then
-  CFLAGS="-O2"
+  CFLAGS="-O0"
 else
   # if the user selected debug mode, don't use -O
   if test "$enable_debug" != yes; then

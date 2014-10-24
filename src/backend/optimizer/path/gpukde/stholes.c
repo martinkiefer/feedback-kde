@@ -161,12 +161,12 @@ static void setLastQuery(
     } else {
       head->last_query.bounds[head->column_order[request->ranges[i].colno]*2] =
           request->ranges[i].lower_bound +
-          abs(request->ranges[i].lower_bound) * head->epsilon;
+          fabs(request->ranges[i].lower_bound) * head->epsilon;
     }
     if (request->ranges[i].upper_included) {
       head->last_query.bounds[head->column_order[request->ranges[i].colno]*2+1] =
           request->ranges[i].upper_bound +
-          abs(request->ranges[i].upper_bound) * head->epsilon;
+          fabs(request->ranges[i].upper_bound) * head->epsilon;
     } else {
       head->last_query.bounds[head->column_order[request->ranges[i].colno]*2+1] =
           request->ranges[i].upper_bound;
@@ -386,7 +386,7 @@ static kde_float_t _est(
   // that lead to empty estimates. Therefore we only add up the estimates
   // for holes that we consider safe.
   kde_float_t vh = v(head, hole);
-  if (vh >= abs(head->epsilon * vBox(head, hole))) {
+  if (vh >= fabs(head->epsilon * vBox(head, hole))) {
     est += hole->tuples * (v_q_i_b / vh); 
   }
   
@@ -603,7 +603,7 @@ static void _drillHoles(st_head_t* head, st_hole_t* parent, st_hole_t* hole) {
   }
   
   //This is a shitty corner case, that can occur.
-  if (vBox(head, &candidate) <= abs(head->epsilon*vBox(head,&candidate))) {
+  if (vBox(head, &candidate) <= fabs(head->epsilon*vBox(head,&candidate))) {
     goto nohole;
   }
     
@@ -639,7 +639,7 @@ static void _drillHoles(st_head_t* head, st_hole_t* parent, st_hole_t* hole) {
   
   // Does this bucket still carry information?
   // If not, migrate all children to the parent. Of course, the root bucket can't be removed.
-  if (parent != NULL && v(head,hole) <= abs(head->epsilon*vBox(head,hole))) {
+  if (parent != NULL && v(head,hole) <= fabs(head->epsilon*vBox(head,hole))) {
     int old_parent_size;
     tmp = *hole;
     unregisterChild(head, parent, pos);
@@ -697,7 +697,7 @@ static kde_float_t parentChildMergeCost(
   kde_float_t vbc = v(head, child);
   kde_float_t vbn = vbp + vbc;
   
-  return abs(fbp - fbn * vbp / vbn) + abs(fbc - fbn * vbc / vbn);
+  return fabs(fbp - fbn * vbp / vbn) + fabs(fbc - fbn * vbc / vbn);
 }
 
 /**
@@ -718,9 +718,9 @@ static kde_float_t parentChildChildMergeCost(
   kde_float_t vbc2 = v(head, c2);
   kde_float_t vbn = vbp + vbc1 + vbc2;
   
-  return abs(fbp - fbn * vbp / vbn) +
-         abs(fbc1 - fbn * vbc1 / vbn) +
-         abs(fbc2 - fbn * vbc2 / vbn);
+  return fabs(fbp - fbn * vbp / vbn) +
+         fabs(fbc1 - fbn * vbc1 / vbn) +
+         fabs(fbc2 - fbn * vbc2 / vbn);
 }
 
 /**
@@ -813,9 +813,9 @@ static kde_float_t siblingSiblingMergeCost(
   // v_p. It obviously is v_bn.
   kde_float_t v_bn = v_old + v_b1 + v_b2;
 
-  return abs(f_bn * v_old / v_bn - f_bp * v_old / v_bp) +
-         abs(f_b1 - f_bn * v_b1 / v_bn ) +
-         abs(f_b2 - f_bn * v_b2 / v_bn );
+  return fabs(f_bn * v_old / v_bn - f_bp * v_old / v_bp) +
+         fabs(f_b1 - f_bn * v_b1 / v_bn ) +
+         fabs(f_b2 - f_bn * v_b2 / v_bn );
 }
 
 /*
