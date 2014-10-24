@@ -335,8 +335,9 @@ static intersection_t getIntersectionType(
  * regarding the disjunctiveness of buckets.
  */
 static int _disjunctivenessTest(st_head_t* head, st_hole_t* hole) {
-  int i,j = 0;
+  int i = 0;
   for (; i < hole->nr_children; i++) {
+    int j;
     for (j = i+1; j < hole->nr_children; j++) {
       if (getIntersectionType(
            head, hole->children+i, hole->children+j) != NONE) {
