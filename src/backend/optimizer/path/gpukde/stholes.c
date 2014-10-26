@@ -728,7 +728,6 @@ static kde_float_t parentChildChildMergeCost(
  */
 static void performParentChildMerge(
     st_head_t* head, st_hole_t* parent, st_hole_t* child){
-  int pos = 0;
   parent->tuples += child->tuples;
   
   // Remember some info about the child, since registerChild might realloc the
@@ -745,8 +744,8 @@ static void performParentChildMerge(
     registerChild(head, parent, child_children + i);
   }
   
-  releaseResources(parent->children + pos);
-  unregisterChild(head, parent, pos);
+  releaseResources(parent->children + pos_in_parent_child_array);
+  unregisterChild(head, parent, pos_in_parent_child_array);
  
   head->holes--;
 }
