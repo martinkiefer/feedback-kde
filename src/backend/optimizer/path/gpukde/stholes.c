@@ -996,37 +996,6 @@ static void _getSmallestMerge(
     }
   }
 
-  /*// Compute the smallest merge.
-  merge_t best_local_merge;
-  best_local_merge.penalty = INFINITY;
-  if (parent != NULL) {
-    best_local_merge.penalty = parentChildMergeCost(head, parent, hole);
-    best_local_merge.parent = parent;
-    best_local_merge.child1 = hole;
-    best_local_merge.child2 = NULL;
-  }
-  for (i = 0; i < hole->nr_children; ++i) {
-    int j = i + 1;
-    for (; j < hole->nr_children; ++j) {
-      kde_float_t merge_cost = siblingSiblingMergeCost(
-          head, hole, hole->children + i, hole->children + j);
-      if (merge_cost < best_local_merge.penalty) {
-        best_local_merge.penalty = merge_cost;
-        best_local_merge.parent = hole;
-        best_local_merge.child1 = hole->children + i;
-        best_local_merge.child2 = hole->children + j;
-      }
-    }
-  }
-  // Ok, now make sure we came to the same conclusion as the cache.
-  if (hole->cheapest_merge.penalty != INFINITY) {
-    Assert(hole->cheapest_merge.parent == best_local_merge.parent);
-    Assert(hole->cheapest_merge.child1 == best_local_merge.child1);
-    Assert(hole->cheapest_merge.child2 == best_local_merge.child2);
-  } else {
-    hole->cheapest_merge = best_local_merge;
-  }*/
-
   // Ok, we have a valid merge cache. Check if we are the currently cheapest
   // one.
   if (hole->cheapest_merge.penalty < best_merge->penalty) {
