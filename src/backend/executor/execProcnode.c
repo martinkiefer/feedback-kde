@@ -612,11 +612,10 @@ ExecEndNode(PlanState *node)
 		node->chgParam = NULL;
 	}
 	if(nodeTag(node) == T_SeqScanState){
-	      if(stholes_enabled()){
-		stholes_process_feedback((PlanState *) node);
-	      }
-	      kde_finish(node);
-	      
+	  if(stholes_enabled()) {
+	    stholes_process_feedback((PlanState *) node);
+	  }
+	  kde_finish(node);
 	}  
 	switch (nodeTag(node))
 	{
