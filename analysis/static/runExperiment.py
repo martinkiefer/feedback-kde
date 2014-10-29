@@ -40,19 +40,25 @@ def getRectVolume(query):
                 last=-1
     return vol
 
-def createModel(table, dimensions):
+def createModel(table, dimensions, reuse):
+  query = ""
+  if reuse:
+    sys.stdout.write("\r\tRetraining existing estimator ... ")
+    sys.stdout.flush()
+    query += "SELECT kde_reset_bandwidth('%s');" % table
+  else:
     sys.stdout.write("\r\tBuilding estimator ... ")
     sys.stdout.flush()
-    analyze_query = "ANALYZE %s(" % table
+    query += "ANALYZE %s(" % table
     for i in range(1, dimensions + 1):
-        if (i>1):
-            analyze_query += ", c%i" % i
-        else:
-            analyze_query += "c%i" %i
-    analyze_query += ");"
-    cur.execute(analyze_query)
-    print "done!"
-                
+      if (i>1):
+        query += ", c%i" % i
+      else:
+        query += "c%i" %i
+    query += ");"
+  cur.execute(query)
+  print "done!"
+ 
 
 # Define and parse the command line arguments
 parser = argparse.ArgumentParser()
@@ -64,6 +70,8 @@ parser.add_argument("--model", action="store", choices=["stholes", "kde_heuristi
 parser.add_argument("--modelsize", action="store", required=True, type=int, help="How many rows should the generated model sample?")
 parser.add_argument("--error", action="store", choices=["absolute", "relative", "normalized"], default="absolute", help="Which error metric should be optimized / reported?")
 parser.add_argument("--log", action="store", required=True, help="Where to append the experimental results?")
+parser.add_argument("--reuse", action="store_true", help="Don't rebuild the model.")
+
 args = parser.parse_args()
 
 # Fetch the arguments.
@@ -81,6 +89,8 @@ conn = psycopg2.connect("dbname=%s host=localhost" % dbname)
 conn.set_session('read uncommitted', autocommit=True)
 cur = conn.cursor()
 
+raw_input("Press Enter to continue.")
+
 # Extract table name, workload, selectivity and dimensionality from the query file name.
 queryfilename = ntpath.basename(queryfile)
 m = re.match("(.+)_([a-z]+)_(.+).sql", queryfilename)
@@ -96,7 +106,8 @@ dimensions = int(m.groups()[1])
 
 # Determine the total volume of the given table.
 print "Preparing experiment ...",
-cur.execute("DELETE FROM pg_kdemodels;");
+if not args.reuse:
+  cur.execute("DELETE FROM pg_kdemodels;");
 sys.stdout.flush()
 total_volume = 1
 for i in range(0, dimensions):    
@@ -131,16 +142,15 @@ print "done!"
 
 print "Building the initial model ..."
 # Set the requested error metric.
-#if (errortype == "relative"):
-#    cur.execute("SET kde_error_metric TO SquaredRelative;")
-#elif (errortype == "absolute" or errortype == "normalized"):
-#    cur.execute("SET kde_error_metric TO Absolute;")
-cur.execute("SET kde_error_metric TO Quadratic;")
+if (errortype == "relative"):
+    cur.execute("SET kde_error_metric TO SquaredRelative;")
+elif (errortype == "absolute" or errortype == "normalized"):
+    cur.execute("SET kde_error_metric TO Absolute;")
 # Set STHoles specific parameters.
 if (model == "stholes"):
     cur.execute("SET stholes_hole_limit TO %i;" % modelsize)
     cur.execute("SET stholes_enable TO true;")
-    createModel(table, dimensions)
+    createModel(table, dimensions,False)
 else:
     # Set KDE-specific parameters.
     cur.execute("SET kde_samplesize TO %i;" % modelsize)
@@ -156,7 +166,7 @@ elif (model == "kde_adaptive"):
     # Build an initial model that is being trained.
     cur.execute("SET kde_enable_adaptive_bandwidth TO true;")
     cur.execute("SET kde_minibatch_size TO 10;")
-    createModel(table, dimensions)
+    createModel(table, dimensions,args.reuse)
 # Now run the training queries.
 f.seek(0)
 finished_queries = 0
@@ -173,7 +183,7 @@ if (model == "kde_batch"):
     cur.execute("SET kde_enable_bandwidth_optimization TO true;")
     cur.execute("SET kde_optimization_feedback_window TO %i;" % trainqueries)
 if (model != "kde_adaptive" and model != "stholes"):
-    createModel(table, dimensions)
+    createModel(table, dimensions,args.reuse)
 # If this is the optimal estimator, we need to compute the PI bandwidth estimate.
 if (model == "kde_optimal"):
   print "Extracting sample for offline bandwidth optimization ..."
@@ -268,7 +278,3 @@ f.write("%s;%i;%s;%s;%s;%i;%i;%s;%f\n" % (dataset, dimensions, workload, selecti
 f.close()
 
 print "done!"
-
-
-            
-        
