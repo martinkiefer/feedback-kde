@@ -89,8 +89,6 @@ conn = psycopg2.connect("dbname=%s host=localhost" % dbname)
 conn.set_session('read uncommitted', autocommit=True)
 cur = conn.cursor()
 
-raw_input("Press Enter to continue.")
-
 # Extract table name, workload, selectivity and dimensionality from the query file name.
 queryfilename = ntpath.basename(queryfile)
 m = re.match("(.+)_([a-z]+)_(.+).sql", queryfilename)
@@ -145,7 +143,7 @@ print "Building the initial model ..."
 if (errortype == "relative"):
     cur.execute("SET kde_error_metric TO SquaredRelative;")
 elif (errortype == "absolute" or errortype == "normalized"):
-    cur.execute("SET kde_error_metric TO Absolute;")
+    cur.execute("SET kde_error_metric TO Quadratic;")
 # Set STHoles specific parameters.
 if (model == "stholes"):
     cur.execute("SET stholes_hole_limit TO %i;" % modelsize)
@@ -190,10 +188,10 @@ if (model == "kde_optimal"):
   cur.execute("SELECT kde_dump_sample('%s', '/tmp/sample.csv');" % table)
   print "Importing the sample into R ..."
   m = robjects.r['read.csv']('/tmp/sample.csv')
-  print "Calling PI bandwidth estimator ..."
+  print "Calling SCV bandwidth estimator ..."
   ks = importr("ks")
-  bw = robjects.r['diag'](robjects.r('Hpi.diag')(m))
-  print "Setting bandwidth estimate ..."
+  bw = robjects.r['diag'](robjects.r('Hscv.diag')(m))
+  print "Setting bandwidth estimate: ", bw
   bw_array = 'ARRAY[%f' % bw[0]
   for v in bw[1:]:
     bw_array += ',%f' % v
