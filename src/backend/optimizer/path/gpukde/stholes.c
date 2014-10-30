@@ -5,6 +5,7 @@
 #include <executor/tuptable.h>
 #include <math.h>
 #include <float.h>
+#include <time.h>
 #include "access/htup_details.h"
 #include "catalog/pg_type.h"
 #include "nodes/plannodes.h"
@@ -16,9 +17,7 @@ struct st_hole;
 typedef struct st_hole st_hole_t;
 
 typedef struct merge {
-  st_hole_t* parent;
-  st_hole_t* child1;
-  st_hole_t* child2;
+  st_hole_t* merge_partner;
   kde_float_t penalty;
 } merge_t;
 
@@ -31,7 +30,8 @@ typedef struct st_hole {
   // Children of this hole.
   int nr_children;
   int child_capacity;
-  struct st_hole* children;
+  struct st_hole** children;
+  struct st_hole* parent;
   // Boundaries of this hole.
   kde_float_t* bounds;
   // Working counter for the statistics step.
@@ -39,8 +39,8 @@ typedef struct st_hole {
   // Cache for volume computations.
   kde_float_t v;
   kde_float_t v_box;
-  // Cache for best merge for this hole.
-  merge_t cheapest_merge;
+  // Caches the best merge for this hole.
+  merge_t merge_cache;
 } st_hole_t;
 
 /**
@@ -49,7 +49,7 @@ typedef struct st_hole {
  */ 
 typedef struct st_head {
   // Root hole.
-  st_hole_t root;
+  st_hole_t* root;
   // Meta information.
   int holes;
   int max_holes;
@@ -58,7 +58,7 @@ typedef struct st_head {
   int32 columns;
   unsigned int* column_order;
   // Information for updating the structure.
-  st_hole_t last_query;
+  st_hole_t* last_query;
   kde_float_t epsilon;
   kde_float_t last_selectivity;
   int process_feedback;
@@ -80,9 +80,8 @@ static void _printTree(st_head_t* head, st_hole_t* hole, int depth);
 /**
  * Create a new empty st hole
  */
-static void initializeNewSthole(st_hole_t* hole, const st_head_t* head) {
-  // Zero-initialize everything.
-  memset(hole, 0, sizeof(st_hole_t));
+static st_hole_t* initializeNewSTHole(const st_head_t* head) {
+  st_hole_t* hole = calloc(1, sizeof(st_hole_t));
   // Now allocate the bounds and initialize them with +/- infinity.
   hole->bounds = (kde_float_t*) malloc(sizeof(kde_float_t)*head->dimensions*2);
   int i = 0;
@@ -93,7 +92,9 @@ static void initializeNewSthole(st_hole_t* hole, const st_head_t* head) {
   // Initialize the cached computations.
   hole->v = -1.0f;
   hole->v_box = -1.0f;
-  hole->cheapest_merge.penalty = INFINITY;
+  hole->merge_cache.penalty = INFINITY;
+  // Return the result.
+  return hole;
 }
 
 /**
@@ -110,28 +111,46 @@ static st_head_t* createNewHistogram(
   head->holes = 1;
   head->column_order = calloc(1, 32 * sizeof(unsigned int));
   
-  initializeNewSthole(&(head->last_query), head);
-  initializeNewSthole(&(head->root), head);
-  
+  head->root = initializeNewSTHole(head);
+  head->last_query = initializeNewSTHole(head);
+
   if (sizeof(kde_float_t) == sizeof(double)) {
     head->epsilon = DBL_EPSILON;
   } else {
     head->epsilon = FLT_EPSILON;
   }
-  
+
   int i = 0;
   for (; i<dimensions; ++i) {
      head->columns |= 0x1 << attributes[i];
      head->column_order[attributes[i]] = i;
   }
-  
-  //Initialize bound with +/- infinfity
-  for (i=0 ; i<dimensions ; i++) {
-    head->root.bounds[i*2] = INFINITY;
-    head->root.bounds[i*2+1] = -INFINITY;
-  }
-  
+
   return head;
+}
+
+// Helper function to reset merge cache references referring to a given bucket.
+static void resetMergeCache(st_hole_t* hole) {
+  unsigned int i;
+  // First, we check whether any of our siblings have selected us
+  // for a sibling-sibling merge.
+  if (hole->parent) {
+    for (i=0; i<hole->parent->nr_children; ++i) {
+      if (hole->parent->children[i]->merge_cache.merge_partner == hole) {
+        // Reset this child.
+        hole->parent->children[i]->merge_cache.penalty = INFINITY;
+      }
+    }
+  }
+  // Next, we need to check whether any of our children have selected us for a
+  // parent-child merge.
+  for (i=0; i<hole->nr_children; ++i) {
+    if (hole->children[i]->merge_cache.merge_partner == hole) {
+      hole->children[i]->merge_cache.penalty = INFINITY;
+    }
+  }
+  // Finally, we invalidate our own merge cache.
+  hole->merge_cache.penalty = INFINITY;
 }
 
 /**
@@ -140,18 +159,20 @@ static st_head_t* createNewHistogram(
 static void releaseResources(st_hole_t* hole) {
   free(hole->bounds);
   free(hole->children);
+  free(hole);
 }
 
 static void _destroyHistogram(st_hole_t* hole) {
   int i = 0;
   for (; i < hole->nr_children; i++) {
-    _destroyHistogram(hole->children + i);
+    _destroyHistogram(hole->children[i]);
   }
   releaseResources(hole);
 }
 
 static void destroyHistogram(st_head_t* head) {
-  _destroyHistogram(&(head->root));
+  _destroyHistogram(head->root);
+  releaseResources(head->last_query);
   free(head);
 }
 
@@ -164,64 +185,25 @@ static void setLastQuery(
   for (; i < request->range_count; i++) {
     // Add tiny little epsilons, if necessary, to account for the [) buckets.
     if (request->ranges[i].lower_included) {
-      head->last_query.bounds[head->column_order[request->ranges[i].colno]*2] =
+      head->last_query->bounds[head->column_order[request->ranges[i].colno]*2] =
           request->ranges[i].lower_bound;
     } else {
-      head->last_query.bounds[head->column_order[request->ranges[i].colno]*2] =
+      head->last_query->bounds[head->column_order[request->ranges[i].colno]*2] =
           request->ranges[i].lower_bound +
           fabs(request->ranges[i].lower_bound) * head->epsilon;
     }
     if (request->ranges[i].upper_included) {
-      head->last_query.bounds[head->column_order[request->ranges[i].colno]*2+1] =
+      head->last_query->bounds[head->column_order[request->ranges[i].colno]*2+1] =
           request->ranges[i].upper_bound +
           fabs(request->ranges[i].upper_bound) * head->epsilon;
     } else {
-      head->last_query.bounds[head->column_order[request->ranges[i].colno]*2+1] =
+      head->last_query->bounds[head->column_order[request->ranges[i].colno]*2+1] =
           request->ranges[i].upper_bound;
     }
   }
   // Invalidate the volume cache.
-  head->last_query.v = -1.0f;
-  head->last_query.v_box = -1.0f;
-}
-
-
-/**
- * Add a new child to the given parent.
- */
-static void registerChild(
-    const st_head_t* head, st_hole_t* parent, const st_hole_t* child) {
-  parent->nr_children++;
-  if (parent->child_capacity < parent->nr_children) {
-    // Increase the child capacity by 10.
-    parent->child_capacity += 10;
-    parent->children = realloc(
-        parent->children, parent->child_capacity * sizeof(st_hole_t));
-  }
-  parent->children[parent->nr_children - 1] = *child;
-  // We changed the children, invalidate the volume cache.
-  parent->v = -1.0f;
-  // Invalidate the merge cache of both the parent and the child.
-  parent->cheapest_merge.penalty = INFINITY;
-  parent->children[parent->nr_children - 1].cheapest_merge.penalty = INFINITY;
-}
-
-/**
- * Remove the child at position pos in bucket parent
- */
-static void unregisterChild(st_head_t* head, st_hole_t* parent, int pos) {
-  Assert(pos >= 0);
-  Assert(pos < parent->nr_children);
-  if (pos != parent->nr_children-1) {
-    parent->children[pos] = parent->children[parent->nr_children-1];
-    // Invalidate the cache of the child at pos, as it now has a new pointer.
-    parent->children[pos].cheapest_merge.penalty = INFINITY;
-  }
-  parent->nr_children--;
-  // We changed the children, invalidate the volume cache.
-  parent->v = -1.0f;
-  // Invalidate the merge cache.
-  parent->cheapest_merge.penalty = INFINITY;
+  head->last_query->v = -1.0f;
+  head->last_query->v_box = -1.0f;
 }
 
 /**
@@ -252,12 +234,51 @@ static kde_float_t v(const st_head_t* head, st_hole_t* hole) {
     kde_float_t v = vBox(head, hole);
     int i = 0;
     for (; i < hole->nr_children; i++) {
-      v -= vBox(head, hole->children + i);
+      v -= vBox(head, hole->children[i]);
     }
     Assert(v >= -1.0); // This usually means that something went terribly wrong.
     hole->v = fmax(0.0, v);
   }
   return hole->v;
+}
+
+/**
+ * Add a new child to the given parent.
+ */
+static void registerChild(
+    const st_head_t* head, st_hole_t* parent, st_hole_t* child) {
+  parent->nr_children++;
+  if (parent->child_capacity < parent->nr_children) {
+    // Increase the child capacity by 10.
+    parent->child_capacity += 10;
+    parent->children = realloc(
+        parent->children, parent->child_capacity * sizeof(st_hole_t*));
+  }
+  parent->children[parent->nr_children - 1] = child;
+  child->parent = parent;
+  // We changed the children, update the volume cache.
+  if (parent->v > -1.0f) {
+    parent->v -= vBox(head, child);
+    parent->v = fmax(parent->v, 0.0f);
+  }
+}
+
+/**
+ * Remove the child at position pos in bucket parent
+ */
+static void unregisterChild(
+    st_head_t* head, st_hole_t* parent, st_hole_t* child) {
+  int i=0;
+  for (; i<parent->nr_children; ++i) {
+    if (parent->children[i] == child && i != parent->nr_children - 1) {
+      parent->children[i] = parent->children[parent->nr_children - 1];
+    }
+  }
+  parent->nr_children--;
+  // Update the volume cache.
+  if (parent->v > -1.0f) {
+    parent->v += vBox(head, child);
+  }
 }
 
 /**
@@ -269,9 +290,9 @@ static void intersectWithLastQuery(
   int i = 0;
   for (; i < head->dimensions; i++) {
     target_hole->bounds[2*i] = fmax(
-        head->last_query.bounds[2*i], hole->bounds[2*i]);
+        head->last_query->bounds[2*i], hole->bounds[2*i]);
     target_hole->bounds[2*i+1] = fmin(
-        head->last_query.bounds[2*i+1], hole->bounds[2*i+1]);
+        head->last_query->bounds[2*i+1], hole->bounds[2*i+1]);
   }
   // The volume of the target hole has changed, invalid the cached volume.
   target_hole->v = -1.0f;
@@ -352,9 +373,9 @@ static int _disjunctivenessTest(st_head_t* head, st_hole_t* hole) {
     int j;
     for (j = i+1; j < hole->nr_children; j++) {
       if (getIntersectionType(
-           head, hole->children+i, hole->children+j) != NONE) {
+           head, hole->children[i], hole->children[j]) != NONE) {
         fprintf(stderr, "Intersection between child %i and %i is %i\n", i, j,
-                getIntersectionType(head,hole->children+i,hole->children+j));
+                getIntersectionType(head,hole->children[i], hole->children[j]));
         return 0;
       }
     }
@@ -365,22 +386,20 @@ static int _disjunctivenessTest(st_head_t* head, st_hole_t* hole) {
 /**
  * Aggregate estimated tuples recursively
  */
-static kde_float_t _est(
-    const st_head_t* head, const st_hole_t* hole,
+static kde_float_t _est(const st_head_t* head, st_hole_t* hole,
     kde_float_t* intersection_vol) {
   kde_float_t est = 0.0;
   *intersection_vol = 0;
   
   // If we don't intersect with the query, the estimate is zero.
-  if (getIntersectionType(head, hole, &head->last_query) == NONE) {
+  if (getIntersectionType(head, hole, head->last_query) == NONE) {
     return est;
   }
   
   //  Calculate v(q b)
-  st_hole_t q_i_b;
-  initializeNewSthole(&q_i_b, head);
-  intersectWithLastQuery(head, hole, &q_i_b);
-  *intersection_vol = vBox(head, &q_i_b);
+  st_hole_t* q_i_b = initializeNewSTHole(head);
+  intersectWithLastQuery(head, hole, q_i_b);
+  *intersection_vol = vBox(head, q_i_b);
   
   kde_float_t v_q_i_b = *intersection_vol;
   
@@ -388,7 +407,7 @@ static kde_float_t _est(
   int i = 0;
   for (; i < hole->nr_children; i++) {
     kde_float_t child_intersection;
-    est += _est(head, hole->children + i, &child_intersection);
+    est += _est(head, hole->children[i], &child_intersection);
     v_q_i_b -= child_intersection;
   }
   // Ensure that v_q_i_b is capped by zero.
@@ -402,7 +421,7 @@ static kde_float_t _est(
     est += hole->tuples * (v_q_i_b / vh); 
   }
   
-  releaseResources(&q_i_b);
+  releaseResources(q_i_b);
   
   return est;
 }  
@@ -422,7 +441,7 @@ static int _propagateTuple(
   // Inform our children about this point
   for (i = 0; i < hole->nr_children; i++) {
     // If one of our children claims this point, we tell our parents about it.
-    if (_propagateTuple(head, hole->children + i, tuple) == 1) return 1;
+    if (_propagateTuple(head, hole->children[i], tuple) == 1) return 1;
   }
   
   // None of the children showed interest in the point, claim it for ourselves.
@@ -437,7 +456,7 @@ static void resetAllCounters(st_hole_t* hole) {
   hole->counter = 0;
   int i = 0;
   for (; i < hole->nr_children; i++) {
-    resetAllCounters(hole->children + i);
+    resetAllCounters(hole->children[i]);
   }
 }
 
@@ -524,7 +543,7 @@ static void shrink(
 // progressively shrinking intersection such that it does not partially
 // intersect with the hole anymore.
 static unsigned int minReducedVolumeDimension(
-    st_head_t* head, st_hole_t* intersection, const st_hole_t* hole) {
+    st_head_t* head, st_hole_t* intersection, st_hole_t* hole) {
   int max_dim = -1;
   kde_float_t max_vol = -INFINITY;
   int i = 0;
@@ -539,42 +558,28 @@ static unsigned int minReducedVolumeDimension(
   return max_dim;
 }
 
-
-
 /**
  * Finds candidate holes and drills them
  */
 static void _drillHoles(st_head_t* head, st_hole_t* parent, st_hole_t* hole) {
-  st_hole_t candidate, tmp;
-
-  int i, pos, old_hole_size = 0;
+  int i, j, old_hole_size = 0;
   intersection_t type;
   kde_float_t v_qib;
-  kde_float_t parent_vol;
-  
-  // We will update the tuple count of hole. Make sure to invalidate the
-  // caches of all children.
-  for (i=0; i<hole->nr_children; ++i) {
-    hole->children[i].cheapest_merge.penalty = INFINITY;
-  }
-  // Also invalidate the cache of the hole itself.
-  hole->cheapest_merge.penalty = INFINITY;
 
-  if (getIntersectionType(head, &(head->last_query), hole) == NONE) return;
-  if (parent != NULL) pos = hole - parent->children; // Remember the position of the hole before we mess with the array
-  initializeNewSthole(&candidate, head);
-  initializeNewSthole(&tmp, head);
+  if (getIntersectionType(head, head->last_query, hole) == NONE) return;
+  st_hole_t* candidate = initializeNewSTHole(head);
+  st_hole_t* tmp = initializeNewSTHole(head);
   // Get the intersection with the last query for this hole.
-  intersectWithLastQuery(head, hole, &candidate);
-  v_qib = vBox(head, &candidate); //*Will be adjusted to the correct value later
-  type = getIntersectionType(head, hole, &candidate);
+  intersectWithLastQuery(head, hole, candidate);
+  v_qib = vBox(head, candidate); //*Will be adjusted to the correct value later
+  type = getIntersectionType(head, hole, candidate);
   
   // Shrink the candidate hole.
   switch(type) {
     case NONE:
       return;
     
-    //Case 2: We have complete intersection with this hole. Update stats.
+    // Case 2: We have complete intersection with this hole. Update stats.
     case EQUALITY:
       hole->tuples = hole->counter;
       goto nohole;
@@ -583,19 +588,20 @@ static void _drillHoles(st_head_t* head, st_hole_t* parent, st_hole_t* hole) {
     case FULL12:
       //We will use the tmp
       for (i = 0; i < hole->nr_children; i++) {
-        if (getIntersectionType(head,&(head->last_query),hole->children+i) != NONE) {
-          intersectWithLastQuery(head, hole->children+i, &tmp);
-          v_qib -= vBox(head,&tmp);
+        if (getIntersectionType(
+            head, head->last_query, hole->children[i]) != NONE) {
+          intersectWithLastQuery(head, hole->children[i], tmp);
+          v_qib -= vBox(head, tmp);
         }
       } 
-      releaseResources(&tmp);
+      releaseResources(tmp);
       // Shrink the candidate until it does not intersect any children.
       while (true) {
         int changed = 0;
         for (i = 0; i < hole->nr_children; i++) {
           // Full intersections:
           intersection_t type = getIntersectionType(
-              head, hole->children+i, &candidate);
+              head, hole->children[i], candidate);
           // Full and no intersection are no problem:
           if (type == FULL12) {
             goto nohole;
@@ -608,8 +614,8 @@ static void _drillHoles(st_head_t* head, st_hole_t* parent, st_hole_t* hole) {
             continue; //The child is completely located inside the intersection.
           } else {
             unsigned int max_dim =
-                minReducedVolumeDimension(head, &candidate, hole->children+i);
-            shrink(head, &candidate, hole->children+i, max_dim);
+                minReducedVolumeDimension(head, candidate, hole->children[i]);
+            shrink(head, candidate, hole->children[i], max_dim);
             changed = 1;
           }
         }
@@ -625,7 +631,7 @@ static void _drillHoles(st_head_t* head, st_hole_t* parent, st_hole_t* hole) {
   }
   
   //This is a shitty corner case, that can occur.
-  if (vBox(head, &candidate) <= fabs(head->epsilon*vBox(head,&candidate))) {
+  if (vBox(head, candidate) <= fabs(head->epsilon*vBox(head, candidate))) {
     goto nohole;
   }
     
@@ -634,50 +640,79 @@ static void _drillHoles(st_head_t* head, st_hole_t* parent, st_hole_t* hole) {
   // from the back.
   for (i=hole->nr_children-1; i >=0 ; i--) {
     intersection_t type = getIntersectionType(
-        head, &candidate, hole->children+i);
+        head, candidate, hole->children[i]);
     if (type == FULL12) {
-      registerChild(head, &candidate, hole->children + i);
-      unregisterChild(head, hole, i);
+      registerChild(head, candidate, hole->children[i]);
+      unregisterChild(head, hole, hole->children[i]);
     } else if (type == EQUALITY) {
       Assert(0);
     }
     Assert(type != PARTIAL);
   }
   
-  candidate.tuples = hole->counter * (v(head,&candidate)/v_qib);
-  candidate.counter = hole->counter * (v(head,&candidate)/v_qib);
+  candidate->tuples = hole->counter * (v(head, candidate)/v_qib);
+  candidate->counter = hole->counter * (v(head, candidate)/v_qib);
+
+  // We will now adjust the merge cache of the children that fall into the new
+  // candidate hole. In particular, all caches of candidate's children that
+  // refer to remaining children of the hole that will be drilled into or to
+  // the hole itself have to be reset.
+  for (i = 0; i < candidate->nr_children; ++i) {
+    st_hole_t* child = candidate->children[i];
+    if (child->merge_cache.penalty == INFINITY) continue;
+    if (child->merge_cache.merge_partner == hole) {
+      // Invalid, since the parent of child is now bn.
+      child->merge_cache.penalty = INFINITY;
+    } else {
+      // Check if the child's cache refers to any of parent's children.
+      for (j = 0; j < hole->nr_children; ++j) {
+        if (child->merge_cache.merge_partner == hole->children[j]) {
+          child->merge_cache.penalty = INFINITY;
+          break;
+        }
+      }
+    }
+  }
+  // Now adjust the merge cache of the remaining children of the hole that will
+  // be drilled into. In particular, all caches of the hole's children that
+  // refer to a child of the candidate hole need to be reset.
+  for (i = 0; i < hole->nr_children; ++i) {
+    st_hole_t* child = hole->children[i];
+    if (child->merge_cache.penalty == INFINITY) continue;
+    for (j = 0; j < candidate->nr_children; ++j) {
+      if (child->merge_cache.merge_partner == candidate->children[j]) {
+        child->merge_cache.penalty = INFINITY;
+        break;
+      }
+    }
+  }
+
   // Finally, register the candidate hole.
-  registerChild(head, hole, &candidate);
+  registerChild(head, hole, candidate);
   
-  Assert(_disjunctivenessTest(head, &candidate));
+  Assert(_disjunctivenessTest(head, candidate));
   Assert(_disjunctivenessTest(head, hole));
   
-  parent_vol = hole->tuples - candidate.tuples;
-  if (parent_vol >= 0) {
-    hole->tuples = parent_vol;
-  } else {
-    hole->tuples = 0;
-  }  
+  hole->tuples = fmax(hole->tuples - candidate->tuples, 0.0);
   
   // Does this bucket still carry information?
   // If not, migrate all children to the parent. Of course, the root bucket can't be removed.
-  if (parent != NULL && v(head,hole) <= fabs(head->epsilon*vBox(head,hole))) {
-    int old_parent_size;
-    tmp = *hole;
-    unregisterChild(head, parent, pos);
+  if (parent != NULL && v(head, hole) <= fabs(head->epsilon*vBox(head,hole))) {
+    resetMergeCache(hole);  // Invalidate all cache entries to the hole.
+    unregisterChild(head, parent, hole);
     
-    old_parent_size = parent->nr_children;
-    for (i = 0; i < tmp.nr_children; i++) {
-      registerChild(head, parent, tmp.children+i);
+    int old_parent_size = parent->nr_children;
+    for (i = 0; i < hole->nr_children; i++) {
+      registerChild(head, parent, hole->children[i]);
     }
     
-    for (i=old_parent_size; i < tmp.nr_children; i++) {
-      _drillHoles(head, parent, parent->children+i);
+    for (i=old_parent_size; i < hole->nr_children; i++) {
+      _drillHoles(head, parent, parent->children[i]);
     }
 
     head->holes--;
 
-    releaseResources(&tmp);
+    releaseResources(hole);
     
     Assert(_disjunctivenessTest(head,parent));
     return;
@@ -687,29 +722,29 @@ static void _drillHoles(st_head_t* head, st_hole_t* parent, st_hole_t* hole) {
   // Tell the children about the new query.
   old_hole_size = hole->nr_children;
   for (i=0; i < old_hole_size; i++) {
-    _drillHoles(head, hole, hole->children+i);
+    _drillHoles(head, hole, hole->children[i]);
   } 
   return;
   
 nohole:
-  releaseResources(&candidate);
+  releaseResources(candidate);
   old_hole_size = hole->nr_children;
   for (i=0; i < old_hole_size; i++) {
-    _drillHoles(head, hole, hole->children+i);
+    _drillHoles(head, hole, hole->children[i]);
   }
   return;
 }
 
 
 static void drillHoles(st_head_t* head) {
-  _drillHoles(head, NULL, &(head->root));
+  _drillHoles(head, NULL, head->root);
 }
 
 /**
  * Calculate the parent child merge penalty for a given pair of buckets
  */
 static kde_float_t parentChildMergeCost(
-    const st_head_t* head, const st_hole_t* parent, const st_hole_t* child) {
+    const st_head_t* head, st_hole_t* parent, st_hole_t* child) {
   if (parent == NULL) return INFINITY;
     
   kde_float_t fbp = parent->tuples;
@@ -727,8 +762,7 @@ static kde_float_t parentChildMergeCost(
  * of a sibling sibling merge)
  */
 static kde_float_t parentChildChildMergeCost(
-    const st_head_t* head, const st_hole_t* parent,
-    const st_hole_t* c1, const st_hole_t* c2) {
+    const st_head_t* head, st_hole_t* parent, st_hole_t* c1, st_hole_t* c2) {
   if (parent == NULL) return INFINITY;
     
   kde_float_t fbp = parent->tuples;
@@ -752,27 +786,18 @@ static void performParentChildMerge(
     st_head_t* head, st_hole_t* parent, st_hole_t* child) {
   parent->tuples += child->tuples;
   
-  // Remember some info about the child, since registerChild might realloc the
-  // parent's children buffer, which leads to our child pointer becoming
-  // invalid.
-  int pos_in_parent_child_array = child - parent->children;
-  st_hole_t* child_children = child->children;
-  unsigned int child_nr_children = child->nr_children;
-  
-  // Migrate all children.
-  int i = 0;
-  for (; i < child_nr_children; i++) {
-    registerChild(head, parent, child_children + i);
-  }
-  
-  releaseResources(parent->children + pos_in_parent_child_array);
-  unregisterChild(head, parent, pos_in_parent_child_array);
+  // We need to reset all mergecache entries refering to the to-be-merged child,
+  // as those will become invalid.
+  resetMergeCache(child);
 
-  // We need to invalidate the cache of all of the parent's children, since
-  // their penalty to merge with the parent has changed after this.
-  for (i = 0; i < parent->nr_children; ++i) {
-    parent->children[i].cheapest_merge.penalty = INFINITY;
+  // Now we migrate all grandchildren to the parent.
+  int i = 0;
+  for (; i < child->nr_children; i++) {
+    registerChild(head, parent, child->children[i]);
   }
+  
+  unregisterChild(head, parent, child);
+  releaseResources(child);
  
   head->holes--;
 }
@@ -781,11 +806,9 @@ static void performParentChildMerge(
  * Calculate the cost for an sibling sibling merge
  */
 static kde_float_t siblingSiblingMergeCost(
-    const st_head_t* head, const st_hole_t* parent,
-    const st_hole_t* c1, const st_hole_t* c2) {
+    const st_head_t* head, st_hole_t* parent, st_hole_t* c1, st_hole_t* c2) {
   int i;
-  st_hole_t bn;
-  initializeNewSthole(&bn, head);
+  st_hole_t* bn = initializeNewSTHole(head);
 
   kde_float_t f_b1 = c1->tuples;
   kde_float_t f_b2 = c2->tuples;
@@ -794,45 +817,44 @@ static kde_float_t siblingSiblingMergeCost(
   kde_float_t v_b1 = v(head, c1);
   kde_float_t v_b2 = v(head, c2);
 
-  boundingBox(head, c1, &bn);
-  boundingBox(head, c2, &bn);
+  boundingBox(head, c1, bn);
+  boundingBox(head, c2, bn);
 
   // Progressively increase the size of the bounding box until we have
   // no partial intersections.
+  kde_float_t v_I = 0;
   while (true) {
+    bool first_pass = true;
     int changed = 0;
     for (i = 0; i < parent->nr_children; i++) {
-      st_hole_t* child = parent->children + i;
+      st_hole_t* child = parent->children[i];
       if (child == c1 || child == c2) continue; // Skip to-be-merged children.
       // Now check whether bn intersects with this child. If it does, we have
       // to grow bn until this intersection disappears.
-      intersection_t type = getIntersectionType(head, child, &bn);
+      intersection_t type = getIntersectionType(head, child, bn);
       if (type == PARTIAL) {
-        boundingBox(head, child, &bn);
+        v_I += vBox(head, child);
+        boundingBox(head, child, bn);
         changed = 1;
+      } else if (first_pass && type == FULL21) {
+        // On the first pass, we also need to take holes that our new hole
+        // already fully contains into account to compute the displaced volume.
+        v_I += vBox(head, child);
       }
+      first_pass = false;
     }
     if (!changed) break;
   }
 
-  // A final pass to add all enclosed boxes.
-  for (i=0; i < parent->nr_children; i++) {
-    intersection_t type = getIntersectionType(head,parent->children+i,&bn);
-    if (parent->children+i == c1 || parent->children+i == c2) continue;
-    if (type == FULL21) {
-      registerChild(head, &bn, parent->children+i);
-    }
-  }
-
-  if (getIntersectionType(head,parent,&bn) == EQUALITY) {
-    releaseResources(&bn);
+  // Check if this is a special case:
+  if (getIntersectionType(head, parent, bn) == EQUALITY) {
+    releaseResources(bn);
     return parentChildChildMergeCost(head, parent, c1, c2);
   }
 
-  //v(head,&bn) = vBox(bn) - vBox(participants)
-  kde_float_t v_old = v(head, &bn) - vBox(head, c1) - vBox(head, c2);
-
-  releaseResources(&bn);
+  // Compute the displaced volume by the new box.
+  kde_float_t v_old = v(head, bn) - vBox(head, c1) - vBox(head, c2) - v_I;
+  releaseResources(bn);
   kde_float_t f_bn = f_b1 + f_b2 + f_bp * v_old / v_bp;
 
   // Caution: there is an error in the full paper saying this is the value for
@@ -845,100 +867,117 @@ static kde_float_t siblingSiblingMergeCost(
 }
 
 /*
- * Apply a sibling sibling merge to the histogram
+ * Apply a sibling-sibling merge to the histogram.
  */
 static void performSiblingSiblingMerge(
     st_head_t* head, st_hole_t* parent, st_hole_t* c1, st_hole_t* c2) {
-  // It is easier for us if c1 < c2:
-  if (c2 < c1) {
-    st_hole_t* tmp = c2;
-    c2 = c1;
-    c1 = tmp;
-  }
-  // We keep track of the relative positions of c1 and c2 in the parent's
-  // children array, as this array will potentially be modified.
-  int pos1 = c1 - parent->children;
-  int pos2 = c2 - parent->children;
-  // We also keep a copy of c1 and c2, as this makes it easier for us to release
-  // resources later.
-  st_hole_t c1_c = *c1;
-  st_hole_t c2_c = *c2;
+  int i, j;
 
   kde_float_t f_b1 = c1->tuples;
   kde_float_t f_b2 = c2->tuples;
   kde_float_t f_bp = parent->tuples;
   kde_float_t v_bp = v(head, parent);
 
+  // Before we do anything, reset the merge cache of c1 and c2.
+  resetMergeCache(c1);
+  resetMergeCache(c2);
+
   // Initialize a new bucket as the bounding box of both c1 and c2.
-  st_hole_t bn;
-  initializeNewSthole(&bn, head);
-  boundingBox(head, c1, &bn);
-  boundingBox(head, c2, &bn);
+  st_hole_t* bn = initializeNewSTHole(head);
+  boundingBox(head, c1, bn);
+  boundingBox(head, c2, bn);
+
   // Now increase the size of the bounding box until there are no remaining
   // partial intersections with any children.
   while (true) {
     int changed = 0;
-    int i = 0;
-    for (; i < parent->nr_children; i++) {
-      st_hole_t* child = parent->children + i;
+    for (i = 0; i < parent->nr_children; i++) {
+      st_hole_t* child = parent->children[i];
       if (child == c1 || child == c2) continue; // Skip to-be-merged children.
       // Now check whether bn intersects with this child. If it does, we have
       // to grow bn until this intersection disappears.
-      intersection_t type = getIntersectionType(head, child, &bn);
+      intersection_t type = getIntersectionType(head, child, bn);
       if (type == PARTIAL) {
-        boundingBox(head, child, &bn);
+        boundingBox(head, child, bn);
         changed = 1;
       }
     }
     if (!changed) break;  // No more partial intersections, we are done.
   }
   // Capture the p-c2 merge corner case:
-  if (getIntersectionType(head, parent, &bn) == EQUALITY) {
-    // PerformParentChild will change the underlying memory of the children.
-    performParentChildMerge(head, parent, parent->children + pos2);
-    performParentChildMerge(head, parent, parent->children + pos1);
-    releaseResources(&bn);
+  if (getIntersectionType(head, parent, bn) == EQUALITY) {
+    performParentChildMerge(head, parent, c1);
+    performParentChildMerge(head, parent, c2);
+    releaseResources(bn);
     return;
   }
-  // Remove c1 and c2 from the parent.
-  unregisterChild(head, parent, pos2);
-  unregisterChild(head, parent, pos1);
-  // And move all enclosed children from the parent to the new bounding box.
-  int i = parent->nr_children - 1;
-  for (; i >=0 ; i--) {
-    intersection_t type = getIntersectionType(head, parent->children+i, &bn);
+
+  // Now move all fully enclosed children (besides c1 and c2) from the parent
+  // to the new hole.
+  for (i=parent->nr_children - 1; i>=0 ; i--) {
+    if (parent->children[i] == c1 || parent->children[i] == c2) continue;
+    intersection_t type = getIntersectionType(head, parent->children[i], bn);
     if (type == FULL21) {
-      registerChild(head, &bn, parent->children+i);
-      unregisterChild(head, parent, i);
+      registerChild(head, bn, parent->children[i]);
+      unregisterChild(head, parent, parent->children[i]);
     }
   }
 
-  //v(head,&bn) = vBox(head) - vBox(participants)
-  kde_float_t v_old = fmax(v(head,&bn) - vBox(head,&c1_c) - vBox(head,&c2_c),0);
+  // Update the tuple counts for both the new bucket and the parent.
+  kde_float_t v_old = fmax(v(head, bn) - vBox(head, c1) - vBox(head, c2), 0);
   kde_float_t f_bn = fmax(f_b1 + f_b2 + f_bp * v_old / v_bp, 0);
-
-  bn.tuples = f_bn;
+  bn->tuples = f_bn;
   parent->tuples = parent->tuples * (1 - v_old/v_bp);
-    
-  for (i = 0; i < c2_c.nr_children; i++) {
-    registerChild(head, &bn, c2_c.children + i);
+
+  // Move the children of c1 and c2 to the new bucket.
+  for (i = 0; i < c1->nr_children; i++) {
+    registerChild(head, bn, c1->children[i]);
+  }
+  for (i = 0; i < c2->nr_children; i++) {
+    registerChild(head, bn, c2->children[i]);
   }
 
-  for (i = 0; i < c1_c.nr_children; i++) {
-    registerChild(head, &bn, c1_c.children + i);
+  // And unregister and delete c1 and c2.
+  unregisterChild(head, parent, c1);
+  unregisterChild(head, parent, c2);
+  releaseResources(c1);
+  releaseResources(c2);
+
+  // We will now adjust the merge cache of the children of bn. In particular,
+  // all caches of bn's children that refer to children of the parent or to
+  // the parent itself have to be reset.
+  for (i = 0; i < bn->nr_children; ++i) {
+    st_hole_t* child = bn->children[i];
+    if (child->merge_cache.penalty == INFINITY) continue;
+    if (child->merge_cache.merge_partner == parent) {
+      // Invalid, since the parent of child is now bn.
+      child->merge_cache.penalty = INFINITY;
+    } else {
+      // Check if the child's cache refers to any of parent's children.
+      for (j = 0; j < parent->nr_children; ++j) {
+        if (child->merge_cache.merge_partner == parent->children[j]) {
+          child->merge_cache.penalty = INFINITY;
+          break;
+        }
+      }
+    }
   }
-
-  releaseResources(&c1_c);
-  releaseResources(&c2_c);
-
-  // We need to invalidate the cache of all of the parent's children, since
-  // their penalty to merge with the parent has changed after this.
+  // Now adjust the merge cache of children of parent. In particular, all
+  // caches of parent's children that refer to a child of bn need to be reset.
   for (i = 0; i < parent->nr_children; ++i) {
-    parent->children[i].cheapest_merge.penalty = INFINITY;
+    st_hole_t* child = parent->children[i];
+    if (child->merge_cache.penalty == INFINITY) continue;
+    for (j = 0; j < bn->nr_children; ++j) {
+      if (child->merge_cache.merge_partner == bn->children[j]) {
+        child->merge_cache.penalty = INFINITY;
+        break;
+      }
+    }
   }
 
-  registerChild(head, parent, &bn);
-  head->holes--;;
+  // Finally, register bn as a new child of the parent.
+  registerChild(head, parent, bn);
+  head->holes--;
 }
 
 /**
@@ -946,51 +985,32 @@ static void performSiblingSiblingMerge(
  */ 
 static void _getSmallestMerge(
     st_head_t* head, st_hole_t* parent, st_hole_t* hole, merge_t* best_merge) {
-  
-  // If we have cached merge information, check if we need to update something:
-  if (hole->cheapest_merge.penalty != INFINITY) {
-    // Adjust the pointers in the merge cache to compensate for potential
-    // changes due to memory reallocations.
-    if (hole->cheapest_merge.child2 == NULL) {
-      hole->cheapest_merge.parent = parent;
-    } else {
-      hole->cheapest_merge.parent = hole;
-      // In this case, the children might have been modified. If they have
-      // invalidated their caches, make sure to invalidate ours as well.
-      if (hole->cheapest_merge.child1->cheapest_merge.penalty == INFINITY ||
-          hole->cheapest_merge.child2->cheapest_merge.penalty == INFINITY) {
-        hole->cheapest_merge.penalty = INFINITY;
-      }
-    }
-  }
+  Assert(hole->parent == parent); // Ensure the structural integrity is correct.
 
   // First, we recurse to all of our children to check for their best merge.
   int i = 0;
   for (; i < hole->nr_children; i++) {
-    _getSmallestMerge(head, hole, hole->children + i, best_merge);
+    _getSmallestMerge(head, hole, hole->children[i], best_merge);
   }
 
-  // Check if we already know the cheapest merge.
-  if (hole->cheapest_merge.penalty == INFINITY) {
+  // Check if we need to recompute the merge cache.
+  if (hole->merge_cache.penalty == INFINITY) {
     // We need to recompute the cheapest merge.
     // First, we check the merge against our parent.
     if (parent != NULL) {
-      hole->cheapest_merge.penalty = parentChildMergeCost(head, parent, hole);
-      hole->cheapest_merge.parent = parent;
-      hole->cheapest_merge.child1 = hole;
-      hole->cheapest_merge.child2 = NULL;
-    }
-    // Now check the merge costs between our children:
-    for (i = 0; i < hole->nr_children; ++i) {
-      int j = i + 1;
-      for (; j < hole->nr_children; ++j) {
-        kde_float_t merge_cost = siblingSiblingMergeCost(
-            head, hole, hole->children + i, hole->children + j);
-        if (merge_cost < hole->cheapest_merge.penalty) {
-          hole->cheapest_merge.penalty = merge_cost;
-          hole->cheapest_merge.parent = hole;
-          hole->cheapest_merge.child1 = hole->children + i;
-          hole->cheapest_merge.child2 = hole->children + j;
+      // First, we check how expensive a merge with our parent would be.
+      hole->merge_cache.penalty = parentChildMergeCost(head, parent, hole);
+      hole->merge_cache.merge_partner = parent;
+      // Next, we check the merge costs with our siblings:
+      for (i = 0; i < hole->parent->nr_children; ++i) {
+        st_hole_t* sibling = hole->parent->children[i];
+        if (sibling != hole) {
+          kde_float_t merge_cost = siblingSiblingMergeCost(
+              head, hole->parent, hole, sibling);
+          if (merge_cost < hole->merge_cache.penalty) {
+            hole->merge_cache.penalty = merge_cost;
+            hole->merge_cache.merge_partner = sibling;
+          }
         }
       }
     }
@@ -998,8 +1018,9 @@ static void _getSmallestMerge(
 
   // Ok, we have a valid merge cache. Check if we are the currently cheapest
   // one.
-  if (hole->cheapest_merge.penalty < best_merge->penalty) {
-    *best_merge = hole->cheapest_merge;
+  if (hole->merge_cache.penalty < best_merge->penalty) {
+    best_merge->penalty = hole->merge_cache.penalty;
+    best_merge->merge_partner = hole;
   }
 }
 
@@ -1010,7 +1031,7 @@ static void printTree(st_head_t* head) {
   fprintf(stderr, "Dimensions: %u\n", head->dimensions);
   fprintf(stderr, "Max #holes: %i\n", head->max_holes);
   fprintf(stderr, "Current #holes: %i\n", head->holes);
-  _printTree(head, &(head->root), 0);
+  _printTree(head, head->root, 0);
 }
 
 /**
@@ -1018,19 +1039,20 @@ static void printTree(st_head_t* head) {
  */ 
 static void mergeHoles(st_head_t* head) {
   while (head->holes > head->max_holes) {
-    //fprintf(stderr,"Holes: %i > %i\n",head->holes, head->max_holes);
     merge_t bestMerge;
     bestMerge.penalty = INFINITY;
     // Get the best possible merge in the tree
-    _getSmallestMerge(head, NULL, &(head->root), &bestMerge);
-    // See, what kind of merge it is and perform it
-    if (bestMerge.child2 != NULL) {
-      //fprintf(stderr,"Sibling-sibling merge!\n");
-      performSiblingSiblingMerge(
-          head, bestMerge.parent, bestMerge.child1, bestMerge.child2);
+    _getSmallestMerge(head, NULL, head->root, &bestMerge);
+    // See, what kind of merge it is and run it:
+    st_hole_t* merge_partner_1 = bestMerge.merge_partner;
+    st_hole_t* merge_partner_2 = merge_partner_1->merge_cache.merge_partner;
+    if (merge_partner_2 == merge_partner_1->parent) {
+      // Parent-Child merge, with merge_partner_1 being the child.
+      performParentChildMerge(head, merge_partner_2, merge_partner_1);
     } else {
-      //fprintf(stderr,"Parent-child merge!\n");
-      performParentChildMerge(head, bestMerge.parent, bestMerge.child1);
+      // Sibling-Sibling merge between the two nodes.
+      performSiblingSiblingMerge(
+          head, merge_partner_1->parent, merge_partner_1, merge_partner_2);
     }
   }
 }
@@ -1052,15 +1074,14 @@ static void propagateTuple(
   Assert(htup);
 
   for (i = 0; i < desc->natts; i++) {
-    //This should skip columns that are requested but not handled by our estimator.
+    // Skip columns that are requested but not handled by our estimator.
     if (! (head->columns & (0x1 << desc->attrs[i]->attnum))) continue;
     
     Datum datum = heap_getattr(
         htup, desc->attrs[i]->attnum ,RelationGetDescr(rel), &isNull);
     
     Assert(desc->attrs[i]->atttypid == FLOAT8OID || 
-      desc->attrs[i]->atttypid == FLOAT4OID
-    );
+           desc->attrs[i]->atttypid == FLOAT4OID);
     
     
     if (desc->attrs[i]->atttypid == FLOAT8OID) {
@@ -1075,8 +1096,8 @@ static void propagateTuple(
   } 
   
   //Very well, by now we should have a nice tuple. Lets do some traversing.
-  int rc = _propagateTuple(head, &(head->root), tuple);
-  Assert(rc); //We should never encounter a tuple that does not fit our relation
+  int rc = _propagateTuple(head, head->root, tuple);
+  Assert(rc); // We should never encounter a tuple that isn't claimed.
 }
 
 /**
@@ -1084,9 +1105,9 @@ static void propagateTuple(
  */
 void stholes_propagateTuple(Relation rel, const TupleTableSlot* slot) {
   if (current != NULL && rel->rd_id == current->table) {
-    return propagateTuple(current,rel,slot);
+    propagateTuple(current, rel, slot);
   }
-}  
+}
 
 /**
  * API method to create a new histogram and remove the old one.
@@ -1105,41 +1126,42 @@ static int est(
   int request_columns = 0;
   kde_float_t ivol;
   
-  //Can we answer this query?
+  // Can we answer this query?
   int i = 0;
   for (; i < request->range_count; ++i) {
     request_columns |= 0x1 << request->ranges[i].colno;
   }
 
-  //We do not allow queries missing restrictions on a variable
+  // We do not allow queries missing restrictions on a variable.
   if ((head->columns | request_columns) != head->columns ||
       request->range_count != head->dimensions) {
     return 0;
   }
 
-  //Bring the request in a nicer form and store it
+  // Bring the request in a nicer form and store it
   setLastQuery(head,request);
 
-  //"If the current query q extends the beyond the boundaries of the root bucket
-  //we expand the root bucket so that it covers q." Section 4.2, p. 8
-  //We usually assume closed intervals for the queries, but stholes bounds are half open intervalls (5.2).
-  //We add a machine epsilon to the bound, just in case
+  // "If the current query q extends the beyond the boundaries of the root bucket
+  // we expand the root bucket so that it covers q." Section 4.2, p. 8
+  // We usually assume closed intervals for the queries, but stholes bounds are
+  // half-open intervalls (5.2). We add a machine epsilon to the bound, just in case
   for (i = 0; i < head->dimensions; i++) {
-    if (head->root.bounds[2*i] > head->last_query.bounds[2*i]) {
-      head->root.bounds[2*i] = head->last_query.bounds[2*i];
-      // Invalidate the cached volume.
-      head->root.v = -1.0f;
-      head->root.v_box = -1.0f;
+    if (head->root->bounds[2*i] > head->last_query->bounds[2*i]) {
+      head->root->bounds[2*i] = head->last_query->bounds[2*i];
+      // Invalidate the cached volume and the merge-cache.
+      head->root->v = -1.0f;
+      head->root->v_box = -1.0f;
+      resetMergeCache(head->root);
     }
-    if (head->root.bounds[2*i+1] < head->last_query.bounds[2*i+1]) {
-      head->root.bounds[2*i+1] = head->last_query.bounds[2*i+1]; //+ abs(head->last_query.bounds[2*i+1]) * head->epsilon;
-      head->root.v = -1.0f;
-      head->root.v_box = -1.0f;
+    if (head->root->bounds[2*i+1] < head->last_query->bounds[2*i+1]) {
+      head->root->bounds[2*i+1] = head->last_query->bounds[2*i+1]; //+ abs(head->last_query.bounds[2*i+1]) * head->epsilon;
+      head->root->v = -1.0f;
+      head->root->v_box = -1.0f;
+      resetMergeCache(head->root);
     }
   }
 
-  
-  *selectivity = _est(head, &(head->root), &ivol);
+  *selectivity = _est(head, head->root, &ivol);
   return 1;
 } 
 
@@ -1157,7 +1179,7 @@ static void _printTree(st_head_t* head, st_hole_t* hole, int depth) {
   fprintf(stderr," Tuples %f",hole->tuples);
   fprintf(stderr,"\n");
   for (i = 0; i < hole->nr_children; i++) {
-    _printTree(head,hole->children+i,depth+1);
+    _printTree(head, hole->children[i], depth+1);
   }  
 }  
 
@@ -1168,7 +1190,7 @@ int stholes_est(
     Oid rel, const ocl_estimator_request_t* request, Selectivity* selectivity) {
   if (current == NULL) return 0;
   if (rel == current->table) {
-    resetAllCounters(&(current->root));
+    resetAllCounters(current->root);
     int rc = est(current, request, selectivity);
     current->last_selectivity = *selectivity;
     current->process_feedback = 1;
@@ -1176,8 +1198,15 @@ int stholes_est(
   }
   return 0;
 }  
- 
-  
+
+static void buildAndRefine(st_head_t* model) {
+  // First, we need to identify candidate holes and drill them.
+  drillHoles(model);
+  // Then, we need to merge superfluous holes until we are within our
+  // resource constraints.
+  mergeHoles(model);
+}
+
 /**
  *  API method called to initiate the histogram optimization process
  */
@@ -1185,11 +1214,10 @@ void stholes_process_feedback(PlanState *node) {
   if (current == NULL) return;
   if (nodeTag(node) != T_SeqScanState) return;
   if (node->instrument == NULL || node->instrument->kde_rq == NULL) return;
-  
-  //fprintf(stderr, "Process feedback! %i %i\n",((SeqScanState*) node)->ss_currentRelation->rd_id == current->table,current->process_feedback);
-  
+
   if (((SeqScanState*) node)->ss_currentRelation->rd_id == current->table &&
       current->process_feedback) {
+    // Count the statistics.
     float8 qual_tuples =
         (float8)(node->instrument->tuplecount + node->instrument->ntuples) /
         (node->instrument->nloops + 1);
@@ -1197,16 +1225,15 @@ void stholes_process_feedback(PlanState *node) {
         (float8)(node->instrument->tuplecount + node->instrument->nfiltered2 +
                  node->instrument->nfiltered1 + node->instrument->ntuples) /
         (node->instrument->nloops+1);
-   
-    drillHoles(current);
-    mergeHoles(current);
-    
+    // Update the model.
+    buildAndRefine(current);
+    // And report the estimation error.
     ocl_reportErrorToLogFile(
         ((SeqScanState*) node)->ss_currentRelation->rd_id,
         current->last_selectivity / all_tuples,
         qual_tuples / all_tuples,
         all_tuples);
-
+    // We are done processing the feedback :)
     current->process_feedback = 0;
   }
 }
