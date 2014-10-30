@@ -753,7 +753,7 @@ void ocl_constructEstimator(
       stderr, "\tUsing a backing sample of %i out of %i tuples.\n",
       sample_size, rows_in_table);
   // Register the new estimator.
-  Assert(rel->rd_node.relNode / 8 >= 16384); // If the oids are to large, bad things will hapen.
+  Assert(rel->rd_node.relNode / 8 <= 512*1024); // If the oids are to large, bad things will hapen.
   ocl_estimator_t* estimator = calloc(1, sizeof(ocl_estimator_t));
   ocl_estimator_t* old_estimator = directory_insert(
       registry->estimator_directory, &(rel->rd_node.relNode), estimator);
