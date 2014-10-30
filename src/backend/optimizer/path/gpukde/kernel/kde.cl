@@ -32,8 +32,9 @@ __kernel void epanechnikov_kde(
 		local_result += val * (up*up - lo*lo);
 		local_result -= (up*up*up - lo*lo*lo) / 3.0;
 		local_result /= h*h*h;
+		local_result *= (lo < up);
 		// Apply the boundary cases: 
-		res *= is_complete ? (4.0 / 3.0) : (lo < up)*local_result;
+		res *= is_complete ? (4.0 / 3.0) : local_result;
 	}
 	result[get_global_id(0)] = res;
 }
