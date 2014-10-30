@@ -1054,9 +1054,6 @@ static void mergeHoles(st_head_t* head) {
       performSiblingSiblingMerge(
           head, merge_partner_1->parent, merge_partner_1, merge_partner_2);
     }
-    if (head->root->nr_children >= 66) {
-      Assert(_disjunctivenessTest(head, head->root->children[65]));
-    }
   }
 }
 
