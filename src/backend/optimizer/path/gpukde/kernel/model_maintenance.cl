@@ -42,7 +42,7 @@ __kernel void applyGradient(
     }                                                                       \
     for (unsigned int j=0; j<D; ++j) {                                      \
       T val = data[D*i + j];                                                \
-      T h = bandwidth[j] <= 0 ? 1e-10 : bandwidth[j];                       \
+      T h = bandwidth[j]; /*<= 0 ? 1e-10 : bandwidth[j];*/                  \
       T lo = lower_bound_scratch[D*get_local_id(0) + j] - val;              \
       T hi = upper_bound_scratch[D*get_local_id(0) + j] - val;              \
       T factor1  = isinf(lo) ? 0 : lo * exp((T)-1.0 * lo * lo / (2*h*h));   \
@@ -60,8 +60,7 @@ __kernel void applyGradient(
     }                                                                       \
   }                                                                         \
   estimate /= pow((T)2.0, D) * nr_of_data_points;                           \
-  estimate *= nrows;                                                        \
-  T expected = nrows * observations[get_global_id(0)];                      \
+  T expected = observations[get_global_id(0)];                              \
 
 
 __kernel void computeBatchGradientAbsolute(
@@ -115,7 +114,7 @@ __kernel void computeBatchGradientRelative(
   BATCH_GRADIENT_COMMON();
   // Next, compute the estimation error and the gradient scale factor.
   T error = estimate - expected;
-  T factor = (error == 0 ? 0 : (error < 0 ? -1.0 : 1.0) / max((T)(1.0), expected));
+  T factor = (error < 0 ? -1.0 : 1.0) / (1e-10 + expected);
   cost_values[get_global_id(0)] = error * factor;
   // Finally, write the gradient from this observation to global memory.
   for (unsigned int i=0; i<D; ++i) {
@@ -144,8 +143,8 @@ __kernel void computeBatchGradientSquaredRelative(
   // First, we compute the error-independent parts of the gradient.
   BATCH_GRADIENT_COMMON();
   // Next, compute the estimation error and the gradient scale factor.
-  T error = (estimate - expected) / max((T)(1.0), expected);
-  T factor = 2 * error / max((T)(1.0), expected);
+  T error = (estimate - expected) / (1e-10 + expected);
+  T factor = 2 * error / (1e-10 + expected);
   cost_values[get_global_id(0)] = error * error;
   // Finally, write the gradient from this observation to global memory.
   for (unsigned int i=0; i<D; ++i) {

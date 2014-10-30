@@ -99,7 +99,7 @@ unsigned int ocl_maxSampleSize(unsigned int dimensionality);
  */
 bool ocl_reportErrors(void);
 void ocl_reportErrorToLogFile(
-    Oid relation, double actual, double expected, double nrows);
+    Oid relation, double estimate, double truth, double nrows);
 
 /*
  * Entry function for generating a KDE estimator

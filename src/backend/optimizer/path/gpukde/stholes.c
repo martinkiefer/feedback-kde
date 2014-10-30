@@ -1169,7 +1169,7 @@ int stholes_est(
   if (current == NULL) return 0;
   if (rel == current->table) {
     resetAllCounters(&(current->root));
-    int rc = est(current, request,selectivity);
+    int rc = est(current, request, selectivity);
     current->last_selectivity = *selectivity;
     current->process_feedback = 1;
     return rc;
@@ -1203,8 +1203,8 @@ void stholes_process_feedback(PlanState *node) {
     
     ocl_reportErrorToLogFile(
         ((SeqScanState*) node)->ss_currentRelation->rd_id,
+        current->last_selectivity / all_tuples,
         qual_tuples / all_tuples,
-        current->last_selectivity/all_tuples,
         all_tuples);
 
     current->process_feedback = 0;

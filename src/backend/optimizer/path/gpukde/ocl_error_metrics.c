@@ -22,53 +22,58 @@ char* kde_estimation_quality_logfile_name;
 
 // Functions that implement the error metrics.
 static double QuadraticError(
-    double actual, double expected, double nrows) {
-  return (actual - expected) * (actual - expected);
+    double estimate, double truth, double nrows) {
+  return (truth - estimate) * (truth - estimate);
 }
 static double QuadraticErrorGradientFactor(
-    double actual, double expected, double nrows) {
-  return 2 * nrows * (actual - expected);
+    double estimate, double truth, double nrows) {
+  return 2 * (estimate - truth);
 }
-static double SquaredQErrror(double actual, double expected, double nrows) {
+static double SquaredQErrror(double estimate, double truth, double nrows) {
   // Constants are required to avoid computing the log of 0.
-  double tmp = log(1e-5 + actual) - log(1e-5 + expected);
+  double tmp = log(1e-10 + truth) - log(1e-10 + estimate);
   return tmp * tmp;
 }
-static double SquaredQErrorGradientFactor(double actual, double expected, double nrows) {
-  return 2 * (log(1 + nrows * actual) - log(1 + nrows * expected)) / (1 + nrows * actual);
+static double SquaredQErrorGradientFactor(
+    double estimate, double truth, double nrows) {
+  return 2 * (log(1e-10 + truth) - log(1e-10 + estimate)) / (1e-10 * estimate);
 }
-static double AbsoluteError(double actual, double expected, double nrows) {
-  return fabs(actual - expected);
+static double AbsoluteError(double estimate, double truth, double nrows) {
+  return fabs(truth - estimate);
 }
-static double AbsoluteErrorGradientFactor(double actual, double expected, double nrows) {
-  if (actual > expected) {
+static double AbsoluteErrorGradientFactor(
+    double estimate, double truth, double nrows) {
+  if (estimate > truth) {
     return 1;
-  } else if (actual == expected) {
+  } else if (truth == estimate) {
     return 0;
   } else {
     return -1;
   }
 }
-static double RelativeError(double actual, double expected, double nrows) {
+static double RelativeError(double estimate, double truth, double nrows) {
   // Not entirely correct, but robust against zero estimates.
-  return fabs(actual - expected) / Max(1.0 / nrows, expected);
+  return fabs(truth - estimate) / (1e-10 + truth);
 }
-static double RelativeErrorGradientFactor(double actual, double expected, double nrows) {
-  if (actual > expected) {
-    return 1.0 / Max(1.0, nrows * expected);
-  } else if (actual == expected) {
+static double RelativeErrorGradientFactor(
+    double estimate, double truth, double nrows) {
+  if (estimate > truth) {
+    return 1.0 / (1e-10 + truth);
+  } else if (truth == estimate) {
     return 0;
   } else {
-    return -1.0 / Max(1.0, nrows * expected);
+    return -1.0 / (1e-10 + truth);
   }
 }
-static double SquaredRelativeError(double actual, double expected, double nrows) {
+static double SquaredRelativeError(
+    double estimate, double truth, double nrows) {
   // Not entirely correct, but robust against zero estimates.
-  double e = (actual - expected) / Max(1.0 / nrows, expected);
+  double e = (truth - estimate) / (1e-10 + truth);
   return e*e;
 }
-static double SquaredRelativeErrorGradientFactor(double actual, double expected, double nrows) {
-  return 2 * nrows * (actual - expected) / (Max(1.0, nrows * expected) * Max(1.0, nrows * expected));
+static double SquaredRelativeErrorGradientFactor(
+    double estimate, double truth, double nrows) {
+  return 2 * (estimate - truth) / ((1e-10 + truth) * (1e-10 + truth));
 }
 
 // Array of all available metrics.
@@ -116,7 +121,7 @@ void assign_kde_estimation_quality_logfile_name(const char *newval, void *extra)
   for (i=0; i<sizeof(error_metrics)/sizeof(error_metric_t); ++i) {
     fprintf(estimation_quality_log_file, " ; %s", error_metrics[i].name);
   }
-  fprintf(estimation_quality_log_file, " ; Tuples");
+  fprintf(estimation_quality_log_file, " ; Estimate ; Truth ; Tuples ");
   fprintf(estimation_quality_log_file, "\n");
   fflush(estimation_quality_log_file);
 }
@@ -126,15 +131,16 @@ bool ocl_reportErrors(void) {
 }
 
 void ocl_reportErrorToLogFile(
-    Oid relation, double actual, double expected, double nrows) {
+    Oid relation, double estimate, double truth, double nrows) {
   if (estimation_quality_log_file == NULL) return;
   // Compute the estimation error for all metrics and write them to the file.
   unsigned int i;
   fprintf(estimation_quality_log_file, "%u", relation);
   for (i=0; i<sizeof(error_metrics)/sizeof(error_metric_t); ++i) {
-    double error = (*(error_metrics[i].function))(actual, expected, nrows);
+    double error = (*(error_metrics[i].function))(estimate, truth, nrows);
     fprintf(estimation_quality_log_file, " ; %.8f", error);
    }
+   fprintf(estimation_quality_log_file, " ; %e ; %e", estimate, truth);
    fprintf(estimation_quality_log_file, " ; %lu", (unsigned long ) nrows);
    fprintf(estimation_quality_log_file, "\n");
    fflush(estimation_quality_log_file);

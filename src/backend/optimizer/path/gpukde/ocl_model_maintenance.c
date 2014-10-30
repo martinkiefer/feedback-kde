@@ -55,8 +55,9 @@ void ocl_notifyModelMaintenanceOfSelectivity(
   ocl_runOnlineLearningStep(estimator, selectivity);
 
   // Write the error to the log file.
-  ocl_reportErrorToLogFile(relation, estimator->last_selectivity,
-                           selectivity, estimator->rows_in_table);
+  ocl_reportErrorToLogFile(
+      relation, estimator->last_selectivity, selectivity,
+      estimator->rows_in_table);
 
   // We are done.
   estimator->open_estimation = false;
@@ -238,8 +239,8 @@ struct timeval opt_start;
  * Callback function that computes the gradient and value for the objective
  * function at the current bandwidth.
  */
-static double computeGradient(unsigned n, const double* bandwidth,
-                              double* gradient, void* params) {
+static double computeGradient(
+    unsigned n, const double* bandwidth, double* gradient, void* params) {
   unsigned int i;
   cl_int err = 0;
   optimization_config_t* conf = (optimization_config_t*)params;
@@ -249,8 +250,8 @@ static double computeGradient(unsigned n, const double* bandwidth,
   evaluations++;
 
   if (ocl_isDebug()) {
-    fprintf(stderr, ">>> Gradient evaluation %i:\n\tCurrent bandwidth:", evaluations);
-    for (i=0; i<n; ++i) fprintf(stderr, " %f", bandwidth[i]);
+    fprintf(stderr, ">>> Evaluation %i:\n\tCurrent bandwidth:", evaluations);
+    for (i=0; i<n; ++i) fprintf(stderr, " %e", bandwidth[i]);
     fprintf(stderr, "\n");
   }
 
@@ -363,7 +364,7 @@ static double computeGradient(unsigned n, const double* bandwidth,
                              &(result_events[1]));
   err |= clWaitForEvents(2, result_events);
   
-  if(err != 0)
+  if (err != 0)
     fprintf(stderr, "OpenCL functions failed to compute gradient.\n");
   
   error /= conf->nr_of_observations;
@@ -380,7 +381,7 @@ static double computeGradient(unsigned n, const double* bandwidth,
   if (gradient) {
     for (i = 0; i<estimator->nr_of_dimensions; ++i) {
     // Apply the gradient normalization.
-      double h = bandwidth[i] <= 0 ? 1e-10 : bandwidth[i];
+      double h = bandwidth[i];
       gradient[i] = tmp_gradient[i] * M_SQRT2 / (
           sqrt(M_PI) * h * h * pow(2.0, estimator->nr_of_dimensions) *
           conf->nr_of_observations * estimator->rows_in_sample);
@@ -556,12 +557,18 @@ void ocl_runModelOptimization(ocl_estimator_t* estimator) {
   // Prepare the bound constraints.
   double* lower_bounds = palloc(sizeof(double) * estimator->nr_of_dimensions);
   for (i=0; i<estimator->nr_of_dimensions; ++i) {
-    lower_bounds[i] = 1e-10;
+    lower_bounds[i] = 1e-5;    // We never want to be negative.
+  }
+  // We use 10x the heuristic bandwidth as our upper bound:
+  double* upper_bounds = palloc(sizeof(double) * estimator->nr_of_dimensions);
+  for (i=0; i<estimator->nr_of_dimensions; ++i) {
+    upper_bounds[i] = 1e3;
   }
   // Create the optimization parameter.
   nlopt_opt global_optimizer= nlopt_create(
       NLOPT_LD_MMA, estimator->nr_of_dimensions);
   nlopt_set_lower_bounds(global_optimizer, lower_bounds);
+  nlopt_set_upper_bounds(global_optimizer, upper_bounds);
   nlopt_set_min_objective(global_optimizer, computeGradient, &params);
   nlopt_set_ftol_abs(global_optimizer, 1e-10);
   double tmp;
@@ -571,7 +578,7 @@ void ocl_runModelOptimization(ocl_estimator_t* estimator) {
   } else {
     fprintf(stderr, "\nNew bandwidth:");
     for ( i = 0; i < estimator->nr_of_dimensions ; ++i)
-      fprintf(stderr, " %f", bandwidth[i]);
+      fprintf(stderr, " %e", bandwidth[i]);
     fprintf(stderr, "\n");
   }
   nlopt_destroy(global_optimizer);
