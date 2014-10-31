@@ -4,8 +4,8 @@ DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 source $DIR/../conf.sh
 
 # Some general parameters.
-REPETITIONS=60
-TRAINQUERIES=500
+REPETITIONS=50
+TRAINQUERIES=100
 QUERIES=100
 STHOLES_MODELSIZE=512
 KDE_MODELSIZE=1024
@@ -22,7 +22,7 @@ for dataset in $DIR/*; do
         query_file=`basename $query`
         echo -e "\tRunning query $query_file."
         for i in $(seq 1 $REPETITIONS); do
-            postgres -D $PGDATAFOLDER >/dev/null 2>&1 &
+            postgres -D $PGDATAFOLDER -p $PGPORT >/dev/null 2>&1 &
             PGPID=$!
             sleep 2
             python $DIR/runExperiment.py                         \
@@ -41,16 +41,17 @@ for dataset in $DIR/*; do
 
             python $DIR/runExperiment.py                         \
                --dbname=$PGDATABASE --port=$PGPORT               \
-               --model=kde_adaptive --modelsize=$KDE_MODELSIZE   \
+               --queryfile=$query --log=$DIR/result.csv          \
+               --model=kde_optimal --modelsize=$KDE_MODELSIZE    \
                --trainqueries=$TRAINQUERIES --queries=$QUERIES   \
-               --error=relative
+               --error=relative --reuse
 
             python $DIR/runExperiment.py                         \
                --dbname=$PGDATABASE --port=$PGPORT               \
                --queryfile=$query --log=$DIR/result.csv          \
                --model=kde_batch --modelsize=$KDE_MODELSIZE      \
                --trainqueries=$TRAINQUERIES --queries=$QUERIES   \
-               --error=relative
+               --error=relative --reuse
             
             kill -9 $PGPID
             sleep 2
