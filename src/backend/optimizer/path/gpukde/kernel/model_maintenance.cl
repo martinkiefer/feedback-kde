@@ -42,7 +42,7 @@ __kernel void applyGradient(
     }                                                                       \
     for (unsigned int j=0; j<D; ++j) {                                      \
       T val = data[D*i + j];                                                \
-      T h = bandwidth[j]; /*<= 0 ? 1e-10 : bandwidth[j];*/                  \
+      T h = bandwidth[j];                                                   \
       T lo = lower_bound_scratch[D*get_local_id(0) + j] - val;              \
       T hi = upper_bound_scratch[D*get_local_id(0) + j] - val;              \
       T factor1  = isinf(lo) ? 0 : lo * exp((T)-1.0 * lo * lo / (2*h*h));   \
@@ -55,8 +55,7 @@ __kernel void applyGradient(
     }                                                                       \
     estimate += local_contribution;                                         \
     for (unsigned int j=0; j<D; ++j) {                                      \
-      gradient_scratch[D * get_local_id(0) + j] +=                          \
-          local_gradient[j];                                                \
+      gradient_scratch[D * get_local_id(0) + j] += local_gradient[j];       \
     }                                                                       \
   }                                                                         \
   estimate /= pow((T)2.0, D) * nr_of_data_points;                           \
