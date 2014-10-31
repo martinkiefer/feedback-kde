@@ -178,12 +178,11 @@ for i in range(1,steps+1):
     #Generate queries
     queries = []
     for i in query_centers:
-        c = centers[i]
-        x = c+random.normal(0,sigma,(dimension))
-        y = c+random.normal(0,sigma,(dimension))
+        c = centers[i] + random.normal(0, sigma, (dimension))
+        rng = random.uniform(0, 3*sigma, dimension)
 
-        low = numpy.minimum(x,y)
-        high = numpy.maximum(x,y)
+        low = c - rng 
+        high = c + rng 
         
         output.write(query_template % tuple(mc.createBoundsList(low,high)))
         
