@@ -364,8 +364,9 @@ static double computeGradient(
                              &(result_events[1]));
   err |= clWaitForEvents(2, result_events);
   
-  if (err != 0)
+  if (err != 0) {
     fprintf(stderr, "OpenCL functions failed to compute gradient.\n");
+  }
   
   error /= conf->nr_of_observations;
   if (evaluations == 1) start_error = error;
