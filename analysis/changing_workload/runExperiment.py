@@ -6,22 +6,60 @@ import psycopg2
 import random
 import sys
 import time
+import math
+
+# Extract the error from the error file.
+def extractError():
+   ifile  = open("/tmp/error.log", "rb")
+   reader = csv.reader(ifile, delimiter=";")
+
+   header = True
+   selected_col = -1
+   tuple_col = -1
+   sum = 0.0
+   row_count = 0
+
+   column = 0
+   for row in reader:
+      if header:
+         for col in row:
+            if (col.strip().lower() == errortype):
+               selected_col = column
+            if (col.strip().lower() == "tuples"):
+               tuple_col = column
+            column = column + 1
+         if (selected_col == -1 or tuple_col == -1):
+            print "Error-type %s or absolute tuple value not present in given file!" % errortype
+            sys.exit()
+         header = False
+      else:
+         local_error = float(row[selected_col])
+         if (math.isnan(local_error)):
+            continue
+         row_count +=1
+         sum += local_error 
+
+   error = sum / row_count
+   # Now append to the error log.
+   f = open(log, "a")
+   if os.path.getsize(log) == 0:
+      f.write("Dimensions;Workload;Samplesize;Optimization;Trainingsize;Errortype;Error\n")
+   f.write("%i;%i;%i;%s;%i;%s;%f\n" % (dimensions, workload, samplesize, optimization, trainqueries, errortype, error))
+   f.close()
 
 # Define and parse the command line arguments
 parser = argparse.ArgumentParser()
 parser.add_argument("--dbname", action="store", required=True, help="Database to which the script will connect.")
 parser.add_argument("--dataset", action="store", choices=["mvt", "mvtc_i","mvtc_id"], required=True, help="Which dataset should be run?")
 parser.add_argument("--dimensions", action="store", required=True, type=int, help="Dimensionality of the dataset?")
-#parser.add_argument("--workload", action="store", required=True, type=int, help="Which workload should be run?")
-#parser.add_argument("--queries", action="store", required=True, type=int, help="How many queries from the workload should be run?")
 parser.add_argument("--samplesize", action="store", type=int, default=2400, help="How many rows should the generated model sample?")
 parser.add_argument("--error", action="store", choices=["relative","absolute"], default="relative", help="Which error metric should be optimized / reported?")
-parser.add_argument("--optimization", action="store", choices=["none", "adaptive"], default="none", help="How should the model be optimized?")
-parser.add_argument("--trainqueries", action="store", type=int, default=25, help="How many queries should be used to train the model?")
+parser.add_argument("--optimization", action="store", choices=["heuristic", "adaptive", "stholes"], default="heuristic", help="How should the model be optimized?")
+parser.add_argument("--trainqueries", action="store", type=int, default=500, help="How many queries should be used to train the model?")
 parser.add_argument("--log", action="store", required=True, help="Where to append the experimental results?")
 parser.add_argument("--sample_maintenance", action="store", choices=["threshold", "periodic","none"], default="none", help="Desired query based sample maintenance option.")
 parser.add_argument("--threshold", action="store", type=float, default=0.01, help="Negative karma limit causing a point to be resampled.")
-parser.add_argument("--period", action="store", type=int, default=25, help="Queries until we resample the worst sample point.")
+parser.add_argument("--period", action="store", type=int, default=5, help="Queries until we resample the worst sample point.")
 args = parser.parse_args()
 
 # Fetch the arguments.
@@ -58,7 +96,7 @@ if dataset == "mvtc_id":
     table = "mvtc_id_d%i" % dimensions
 queryfile = "%s.sql" % (table)
 
-if (optimization != "none" and optimization != "adaptive"):
+if (optimization != "heuristic" and optimization != "adaptive" and optimization != "stholes"):
     print "Collecting feedback for experiment:"
     sys.stdout.flush()
     # Fetch the optimization queries.
@@ -104,8 +142,13 @@ if(sample_maintenance == "threshold"):
     cur.execute("SET kde_sample_maintenance_query_propagation TO Threshold;")	
     cur.execute("SET kde_sample_maintenance_threshold TO %s;" % threshold)	
 if(sample_maintenance == "periodic"):
-    cur.execute("SET kde_sample_maintenance_query_propagation TO Periodic;")	
-    cur.execute("SET kde_sample_maintenance_period  TO %s;" % period )	
+    cur.execute("SET kde_sample_maintenance_insert_propagation TO Reservoir;")
+    #cur.execute("SET kde_sample_maintenance_query_propagation TO Periodic;")	
+    #cur.execute("SET kde_sample_maintenance_period TO %s;" % period )
+    #cur.execute("SET kde_sample_maintenance_track_impact TO true;")
+    #cur.execute("SET kde_sample_maintenance_track_karma TO true;")
+    #cur.execute("SET kde_sample_maintenance_contribution_decay TO 0.95;")
+    #cur.execute("SET kde_sample_maintenance_karma_decay TO 0.95;")
 
 # Set all required options.
 cur.execute("SET ocl_use_gpu TO false;")
@@ -114,16 +157,24 @@ if (errortype == "relative"):
     cur.execute("SET kde_error_metric TO SquaredRelative;")
 elif (errortype == "absolute"):
     cur.execute("SET kde_error_metric TO Quadratic;")
-cur.execute("SET kde_samplesize TO %i;" % samplesize)
 # Set the optimization strategy.
 if (optimization == "adaptive"):
+    cur.execute("SET kde_enable TO true;")
     cur.execute("SET kde_enable_adaptive_bandwidth TO true;")
-    cur.execute("SET kde_adaptive_bandwidth_minibatch_size TO 5;")
+    cur.execute("SET kde_minibatch_size TO 5;")
+    cur.execute("SET kde_samplesize TO %i;" % samplesize)
 elif (optimization == "batch_random" or optimization == "batch_workload"):
+    cur.execute("SET kde_enable TO true;")
     cur.execute("SET kde_enable_bandwidth_optimization TO true;")
     cur.execute("SET kde_optimization_feedback_window TO %i;" % trainqueries)
+    cur.execute("SET kde_samplesize TO %i;" % samplesize)
+elif (optimization == "heuristic"):
+    cur.execute("SET kde_enable TO true;")
+    cur.execute("SET kde_samplesize TO %i;" % samplesize)
+elif (optimization == "stholes"):
+    cur.execute("SET stholes_hole_limit TO 300;")
+    cur.execute("SET stholes_enable TO true;")
 cur.execute("SET kde_debug TO false;")
-cur.execute("SET kde_enable TO true;")
 
 # Trigger the model optimization.
 print "Building estimator ...",
@@ -144,49 +195,18 @@ finished_queries = 0
 queries = len(f.readlines())
 f.seek(0)
 for line in f:
-    cur.execute(line) 
+    try:
+      cur.execute(line) 
+    except psycopg2.DatabaseError:
+      print "Database error occured. Terminating."
+      extractError()
+      f.close()
+      conn.close()
+      sys.exit(-1)
     finished_queries += 1
     sys.stdout.write("\r\tFinished %i of %i queries." % (finished_queries, queries))
     sys.stdout.flush()
 print "\ndone!"
 f.close()
 conn.close()
-
-# Extract the error from the error file.
-ifile  = open("/tmp/error.log", "rb")
-reader = csv.reader(ifile, delimiter=";")
-
-header = True
-selected_col = -1
-tuple_col = -1
-sum = 0.0
-row_count = 0
-
-column = 0
-for row in reader:
-    if header:
-        for col in row:
-            if (col.strip().lower() == errortype):
-                selected_col = column
-            if (col.strip().lower() == "tuples"):
-                tuple_col = column
-    	    column = column + 1
-		
-        if (selected_col == -1 or tuple_col == -1):
-            print "Error-type %s or absolute tuple value not present in given file!" % errortype
-            sys.exit()
-        header = False
-    else:
-       	row_count += 1
-	if errortype == "absolute":
-        	sum += float(row[selected_col])*float(row[tuple_col])
-	else:
-		sum += float(row[selected_col])
-
-error = sum / row_count
-# Now append to the error log.
-f = open(log, "a")
-if os.path.getsize(log) == 0:
-    f.write("Dataset;Dimensions;Workload;Samplesize;Optimization;Trainingsize;Errortype;Error\n")
-f.write("%s;%i;%i;%i;%s;%i;%s;%f\n" % (dataset, dimensions, workload, samplesize, optimization, trainqueries, errortype, error))
-f.close()
+extractError()

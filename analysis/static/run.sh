@@ -4,14 +4,14 @@ DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 source $DIR/../conf.sh
 
 # Some general parameters.
-REPETITIONS=5
+REPETITIONS=60
 TRAINQUERIES=500
-QUERIES=1000
-STHOLES_MODELSIZE=256
-KDE_MODELSIZE=512
+QUERIES=100
+STHOLES_MODELSIZE=512
+KDE_MODELSIZE=1024
 
 # Prepare a new result file.
-#echo > $DIR/result.csv
+echo > $DIR/result.csv
 
 for dataset in $DIR/*; do
     [ -d "${dataset}" ] || continue # if not a directory, skip
