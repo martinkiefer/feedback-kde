@@ -56,4 +56,23 @@ for dataset in "${DATASETS[@]}" ; do
 done
 
 # Finally, create the scaled datasets and query workloads.
-python $DIR/scaleExperiments.py --dbname=$PGDATABASE --port=$PGPORT
+python $DIR/scaleDatasets.py --dbname=$PGDATABASE --port=$PGPORT
+for dataset in "${DATASETS[@]}" ; do
+  source $dataset/tables.sh
+  for table in "${TABLES[@]}"; do
+    cd $dataset/queries
+    python $DIR/scaleExperiments.py                 \
+      --dbname=$PGDATABASE --port=$PGPORT           \
+      --queryfile=${table}_ut_0.01.sql
+    python $DIR/scaleExperiments.py                 \
+      --dbname=$PGDATABASE --port=$PGPORT           \
+      --queryfile=${table}_uv_0.01.sql
+    python $DIR/scaleExperiments.py                 \
+      --dbname=$PGDATABASE --port=$PGPORT           \
+      --queryfile=${table}_dt_0.01.sql
+    python $DIR/scaleExperiments.py                 \
+      --dbname=$PGDATABASE --port=$PGPORT           \
+      --queryfile=${table}_dv_0.01.sql
+    cd -
+  done
+done

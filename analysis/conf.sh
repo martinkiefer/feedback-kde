@@ -2,7 +2,7 @@
 
 # Postgres specific variables:
 PGPORT=""
-PGDATAFOLDER=""
+PGDATAFOLDER="/home/mheimel/postgres/data"
 PGDATABASE=""
 
 if [ -z "$PGDATAFOLDER" ]; then
