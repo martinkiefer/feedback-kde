@@ -50,3 +50,6 @@ for dataset in "${DATASETS[@]}" ; do
     wait $UTPID
   done
 done
+
+# Finally, create the scaled datasets and query workloads.
+python $DIR/scaleExperiments.py --dbname=$PGDATABASE
