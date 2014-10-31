@@ -52,4 +52,4 @@ echo "SELECT c2 AS c1, " >> /tmp/load.sql
 echo "       c5 AS c2 INTO power2 FROM power9;" >> /tmp/load.sql
 
 # Now call the load script.
-$PSQL $PGDATABASE $USER -f /tmp/load.sql
+psql -p$PGPORT $PGDATABASE -f /tmp/load.sql 

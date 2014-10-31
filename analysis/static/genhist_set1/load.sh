@@ -46,4 +46,4 @@ echo "	c2  DOUBLE PRECISION);" >> /tmp/load.sql
 echo "COPY set1_2 FROM '$DIR/raw/gen1_d2.csv' DELIMITER'|';" >> /tmp/load.sql
 
 # Now call the load script.
-$PSQL $PGDATABASE $USER -f /tmp/load.sql
+psql -p$PGPORT $PGDATABASE -f /tmp/load.sql 

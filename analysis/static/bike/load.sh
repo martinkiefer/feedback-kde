@@ -59,4 +59,4 @@ echo "SELECT c10 AS c1, " >> /tmp/load.sql
 echo "       c12 AS c2 INTO bike2 FROm bike16;" >> /tmp/load.sql
 
 # Now call the load script.
-$PSQL $PGDATABASE $USER -f /tmp/load.sql
+psql -p$PGPORT $PGDATABASE -f /tmp/load.sql

@@ -53,4 +53,4 @@ echo "SELECT c2 AS c1, " >> /tmp/load.sql
 echo "       c6 AS c2 INTO forest2 FROM forest10;" >> /tmp/load.sql
 
 # Now call the load script.
-$PSQL $PGDATABASE $USER -f /tmp/load.sql
+psql -p$PGPORT $PGDATABASE -f /tmp/load.sql 

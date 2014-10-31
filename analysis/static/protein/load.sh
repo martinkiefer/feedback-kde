@@ -54,4 +54,4 @@ echo "       c7 AS c2 INTO protein2 FROM protein10;" >> /tmp/load.sql
 
 
 # Now call the load script.
-$PSQL $PGDATABASE $USER -f /tmp/load.sql
+psql -p$PGPORT $PGDATABASE -f /tmp/load.sql 
