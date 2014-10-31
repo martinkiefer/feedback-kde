@@ -17,10 +17,11 @@ def stdQ(col_id, table):
 # Define the command line arguments.
 parser = argparse.ArgumentParser()
 parser.add_argument("--dbname", action="store", required=True, help="Database to which the script will connect.")
+parser.add_argument("--port", action="store", type=int, default=5432, help="Port of the postmaster.")
 args = parser.parse_args()                                                      
 
 # Open a connection to Postgres.
-conn = psycopg2.connect("dbname=%s host=localhost" % args.dbname)
+conn = psycopg2.connect("dbname=%s host=localhost port=%i" % (args.dbname, args.port))
 conn.set_session('read uncommitted', autocommit=True)
 cur = conn.cursor()
 

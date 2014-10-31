@@ -1,15 +1,19 @@
 #/bin/bash
 
 # Postgres specific variables:
-PSQL="psql"
-PGDATABASE="mheimel"
-PDATAFOLDER="/home/mheimel/postgres-kde/data"
+PGPORT=""
+PGDATAFOLDER=""
+PGDATABASE=""
 
-# MonetDB specific variables:
-MONETDATABASE=""
+if [ -z "$PGDATAFOLDER" ]; then
+  echo 'Please provide a $PGDATAFOLDER in conf.sh.'
+  exit
+fi
 
-# Variables for the Genhist forest dataset:
-COVTYPE_FILE=""	# Can be left empty (Script will download the data file instead.)
-
-# Variables for the Genhist TPCH dataset:
-DBGEN_FOLDER="/home/mheimel/tpch/dbgen" # Required.
+# Set default values.
+if [ -z "$PGPORT" ]; then
+  PGPORT="5432"
+fi
+if [ -z "$PGDATABASE" ]; then
+  PGDATABASE=`whoami`
+fi

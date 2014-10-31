@@ -63,6 +63,7 @@ def createModel(table, dimensions, reuse):
 # Define and parse the command line arguments
 parser = argparse.ArgumentParser()
 parser.add_argument("--dbname", action="store", required=True, help="Database to which the script will connect.")
+parser.add_argument("--port", action="store", type=int, default=5432, help="Port of the postmaster.")
 parser.add_argument("--queryfile", action="store", required=True, help="File with benchmark queries.")
 parser.add_argument("--queries", action="store", required=True, type=int, help="How many queries from the workload should be used?")
 parser.add_argument("--trainqueries", action="store", default=100, type=int, help="How many queries should be used to train the model?")
@@ -75,7 +76,6 @@ parser.add_argument("--reuse", action="store_true", help="Don't rebuild the mode
 args = parser.parse_args()
 
 # Fetch the arguments.
-dbname = args.dbname
 queryfile = args.queryfile
 queries = args.queries
 trainqueries = args.trainqueries
@@ -85,7 +85,7 @@ errortype = args.error
 log = args.log
 
 # Open a connection to postgres.
-conn = psycopg2.connect("dbname=%s host=localhost" % dbname)
+conn = psycopg2.connect("dbname=%s host=localhost port=%i" % (args.dbname, args.port))
 conn.set_session('read uncommitted', autocommit=True)
 cur = conn.cursor()
 

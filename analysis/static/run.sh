@@ -22,32 +22,35 @@ for dataset in $DIR/*; do
         query_file=`basename $query`
         echo -e "\tRunning query $query_file."
         for i in $(seq 1 $REPETITIONS); do
-            postgres -D $PDATAFOLDER >/dev/null 2>&1 &
+            postgres -D $PGDATAFOLDER >/dev/null 2>&1 &
             PGPID=$!
             sleep 2
-            python $DIR/runExperiment.py --dbname=$PGDATABASE     \
+            python $DIR/runExperiment.py                         \
+               --dbname=$PGDATABASE --port=$PGPORT               \
                --queryfile=$query --log=$DIR/result.csv          \
-                --model=stholes --modelsize=$STHOLES_MODELSIZE    \
+               --model=stholes --modelsize=$STHOLES_MODELSIZE    \
                --trainqueries=$TRAINQUERIES --queries=$QUERIES   \
-                --error=relative
+               --error=relative
 
-            python $DIR/runExperiment.py --dbname=$PGDATABASE     \
-                --queryfile=$query --log=$DIR/result.csv          \
-                --model=kde_heuristic --modelsize=$KDE_MODELSIZE  \
-                --trainqueries=$TRAINQUERIES --queries=$QUERIES   \
-                --error=relative
+            python $DIR/runExperiment.py                         \
+               --dbname=$PGDATABASE --port=$PGPORT               \
+               --queryfile=$query --log=$DIR/result.csv          \
+               --model=kde_heuristic --modelsize=$KDE_MODELSIZE  \
+               --trainqueries=$TRAINQUERIES --queries=$QUERIES   \
+               --error=relative
 
-            python $DIR/runExperiment.py --dbname=$PGDATABASE     \
-                --queryfile=$query --log=$DIR/result.csv          \
-                --model=kde_adaptive --modelsize=$KDE_MODELSIZE   \
-                --trainqueries=$TRAINQUERIES --queries=$QUERIES   \
-                --error=relative
+            python $DIR/runExperiment.py                         \
+               --dbname=$PGDATABASE --port=$PGPORT               \
+               --model=kde_adaptive --modelsize=$KDE_MODELSIZE   \
+               --trainqueries=$TRAINQUERIES --queries=$QUERIES   \
+               --error=relative
 
-            python $DIR/runExperiment.py --dbname=$PGDATABASE     \
-                --queryfile=$query --log=$DIR/result.csv          \
-                --model=kde_batch --modelsize=$KDE_MODELSIZE      \
-                --trainqueries=$TRAINQUERIES --queries=$QUERIES   \
-                --error=relative
+            python $DIR/runExperiment.py                         \
+               --dbname=$PGDATABASE --port=$PGPORT               \
+               --queryfile=$query --log=$DIR/result.csv          \
+               --model=kde_batch --modelsize=$KDE_MODELSIZE      \
+               --trainqueries=$TRAINQUERIES --queries=$QUERIES   \
+               --error=relative
             
             kill -9 $PGPID
             sleep 2

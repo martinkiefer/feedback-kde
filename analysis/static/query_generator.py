@@ -62,6 +62,7 @@ def createBoundsList(min,max):
 # Define and parse the command line arguments
 parser = argparse.ArgumentParser()
 parser.add_argument("--dbname", action="store", required=True, help="Database to which the script will connect.")
+parser.add_argument("--port", action="store", type=int, default=5432, help="Port of the postmaster.")
 parser.add_argument("--table", action="store", required=True, help="Table for which the workload will be generated.")
 parser.add_argument("--selectivity", action="store", required=True, type=float, help="Target selectivity for the created query workload.")
 parser.add_argument("--mcenter", action="store", choices=["Data","Uniform","Gauss"],required=True, help="Mechanism choosing the center of range queries")
@@ -74,7 +75,6 @@ parser.add_argument("--output", action="store", required=True, help="Name of the
 args = parser.parse_args()
 
 # Fetch them.
-dbname = args.dbname
 table = args.table
 target_selectivity = args.selectivity
 target_tolerance = args.tolerance
@@ -87,7 +87,7 @@ mrange = args.mrange
 
 output_file_name = os.path.basename(output_file)
 
-conn = psycopg2.connect("dbname=%s host=localhost" % dbname)
+conn = psycopg2.connect("dbname=%s host=localhost port=%i" % (args.dbname, args.port))
 cur = conn.cursor()
 
 # Figure out the dimensionality of this table.

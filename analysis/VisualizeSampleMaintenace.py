@@ -107,6 +107,7 @@ class SamplePlotter:
         
 parser = argparse.ArgumentParser()
 parser.add_argument("--dbname", action="store", required=True, help="Database to which the script will connect.")
+parser.add_argument("--port", action="store", type=int, default=5432, help="Port of the postmaster.")
 parser.add_argument("--query_file", action="store", required=True, help="File to draw queries from.")
 parser.add_argument("--table", action="store", required=True, help="Table the script will visualize.")
 parser.add_argument("--delete_constraint", action="store",default="", help="Constraint removing tuples from the data set after taking the first picture (Appended after SQL WHERE)")
@@ -118,8 +119,6 @@ parser.add_argument("--sample_maintenance", action="store", choices=["threshold"
 parser.add_argument("--threshold", action="store", type=float, default=1.0, help="Negative karma limit causing a point to be resampled.")
 parser.add_argument("--period", action="store", type=int, default=25, help="Queries until we resample the worst sample point.")
 args = parser.parse_args()
-
-database_name=args.dbname             #Database name
 
 query_file = args.query_file
 table_name=args.table
@@ -141,7 +140,7 @@ selected_queries = selected_queries[0:queries_per_step*number_of_pictures]
 f.close()
 
 ploti = SamplePlotter()    
-conn = psycopg2.connect("dbname=%s host=localhost" % database_name)
+conn = psycopg2.connect("dbname=%s host=localhost port=%i" % (args.dbname, args.port))
 
 cur = conn.cursor()
 #File to read the sample from
