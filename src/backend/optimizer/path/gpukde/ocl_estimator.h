@@ -48,6 +48,8 @@ typedef struct ocl_estimator {
   unsigned int nr_of_accumulated_gradients;
   /* Fields for computing the adaptive learning rate */
   bool online_learning_initialized;
+  cl_mem last_gradient;
+  cl_mem learning_rate;
   cl_mem running_gradient_average;
   cl_mem running_squared_gradient_average;
   cl_mem running_hessian_average;

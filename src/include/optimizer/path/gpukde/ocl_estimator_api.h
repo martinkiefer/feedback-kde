@@ -69,6 +69,10 @@ typedef enum sample_maintenance_query_options {
   THRESHOLD = 2, 	//Replace a sample point when it reaches a certain threshold
 } ocl_sample_maintenance_query_options_t;
 
+typedef enum optimizatin_algorithms{
+    VSGD_FD = 0,
+    RMSPROP = 1
+}  ocl_optimization_algorithms_t;
 
 /*
  * Enum definition to select a batch optimziation strategy.
