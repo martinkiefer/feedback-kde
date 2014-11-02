@@ -22,7 +22,8 @@ for dataset in $DIR/*; do
         query_file=`basename $query`
         echo -e "\tRunning query $query_file."
         for i in $(seq 1 $REPETITIONS); do
-            /home/mkiefer/postgres/bin/postgres -D $PGDATAFOLDER -p $PGPORT > log 2>&1 &
+            postgres -D $PGDATAFOLDER -p $PGPORT > /dev/null 2>&1 &
+
             PGPID=$!
             sleep 2
             python $DIR/runExperiment.py                         \
