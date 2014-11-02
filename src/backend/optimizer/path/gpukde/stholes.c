@@ -3,6 +3,7 @@
 #include "optimizer/path/gpukde/stholes_estimator_api.h"
 #include "ocl_estimator.h"
 #include <executor/tuptable.h>
+#include <float.h>
 #include <math.h>
 #include <float.h>
 #include <time.h>
@@ -14,7 +15,6 @@
 #include "executor/tuptable.h"
 
 struct st_hole;
-typedef struct st_hole st_hole_t;
 
 typedef struct merge {
   st_hole_t* merge_partner;
@@ -980,6 +980,9 @@ static void performSiblingSiblingMerge(
   head->holes--;
 }
 
+int freeParentMerge = 0;
+int freeSiblingMerge = 0;
+
 /**
  * Find a min cost merge in the tree
  */ 
@@ -1055,6 +1058,8 @@ static void mergeHoles(st_head_t* head) {
           head, merge_partner_1->parent, merge_partner_1, merge_partner_2);
     }
   }
+  fprintf(stdout, "Free merges: %i parent, %i sibling\n", freeParentMerge, freeSiblingMerge);
+  fflush(stdout);
 }
 
 /**
