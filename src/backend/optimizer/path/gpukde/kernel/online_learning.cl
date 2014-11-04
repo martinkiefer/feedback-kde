@@ -8,6 +8,12 @@
   #define TYPE_DEFINED_
 #endif /* TYPE_DEFINED */
 
+/* Suggestions from Geoffrey Hinton's slides for mini-batch gradient descent. */
+#define STEP_MAX_LIMIT 50
+#define STEP_MIN_LIMIT 10^-6
+#define STEP_DECREASE 0.5
+#define STEP_INCREASE 1.2
+    
 // Computes partial gradient contributions from each sample item.
 __kernel void computePartialGradient(
     __global const T* const data,
@@ -61,7 +67,7 @@ __kernel void finalizeEstimate(
   result[0] *= factor;
 }
 
-__kernel void accumulateOnlineBuffers(
+__kernel void accumulateVsgdOnlineBuffers(
     __global const T* gradient,
     __global const T* shifted_gradient,
     T gradient_factor,
@@ -92,7 +98,23 @@ __kernel void accumulateOnlineBuffers(
   squared_hessian_accumulator[i] += hess * hess;
 }
 
-__kernel void initializeOnlineEstimate(
+__kernel void accumulateRmspropOnlineBuffers(
+    __global const T* gradient,
+    T gradient_factor,
+    __global const T* bandwidth,
+    __global T* gradient_accumulator
+    ) {
+  unsigned int i = get_global_id(0);
+  // For rmsprop the bandwidth
+  T h = bandwidth[i];
+
+  // Now scale the gradient and the shifted gradient.
+  T grad = gradient_factor * gradient[i] / (h * h);
+  gradient_accumulator[i] += grad;
+}
+
+
+__kernel void initializeVsgdOnlineEstimate(
     __global T* gradient_accumulator,
     __global T* squared_gradient_accumulator,
     __global T* hessian_accumulator,
@@ -117,7 +139,7 @@ __kernel void initializeOnlineEstimate(
   running_squared_gradient_average[i] = max((T)1e-5, gs);
   running_hessian_average[i] = max((T)1e-5, h);
   running_squared_hessian_average[i] = max((T)1e-5, hs);
-
+  
   // Initialize the time factor to two, so we initially keep some information.
   current_time_factor[i] = 2;
 
@@ -128,8 +150,70 @@ __kernel void initializeOnlineEstimate(
   squared_hessian_accumulator[i] = 0;
 }
 
+//Initializes all necessary fields to an initial value.
+__kernel void initializeRmspropOnlineEstimate(
+    __global T* gradient_accumulator,
+    __global T* last_gradient,
+    __global T* learning_rate,
+    __global T* running_squared_gradient_average,
+    unsigned int mini_batch_size
+    ) {
+  unsigned int i = get_global_id(0);
+
+  // Fetch and normalize the latest observations.
+  T g = gradient_accumulator[i] / mini_batch_size;
+  learning_rate[i] = 1.0;
+  // We now use these to initialze our running averages.
+  running_squared_gradient_average[i] = g*g;
+  last_gradient[i] = g;
+}
+
+
+__kernel void updateRmspropOnlineEstimate(
+    __global T* gradient_accumulator,
+    __global T* last_gradient,
+    __global T* running_squared_gradient_average,
+    __global T* learning_rate,
+    __global T* bandwidth,
+    unsigned int mini_batch_size
+    ) {
+  unsigned int i = get_global_id(0);
+
+
+  // Fetch and normalize the latest observations.
+  T g = gradient_accumulator[i] / mini_batch_size;
+  T lg = last_gradient[i];
+  T gs = g*g;
+
+  T gs_avg = running_squared_gradient_average[i];
+  gs_avg = 0.9 * gs_avg + 0.1 * gs;
+  
+  T lr = learning_rate[i];
+
+  //Standard Rprob 	
+  if(lg * g > 0.0)
+    lr = fmin(lr * STEP_INCREASE, STEP_MAX_LIMIT);
+  else if(lg * g < 0.0)
+    lr = fmax(lr * STEP_DECREASE, STEP_MIN_LIMIT);
+
+  //Rmsprop scales the gradient with the square root of the running squared gradient average.
+  T scaled_g = g/sqrt(gs_avg);
+  if(scaled_g > 0){
+    //If the gradient is postive, we will run into problems. Limit the learning rate in that case
+    lr = fmin(bandwidth[i]/scaled_g*0.5,lr); 	
+  } 
+  bandwidth[i] = bandwidth[i] - scaled_g*lr;
+  
+  //Zero out the accumulators and write to memory
+  gradient_accumulator[i] = 0;
+  last_gradient[i] = g;
+  running_squared_gradient_average[i] = gs_avg;
+  learning_rate[i] = lr;
+}
+
+
 // Computes a single vSGD-fd step.
-__kernel void updateOnlineEstimate(
+__kernel void updateVsgdOnlineEstimate(
     __global T* gradient_accumulator,
     __global T* squared_gradient_accumulator,
     __global T* hessian_accumulator,

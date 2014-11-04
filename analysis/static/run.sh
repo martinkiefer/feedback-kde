@@ -22,7 +22,8 @@ for dataset in $DIR/*; do
         query_file=`basename $query`
         echo -e "\tRunning query $query_file."
         for i in $(seq 1 $REPETITIONS); do
-            postgres -D $PGDATAFOLDER -p $PGPORT >/dev/null 2>&1 &
+            postgres -D $PGDATAFOLDER -p $PGPORT > /dev/null 2>&1 &
+
             PGPID=$!
             sleep 2
             python $DIR/runExperiment.py                         \
@@ -38,14 +39,14 @@ for dataset in $DIR/*; do
                --model=kde_heuristic --modelsize=$KDE_MODELSIZE  \
                --trainqueries=$TRAINQUERIES --queries=$QUERIES   \
                --error=relative
-
-            python $DIR/runExperiment.py                         \
+            
+	    python $DIR/runExperiment.py                         \
                --dbname=$PGDATABASE --port=$PGPORT               \
                --queryfile=$query --log=$DIR/result.csv          \
-               --model=kde_optimal --modelsize=$KDE_MODELSIZE    \
+               --model=kde_adaptive_rmsprop --modelsize=$KDE_MODELSIZE    \
                --trainqueries=$TRAINQUERIES --queries=$QUERIES   \
                --error=relative --reuse
-
+            
             python $DIR/runExperiment.py                         \
                --dbname=$PGDATABASE --port=$PGPORT               \
                --queryfile=$query --log=$DIR/result.csv          \

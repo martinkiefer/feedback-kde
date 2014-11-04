@@ -493,6 +493,10 @@ static void ocl_freeEstimator(ocl_estimator_t* estimator, bool materialize) {
     clReleaseMemObject(estimator->temp_shifted_gradient_buffer);
   if (estimator->temp_shifted_result_buffer)
     clReleaseMemObject(estimator->temp_shifted_result_buffer);
+  if (estimator->last_gradient)
+    clReleaseMemObject(estimator->last_gradient);
+  if (estimator->learning_rate)
+    clReleaseMemObject(estimator->learning_rate);
 
   if (estimator->column_order)
     free(estimator->column_order);

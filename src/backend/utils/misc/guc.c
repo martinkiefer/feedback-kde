@@ -179,6 +179,13 @@ static const struct config_enum_entry kde_error_metric_options[] = {
 };
 extern int kde_error_metric;
 
+static const struct config_enum_entry kde_online_optimization_options[] = {
+  {"rmsprop", RMSPROP, false},
+  {"vSGDfd", VSGD_FD, false},
+  {NULL, 0, false},
+};
+extern int kde_online_optimization_algorithm;
+
 static const struct config_enum_entry kde_sample_maintenance_insert_options[] = {
   {"None", NONE_I, false},
   {"Reservoir", RESERVOIR, false},
@@ -3588,6 +3595,15 @@ static struct config_enum ConfigureNamesEnum[] =
     },
     &kde_error_metric,
     RELATIVE, kde_error_metric_options,
+    NULL, NULL, NULL
+  },
+  {
+    {"kde_online_optimization_algorithm", PGC_USERSET, DEVELOPER_OPTIONS,
+      gettext_noop("Sets the optimization algorithms used for adaptive bandwidth optimization."),
+      NULL
+    },
+    &kde_online_optimization_algorithm,
+    VSGD_FD, kde_online_optimization_options,
     NULL, NULL, NULL
   },
   {
