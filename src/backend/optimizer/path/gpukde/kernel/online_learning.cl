@@ -198,11 +198,8 @@ __kernel void updateRmspropOnlineEstimate(
 
   //Rmsprop scales the gradient with the square root of the running squared gradient average.
   T scaled_g = g/sqrt(gs_avg);
-  if(scaled_g > 0){
-    //If the gradient is postive, we will run into problems. Limit the learning rate in that case
-    lr = fmin(bandwidth[i]/scaled_g*0.5,lr); 	
-  } 
-  bandwidth[i] = bandwidth[i] - scaled_g*lr;
+  //Pervent negative bandwidth values by restricting bandwidth decreases
+  bandwidth[i] = fmax(bandwidth[i] - scaled_g*lr,0.5 * bandwidth[i]);
   
   //Zero out the accumulators and write to memory
   gradient_accumulator[i] = 0;
