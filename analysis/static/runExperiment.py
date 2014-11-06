@@ -99,10 +99,7 @@ m = re.match("(.+)_([a-z]+)_(.+).sql", queryfilename)
 table = m.groups()[0]
 workload = m.groups()[1]
 selectivity = m.groups()[2]
-if ("_" in table):
-    m = re.match("([^_]*)_([0-9]+)", table)
-else:
-    m = re.match("([^0-9]*)([0-9]+)", table)
+m = re.match("(.+)([1-9]+)", table)
 dataset = m.groups()[0]
 dimensions = int(m.groups()[1])
 
