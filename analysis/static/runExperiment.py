@@ -11,6 +11,7 @@ import rpy2
 import sys
 import time
 
+
 from rpy2.robjects.packages import importr
 from rpy2 import robjects
 
@@ -68,7 +69,7 @@ parser.add_argument("--port", action="store", type=int, default=5432, help="Port
 parser.add_argument("--queryfile", action="store", required=True, help="File with benchmark queries.")
 parser.add_argument("--queries", action="store", required=True, type=int, help="How many queries from the workload should be used?")
 parser.add_argument("--trainqueries", action="store", default=100, type=int, help="How many queries should be used to train the model?")
-parser.add_argument("--model", action="store", choices=["stholes", "kde_heuristic", "kde_adaptive", "kde_batch", "kde_optimal"], default="none", help="Which model should be used?")
+parser.add_argument("--model", action="store", choices=["stholes", "kde_heuristic", "kde_adaptive_rmsprop","kde_adaptive_vsgd","kde_batch", "kde_optimal"], default="none", help="Which model should be used?")
 parser.add_argument("--modelsize", action="store", required=True, type=int, help="How many rows should the generated model sample?")
 parser.add_argument("--error", action="store", choices=["absolute", "relative", "normalized"], default="absolute", help="Which error metric should be optimized / reported?")
 parser.add_argument("--log", action="store", required=True, help="Where to append the experimental results?")
@@ -161,11 +162,17 @@ if (model == "kde_batch"):
     # Drop all existing feedback and start feedback collection.
     cur.execute("DELETE FROM pg_kdefeedback;")
     cur.execute("SET kde_collect_feedback TO true;")
-elif (model == "kde_adaptive"):
+elif (model == "kde_adaptive_rmsprop"):
     # Build an initial model that is being trained.
     cur.execute("SET kde_enable_adaptive_bandwidth TO true;")
-    cur.execute("SET kde_online_optimization_algorithm TO rmsprop;")
     cur.execute("SET kde_minibatch_size TO 10;")
+    cur.execute("SET kde_online_optimization_algorithm TO rmsprop;")
+    createModel(table, dimensions,args.reuse)
+elif (model == "kde_adaptive_vsgd"):
+    # Build an initial model that is being trained.
+    cur.execute("SET kde_enable_adaptive_bandwidth TO true;")
+    cur.execute("SET kde_minibatch_size TO 10;")
+    cur.execute("SET kde_online_optimization_algorithm TO vSGDfd;")
     createModel(table, dimensions,args.reuse)
 # Now run the training queries.
 f.seek(0)
@@ -182,14 +189,14 @@ if (model == "kde_batch"):
     cur.execute("SET kde_collect_feedback TO false;") # We don't need further feedback collection.    
     cur.execute("SET kde_enable_bandwidth_optimization TO true;")
     cur.execute("SET kde_optimization_feedback_window TO %i;" % trainqueries)
-if (model != "kde_adaptive" and model != "stholes"):
+if (model != "kde_adaptive_rmsprop" and model != "kde_adaptive_vsgd" and model != "stholes"):
     createModel(table, dimensions,args.reuse)
 # If this is the optimal estimator, we need to compute the PI bandwidth estimate.
 if (model == "kde_optimal"):
   print "Extracting sample for offline bandwidth optimization ..."
-  cur.execute("SELECT kde_dump_sample('%s', '/tmp/sample.csv');" % table)
+  cur.execute("SELECT kde_dump_sample('%s', '/tmp/sample_%s.csv');" % (table, args.dbname))
   print "Importing the sample into R ..."
-  m = robjects.r['read.csv']('/tmp/sample.csv')
+  m = robjects.r['read.csv']('/tmp/sample_%s.csv' % args.dbname)
   print "Calling SCV bandwidth estimator ..."
   ks = importr("ks")
   bw = robjects.r['diag'](robjects.r('Hscv.diag')(m))
@@ -270,7 +277,7 @@ if errortype == "normalized":
     error_uniform /= row_count
     error = error_abs / error_uniform
     
-# Now append to our error log.
+# Now append to the error log.
 f = open(log, "a+")
 if os.path.getsize(log) == 0:
     f.write("Dataset;Dimension;Workload;Selectivity;Model;ModelSize;Trainingsize;Errortype;Error\n")
