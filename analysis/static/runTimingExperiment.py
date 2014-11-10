@@ -57,9 +57,6 @@ model = args.model
 modelsize = args.modelsize
 log = args.log
 
-# Error log file that we will use.
-error_log = "/tmp/error_%s.log" % args.dbname
-
 # Open a connection to postgres.
 conn = psycopg2.connect("dbname=%s host=localhost port=%i" % (args.dbname, args.port))
 conn.set_session('read uncommitted', autocommit=True)
