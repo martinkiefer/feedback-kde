@@ -1,8 +1,9 @@
+#pragma OPENCL EXTENSION cl_khr_fp64: enable
+
 #ifndef TYPE_DEFINED_
   #if (TYPE == 4)
     typedef float T;
   #elif (TYPE == 8)
-    #pragma OPENCL EXTENSION cl_khr_fp64: enable
     typedef double T;
   #endif
   #define TYPE_DEFINED_
@@ -199,7 +200,7 @@ __kernel void updateRmspropOnlineEstimate(
   //Rmsprop scales the gradient with the square root of the running squared gradient average.
   T scaled_g = g/sqrt(gs_avg);
   //Pervent negative bandwidth values by restricting bandwidth decreases
-  bandwidth[i] = fmax(bandwidth[i] - scaled_g*lr,0.5 * bandwidth[i]);
+  bandwidth[i] = fmax(bandwidth[i] - scaled_g*lr,((T)0.5) * bandwidth[i]);
   
   //Zero out the accumulators and write to memory
   gradient_accumulator[i] = 0;

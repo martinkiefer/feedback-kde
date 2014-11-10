@@ -1,3 +1,5 @@
+#pragma OPENCL EXTENSION cl_khr_fp64: enable
+
 #ifndef TYPE_DEFINED_
   #if (TYPE == 4)
     typedef float T;
