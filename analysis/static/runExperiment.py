@@ -74,6 +74,7 @@ parser.add_argument("--modelsize", action="store", required=True, type=int, help
 parser.add_argument("--error", action="store", choices=["absolute", "relative", "normalized"], default="absolute", help="Which error metric should be optimized / reported?")
 parser.add_argument("--log", action="store", required=True, help="Where to append the experimental results?")
 parser.add_argument("--reuse", action="store_true", help="Don't rebuild the model.")
+parser.add_argument("--debug", action="store_true", help="Debug options.")
 
 args = parser.parse_args()
 
@@ -93,6 +94,8 @@ error_log = "/tmp/error_%s.log" % args.dbname
 conn = psycopg2.connect("dbname=%s host=localhost port=%i" % (args.dbname, args.port))
 conn.set_session('read uncommitted', autocommit=True)
 cur = conn.cursor()
+
+cur.execute("SET kde_debug TO false;")
 
 # Extract table name, workload, selectivity and dimensionality from the query file name.
 queryfilename = ntpath.basename(queryfile)
@@ -177,10 +180,14 @@ elif (model == "kde_adaptive_vsgd"):
 # Now run the training queries.
 f.seek(0)
 finished_queries = 0
+if args.debug: wf = open("/tmp/workload_train_%s.log" % args.dbname, "w")
 if (trainqueries > 0):
     for linenr, line in enumerate(f):
         if linenr in selected_training_queries:
             cur.execute(line)
+            if args.debug: 
+               wf.write(line)
+               wf.write("%s\n" % cur.fetchone()[0])
             finished_queries += 1
             sys.stdout.write("\r\tFinished %i of %i training queries." % (finished_queries, trainqueries))
             sys.stdout.flush()
@@ -206,13 +213,23 @@ if (model == "kde_optimal"):
     bw_array += ',%f' % v
   bw_array += ']'
   cur.execute("SELECT kde_set_bandwidth('%s',%s);" % (table, bw_array))
-
 print "done!"
+if args.debug: wf.close()
 
 print "Running experiment ... "
+
 # Reset the error tracking.
-cur.execute("SET kde_debug TO false;")
 cur.execute("SET kde_estimation_quality_logfile TO '%s';" % error_log)
+
+if (args.debug):
+   # Print the bandwidth.
+   cur.execute("SELECT kde_get_bandwidth('%s');" % table)
+   print "Bandwidth: %s" % cur.fetchone()
+   # Dump the sample.
+   cur.execute("SELECT kde_dump_sample('%s', '/tmp/sample_%s.csv');" % (table, args.dbname))
+   # Prepare to dump the run queries.
+   wf = open("/tmp/workload_%s.log" % args.dbname, "w")
+
 # And run the experiments.
 executed_queries = []
 output_cardinalities = []
@@ -222,6 +239,7 @@ allrows = 0
 for linenr, line in enumerate(f):
     if linenr in selected_test_queries:
         cur.execute(line)
+        if args.debug: wf.write(line)
         if (errortype == "normalized"): 
             card = cur.fetchone()[0]
             executed_queries.append(line)
@@ -283,5 +301,9 @@ if os.path.getsize(log) == 0:
     f.write("Dataset;Dimension;Workload;Selectivity;Model;ModelSize;Trainingsize;Errortype;Error\n")
 f.write("%s;%i;%s;%s;%s;%i;%i;%s;%f\n" % (dataset, dimensions, workload, selectivity, model, modelsize, trainqueries, errortype, error))
 f.close()
+
+if args.debug:
+   wf.close()
+   raw_input("Press Enter to continue.")
 
 print "done!"
