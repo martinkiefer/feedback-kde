@@ -74,7 +74,7 @@ parser.add_argument("--modelsize", action="store", required=True, type=int, help
 parser.add_argument("--error", action="store", choices=["absolute", "relative", "normalized"], default="absolute", help="Which error metric should be optimized / reported?")
 parser.add_argument("--log", action="store", required=True, help="Where to append the experimental results?")
 parser.add_argument("--reuse", action="store_true", help="Don't rebuild the model.")
-parser.add_argument("--debug", action="store_true", help="Debug options.")
+parser.add_argument("--record", action="store_true", help="If set, the script will store the training & testing workload, actual selectivities, as well as the data sample to files in /tmp.")
 
 args = parser.parse_args()
 
@@ -143,7 +143,7 @@ if (model == "kde_heuristic" or model == "kde_optimal"):
     trainqueries = 0
 print "done!"
 
-print "Building the initial model ..."
+print "Building initial model ..."
 # Set the requested error metric.
 if (errortype == "relative"):
     cur.execute("SET kde_error_metric TO SquaredRelative;")
@@ -180,14 +180,16 @@ elif (model == "kde_adaptive_vsgd"):
 # Now run the training queries.
 f.seek(0)
 finished_queries = 0
-if args.debug: wf = open("/tmp/workload_train_%s.log" % args.dbname, "w")
+if args.record: 
+  train_queries_f = open("/tmp/train_queries_%s.log" % args.dbname, "w")
+  train_selectivities_f = open("/tmp/train_selectivities_%s.log" % args.dbname, "w")
 if (trainqueries > 0):
     for linenr, line in enumerate(f):
         if linenr in selected_training_queries:
             cur.execute(line)
-            if args.debug: 
-               wf.write(line)
-               wf.write("%s\n" % cur.fetchone()[0])
+            if args.record: 
+               train_queries_f.write(line)
+               train_selectivities_f.write("%s\n" % cur.fetchone()[0])
             finished_queries += 1
             sys.stdout.write("\r\tFinished %i of %i training queries." % (finished_queries, trainqueries))
             sys.stdout.flush()
@@ -207,29 +209,29 @@ if (model == "kde_optimal"):
   print "Calling SCV bandwidth estimator ..."
   ks = importr("ks")
   bw = robjects.r['diag'](robjects.r('Hscv.diag')(m))
-  print "Setting bandwidth estimate: ", bw
   bw_array = 'ARRAY[%f' % bw[0]
   for v in bw[1:]:
     bw_array += ',%f' % v
   bw_array += ']'
   cur.execute("SELECT kde_set_bandwidth('%s',%s);" % (table, bw_array))
+if args.record:
+  train_queries_f.close()
+  train_selectivities_f.close()
+  # Print the selected bandwidth.
+  if (model != "stholes"):
+    cur.execute("SELECT kde_get_bandwidth('%s');" % table)
+    print "\tEstimated bandwidth: %s" % cur.fetchone() 
 print "done!"
-if args.debug: wf.close()
 
 print "Running experiment ... "
-
+if (args.record):
+   # Dump the model sample.
+   if (model != "stholes"):
+     cur.execute("SELECT kde_dump_sample('%s', '/tmp/sample_%s.csv');" % (table, args.dbname))
+   # Prepare to dump the run queries.
+   wf = open("/tmp/test_queries_%s.log" % args.dbname, "w")
 # Reset the error tracking.
 cur.execute("SET kde_estimation_quality_logfile TO '%s';" % error_log)
-
-if (args.debug):
-   # Print the bandwidth.
-   cur.execute("SELECT kde_get_bandwidth('%s');" % table)
-   print "Bandwidth: %s" % cur.fetchone()
-   # Dump the sample.
-   cur.execute("SELECT kde_dump_sample('%s', '/tmp/sample_%s.csv');" % (table, args.dbname))
-   # Prepare to dump the run queries.
-   wf = open("/tmp/workload_%s.log" % args.dbname, "w")
-
 # And run the experiments.
 executed_queries = []
 output_cardinalities = []
@@ -239,7 +241,7 @@ allrows = 0
 for linenr, line in enumerate(f):
     if linenr in selected_test_queries:
         cur.execute(line)
-        if args.debug: wf.write(line)
+        if args.record: wf.write(line)
         if (errortype == "normalized"): 
             card = cur.fetchone()[0]
             executed_queries.append(line)
@@ -284,7 +286,7 @@ for row in reader:
         row_count += 1
         
 if(len(executed_queries) != 0 and errortype == "normalized"):
-    raise Exception("We have less error log lines than executed queries. This is most likely the case because one or more queries contained a hyperrectangle with no volume.")
+    raise Exception("We have fewer error log lines than executed queries. This is most likely the case because one or more queries contained a hyperrectangle with no volume.")
              
 if errortype == "absolute":
     error = nrows * sum / row_count
@@ -301,9 +303,8 @@ if os.path.getsize(log) == 0:
     f.write("Dataset;Dimension;Workload;Selectivity;Model;ModelSize;Trainingsize;Errortype;Error\n")
 f.write("%s;%i;%s;%s;%s;%i;%i;%s;%f\n" % (dataset, dimensions, workload, selectivity, model, modelsize, trainqueries, errortype, error))
 f.close()
+print "done!"
 
-if args.debug:
+if args.record:
    wf.close()
    raw_input("Press Enter to continue.")
-
-print "done!"
