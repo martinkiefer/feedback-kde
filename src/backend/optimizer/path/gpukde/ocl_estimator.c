@@ -972,8 +972,89 @@ void ocl_extractSampleTuple(
   }
 }
 
-/* Helper function to interact with the sample using stored procedures */
-Datum ocl_dumpKDESample(PG_FUNCTION_ARGS) {
+// Helper stored procedure to import a model sample from a given file.
+Datum ocl_importKDESample(PG_FUNCTION_ARGS) {
+  Oid table_oid = PG_GETARG_OID(0);
+  (void)table_oid;
+  char *file_name = text_to_cstring(PG_GETARG_TEXT_PP(1));
+  (void)file_name;
+  // Make sure that KDE is enabled.
+  if (!ocl_useKDE()) {
+    ereport(ERROR,
+        (errcode(ERRCODE_DATATYPE_MISMATCH),
+            errmsg("KDE is disabled, please set kde_enable to true!")));
+    PG_RETURN_BOOL(false);
+  }
+  // Try to fetch the estimator:
+  ocl_estimator_t* estimator = ocl_getEstimator(table_oid);
+  if (estimator == NULL) {
+    ereport(ERROR,
+            (errcode(ERRCODE_DATATYPE_MISMATCH),
+             errmsg("no KDE estimator exists for table %i", table_oid)));
+    PG_RETURN_BOOL(false);
+  }
+  // Try to open the sample file:
+  FILE* fin = fopen(file_name, "r");
+  if (fin == NULL) {
+    ereport(ERROR,
+        (errcode(ERRCODE_DATATYPE_MISMATCH),
+         errmsg("could not open file %s", file_name)));
+    PG_RETURN_BOOL(false);
+  }
+  // Fetch the sample buffer.
+  kde_float_t* sample_buffer = malloc(
+      estimator->rows_in_sample * ocl_sizeOfSampleItem(estimator));
+
+  // Read the sample file line by line:
+  size_t line_buffer_size = 1024;
+  char* line_buffer = malloc(line_buffer_size);
+  unsigned int read_lines = 0;
+  while (getline(&line_buffer, &line_buffer_size, fin) != -1) {
+    if (read_lines == estimator->rows_in_sample) {
+      ereport(ERROR,
+              (errcode(ERRCODE_DATATYPE_MISMATCH),
+               errmsg("too many tuples in sample file")));
+      PG_RETURN_BOOL(false);
+    }
+    char* tmp = strtok(line_buffer, ",");
+    int read_values = 0;
+    while (tmp) {
+      double value;
+      sscanf(tmp, "%le", &value);
+      sample_buffer[read_lines * estimator->nr_of_dimensions + read_values] = value;
+      tmp = strtok(NULL, ",");
+      read_values++;
+    }
+    read_lines++;
+    if (read_values != estimator->nr_of_dimensions) {
+      ereport(ERROR,
+          (errcode(ERRCODE_DATATYPE_MISMATCH),
+           errmsg("incorrect number of dimensions (%i) in line %i", read_values, read_lines)));
+      PG_RETURN_BOOL(false);
+    }
+  }
+  fclose(fin);
+  free(line_buffer);
+  if (read_lines != estimator->rows_in_sample) {
+    ereport(ERROR,
+            (errcode(ERRCODE_DATATYPE_MISMATCH),
+             errmsg("too few tuples (%i) in sample file", read_lines)));
+    PG_RETURN_BOOL(false);
+  }
+
+  // Push the new sample to the estimator.
+  ocl_context_t* context = ocl_getContext();
+  clEnqueueWriteBuffer(
+      context->queue, estimator->sample_buffer, CL_TRUE, 0,
+      estimator->rows_in_sample * ocl_sizeOfSampleItem(estimator),
+      sample_buffer, 0, NULL, NULL);
+  free(sample_buffer);
+
+  PG_RETURN_BOOL(true);
+}
+
+// Helper stored procedure to export a model sample to a given file.
+Datum ocl_exportKDESample(PG_FUNCTION_ARGS) {
   Oid table_oid = PG_GETARG_OID(0);
   (void)table_oid;
   char *file_name = text_to_cstring(PG_GETARG_TEXT_PP(1));
@@ -1014,7 +1095,7 @@ Datum ocl_dumpKDESample(PG_FUNCTION_ARGS) {
   for (; i<estimator->rows_in_sample; ++i) {
     // Fetch the first data item.
     kde_float_t elem = sample_buffer[i*estimator->nr_of_dimensions];
-    fprintf(fout, "%f", elem);
+    fprintf(fout, "%le", elem);
     int j=1;
     for (; j<estimator->nr_of_dimensions; ++j) {
       elem = sample_buffer[i*estimator->nr_of_dimensions + j];

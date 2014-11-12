@@ -4722,7 +4722,7 @@ DATA(insert OID = 3473 (  spg_range_quad_leaf_consistent	PGNSP PGUID 12 1 0 0 0 
 DESCR("SP-GiST support for quad tree over range");
 
 /* KDE-related functions */
-DATA(insert OID = 4040 (  kde_dump_sample  PGNSP PGUID 12 1 0 0 0 f f f f t f s 2 0 16 "2205 25" _null_ _null_ _null_ _null_  ocl_dumpKDESample _null_ _null_ _null_ ));
+DATA(insert OID = 4040 (  kde_dump_sample  PGNSP PGUID 12 1 0 0 0 f f f f t f s 2 0 16 "2205 25" _null_ _null_ _null_ _null_  ocl_exportKDESample _null_ _null_ _null_ ));
 DESCR("Dump the current sample that is used by the KDE estimator for the given table to the given file.");
 DATA(insert OID = 4041 (  kde_set_bandwidth  PGNSP PGUID 12 1 0 0 0 f f f f t f s 2 0 16 "2205 2277" _null_ _null_ _null_ _null_  ocl_setKDEBandwidth _null_ _null_ _null_ ));
 DESCR("Set the bandwidth for the given KDE estimator.");
@@ -4730,6 +4730,10 @@ DATA(insert OID = 4042 (  kde_reset_bandwidth  PGNSP PGUID 12 1 0 0 0 f f f f t 
 DESCR("Reoptimizes the bandwidth for the given KDE estimator using the configured method.");
 DATA(insert OID = 4043 (  kde_get_bandwidth  PGNSP PGUID 12 1 0 0 0 f f f f t f s 1 0 2277 "2205" _null_ _null_ _null_ _null_  ocl_getBandwidth _null_ _null_ _null_ ));
 DESCR("Returns the current bandwidth configuration of the given estimator.");
+DATA(insert OID = 4044 (  kde_export_sample  PGNSP PGUID 12 1 0 0 0 f f f f t f s 2 0 16 "2205 25" _null_ _null_ _null_ _null_  ocl_exportKDESample _null_ _null_ _null_ ));
+DESCR("Export the sample that is used by the KDE estimator of the given table to the given file.");
+DATA(insert OID = 4045 (  kde_import_sample  PGNSP PGUID 12 1 0 0 0 f f f f t f s 2 0 16 "2205 25" _null_ _null_ _null_ _null_  ocl_importKDESample _null_ _null_ _null_ ));
+DESCR("Import the sample for the KDE estimator of the given table from the given file.");
 
 /* event triggers */
 DATA(insert OID = 3566 (  pg_event_trigger_dropped_objects		PGNSP PGUID 12 10 100 0 0 f f f f t t s 0 0 2249 "" "{26,26,23,25,25,25,25}" "{o,o,o,o,o,o,o}" "{classid, objid, objsubid, object_type, schema_name, object_name, object_identity}" _null_ pg_event_trigger_dropped_objects _null_ _null_ _null_ ));
