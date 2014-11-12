@@ -11,6 +11,7 @@
 #include <math.h>
 #include <sys/time.h>
 
+#include "miscadmin.h"
 #include "catalog/pg_type.h"
 
 #ifdef USE_OPENCL
@@ -234,13 +235,21 @@ static cl_program buildProgram(ocl_context_t* context, const char* build_params)
 		readFile(f, &(file_buffers[i]), &(file_lengths[i]));
 		fclose(f);
 	}
-	// Concatenate all kernels into a single file.
-	char* kernel_file;
-	size_t kernel_file_length;
-	concatFiles(nr_of_kernels, file_buffers, file_lengths, &kernel_file, &kernel_file_length);
-	FILE* f = fopen("/tmp/kernel.cl", "w");
-	fwrite(kernel_file, kernel_file_length, 1, f);
-	fclose(f);
+	// Concatenate all kernels into a single buffer.
+	char* kernel_sources;
+	size_t kernel_source_length;
+	concatFiles(
+      nr_of_kernels, file_buffers, file_lengths,
+      &kernel_sources, &kernel_source_length);
+   
+   // Write the sources to a debug file (if requested).
+   char kernel_source_file_name[1024];
+   if (ocl_isDebug()) {
+      sprintf(kernel_source_file_name, "%s/kernel_debug.cl", DataDir);
+      FILE* kernel_source_file = fopen(kernel_source_file_name, "w");
+	   fwrite(kernel_sources, kernel_source_length, 1, kernel_source_file);
+	   fclose(kernel_source_file);
+   }
 
 	// Construct the device-specific build parameters.
 	char device_params[1024];
@@ -249,6 +258,12 @@ static cl_program buildProgram(ocl_context_t* context, const char* build_params)
 		strcat(device_params, "-DDEVICE_GPU ");
 	} else {
 		strcat(device_params, "-DDEVICE_CPU ");
+      if (ocl_isDebug()) {
+         // Add the required debug flags.
+         strcat(device_params, "-g -s \"");
+         strcat(device_params, kernel_source_file_name);
+         strcat(device_params, "\" ");
+      }
 	}
 	if (sizeof(kde_float_t) == sizeof(double)) {
 	  strcat(device_params, "-DTYPE=8 ");
@@ -256,11 +271,12 @@ static cl_program buildProgram(ocl_context_t* context, const char* build_params)
 	  strcat(device_params, "-DTYPE=4 ");
 	}
 	strcat(device_params, build_params);
-	// Ok, build the program
+
+	// Ok, build the program.
 	cl_program program = clCreateProgramWithSource(
-	    context->context, 1, (const char**)&kernel_file,
-	    &kernel_file_length, NULL);
-	fprintf(stderr, "Compiling OpenCL kernels: %s\n", device_params);
+	    context->context, 1, (const char**)&kernel_sources,
+	    &kernel_source_length, NULL);
+	fprintf(stderr, "Compiling OpenCL kernels %s\n", device_params);
 	cl_int err = clBuildProgram(program, 1, &(context->device), device_params, NULL, NULL);
 	if (err != CL_SUCCESS) {
 		// Print the error log
