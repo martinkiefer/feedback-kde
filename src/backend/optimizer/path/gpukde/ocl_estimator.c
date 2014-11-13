@@ -661,8 +661,7 @@ int ocl_estimateSelectivity(const ocl_estimator_request_t* request,
   unsigned int i;
   // Fetch the OpenCL context, initializing it if requested.
   ocl_context_t* ctxt = ocl_getContext();
-  if (ctxt == NULL)
-    return 0;
+  if (ctxt == NULL) return 0;
   // Make sure that the registry is initialized
   if (registry == NULL)
     ocl_initializeRegistry();
@@ -672,18 +671,15 @@ int ocl_estimateSelectivity(const ocl_estimator_request_t* request,
     return 0;
   ocl_estimator_t* estimator = DIRECTORY_FETCH(registry->estimator_directory,
       &(request->table_identifier), ocl_estimator_t);
-  if (estimator == NULL)
-    return 0;
+  if (estimator == NULL) return 0;
   // Check if the request can potentially be answered by the estimator:
-  if (request->range_count > estimator->nr_of_dimensions)
-    return 0;
+  if (request->range_count > estimator->nr_of_dimensions) return 0;
   // Now check if all columns in the request are covered by the estimator:
   int request_columns = 0;
   for (i = 0; i < request->range_count; ++i) {
     request_columns |= 0x1 << request->ranges[i].colno;
   }
-  if ((estimator->columns | request_columns) != estimator->columns)
-    return 0;
+  if ((estimator->columns | request_columns) != estimator->columns) return 0;
   // Cool, prepare a request to the estimator
   kde_float_t* row_ranges = (kde_float_t*) malloc(
       2 * sizeof(kde_float_t) * estimator->nr_of_dimensions);
@@ -745,17 +741,19 @@ void ocl_constructEstimator(
   // Make sure the registry exists.
   if (!registry) ocl_initializeRegistry();
   // Some Debug output:
-  fprintf(
-      stderr, "Constructing an estimator for table %i.\n",
-      rel->rd_node.relNode);
-  fprintf(stderr, "\tColumns:");
-  for (i = 0; i < dimensionality; ++i) {
-    fprintf(stderr, " %i", attributes[i]);
+  if (ocl_isDebug()) {
+    fprintf(
+        stderr, "Constructing an estimator for table %i.\n",
+        rel->rd_node.relNode);
+    fprintf(stderr, "\tColumns:");
+    for (i = 0; i < dimensionality; ++i) {
+      fprintf(stderr, " %i", attributes[i]);
+    }
+    fprintf(stderr, "\n");
+    fprintf(
+        stderr, "\tUsing a backing sample of %i out of %i tuples.\n",
+        sample_size, rows_in_table);
   }
-  fprintf(stderr, "\n");
-  fprintf(
-      stderr, "\tUsing a backing sample of %i out of %i tuples.\n",
-      sample_size, rows_in_table);
   // Register the new estimator.
   Assert(rel->rd_node.relNode / 8 <= 512*1024); // If the oids are to large, bad things will hapen.
   ocl_estimator_t* estimator = calloc(1, sizeof(ocl_estimator_t));
@@ -780,64 +778,24 @@ void ocl_constructEstimator(
   estimator->rows_in_table = rows_in_table;
   /*
    * OK, we set up the estimator. Prepare the sample for shipping it to the
-   * device. While preparing the sample, we compute the variance for each column
-   * on the fly. The variance is then used to compute the rule-of-thumb
-   * bandwidth and to normalize the data to unit variance in each dimension.
+   * device.
    */
   kde_float_t* host_buffer = (kde_float_t*) malloc(
       ocl_sizeOfSampleItem(estimator) * sample_size);
-  double* mean = (double*) calloc(1, sizeof(double) * dimensionality);
-  double* M2 = (double*) calloc(1, sizeof(double) * dimensionality);
   for (i = 0; i < sample_size; ++i) {
     // Extract the item.
     ocl_extractSampleTuple(estimator, rel, sample[i],
         &(host_buffer[i * estimator->nr_of_dimensions]));
-    // And update the attributes.
-    for (j = 0; j < estimator->nr_of_dimensions; ++j) {
-      double delta = host_buffer[i * estimator->nr_of_dimensions + j] - mean[j];
-      mean[j] = mean[j] + delta / (i + 1);
-      M2[j] += delta
-          * (host_buffer[i * estimator->nr_of_dimensions + j] - mean[j]);
-    }
   }
-  // Compute the scale factors (standard deviations) for each dimension.
-  free(mean);
-  estimator->scale_factors = M2;
+  estimator->scale_factors = calloc(
+      1, sizeof(kde_float_t) * estimator->nr_of_dimensions);
   for (i = 0; i < estimator->nr_of_dimensions; ++i) {
-    estimator->scale_factors[i] /= (sample_size - 1);
-    estimator->scale_factors[i] = sqrt(estimator->scale_factors[i]);
+    estimator->scale_factors[i] = 1;
   }
-  // Compute an initial bandwidth estimate using Scott's rule.
-  kde_float_t* bandwidth = (kde_float_t*) malloc(
-      sizeof(kde_float_t) * dimensionality);
-  for (i = 0; i < dimensionality; ++i) {
-    if (!scale_to_unit_variance) {
-      // If data scaling is deactivated, the scale factor is simply one - and
-      // the bandwidth is computed from the stdev.
-      bandwidth[i] = estimator->scale_factors[i]
-          * pow(sample_size, -1.0 / ((double) (dimensionality + 4)));
-      if (global_kernel_type == EPANECHNIKOV)
-        bandwidth[i] *= sqrt(5);
-      estimator->scale_factors[i] = 1;
-    } else {
-      // If data scaling is activated, we scale the data to unit variance.
-      bandwidth[i] = 100
-          * pow(sample_size, -1.0 / ((double) (dimensionality + 4)));
-      if (global_kernel_type == EPANECHNIKOV)
-        bandwidth[i] *= sqrt(5);
-      estimator->scale_factors[i] = 1.0 / estimator->scale_factors[i];
-    }
-  }
+  // Initialize the bandwidth buffer.
   estimator->bandwidth_buffer = clCreateBuffer(ctxt->context, CL_MEM_READ_WRITE,
       sizeof(kde_float_t) * dimensionality,
       NULL, NULL);
-  // Print some debug info.
-  fprintf(stderr, "\tInitial bandwidth guess:");
-  for ( i = 0; i < dimensionality ; ++i) {
-    fprintf(stderr, " %f", bandwidth[i]);
-  }
-  fprintf(stderr, "\n");
-  free(bandwidth);
   // Allocate a buffer of ones to initialize karma and contribution.
   kde_float_t* one_buffer = (kde_float_t*) malloc(
       sizeof(kde_float_t) * sample_size);
@@ -848,7 +806,7 @@ void ocl_constructEstimator(
       host_buffer[j*dimensionality + i] *= estimator->scale_factors[i];
     }
   }
-  // Push the sample to the device.
+  // Push everything to the device.
   estimator->sample_buffer_size =
       kde_samplesize * estimator->nr_of_dimensions * sizeof(kde_float_t);
   estimator->sample_buffer = clCreateBuffer(
@@ -874,10 +832,9 @@ void ocl_constructEstimator(
       0, NULL, NULL);
   free(host_buffer);
   free(one_buffer);
-    // Wait for the initialization to finish.
+  // Wait for the initialization to finish.
   clFinish(ocl_getContext()->queue);
-
-  // Finally, hand the estimator over for model optimization.
+  // Finally, hand the estimator over to the model optimization routine.
   estimator->learning_boost_rate = 10;
   ocl_runModelOptimization(estimator);
 }
