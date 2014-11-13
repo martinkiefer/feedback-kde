@@ -75,6 +75,7 @@ parser.add_argument("--error", action="store", choices=["absolute", "relative", 
 parser.add_argument("--log", action="store", required=True, help="Where to append the experimental results?")
 parser.add_argument("--reuse", action="store_true", help="Don't rebuild the model.")
 parser.add_argument("--record", action="store_true", help="If set, the script will store the training & testing workload, actual selectivities, as well as the data sample to files in /tmp.")
+parser.add_argument("--gpu", action="store_true", help="Use the graphics card for the experiment.")
 
 args = parser.parse_args()
 
@@ -157,7 +158,8 @@ if (model == "stholes"):
 else:
     # Set KDE-specific parameters.
     cur.execute("SET kde_samplesize TO %i;" % modelsize)
-    cur.execute("SET ocl_use_gpu TO false;")
+    if not args.gpu:
+      cur.execute("SET ocl_use_gpu TO false;")
     cur.execute("SET kde_enable TO true;")
 
 # Initialize the training phase.

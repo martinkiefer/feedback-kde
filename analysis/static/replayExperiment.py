@@ -69,6 +69,7 @@ parser.add_argument("--error", action="store", choices=["absolute", "relative", 
 parser.add_argument("--samplefile", action="store", help="Which samplefile should be used?")
 parser.add_argument("--train_workload", action="store", help="File containing the training queries")
 parser.add_argument("--test_workload", action="store", help="File containing the test queries")
+parser.add_argument("--gpu", action="store_true", help="Use the graphics card for the experiment.")
 args = parser.parse_args()
 
 # Set the input file names.
@@ -134,7 +135,8 @@ if (args.model == "stholes"):
 else:
     # Set KDE-specific parameters.
     cur.execute("SET kde_samplesize TO %i;" % modelsize)
-    cur.execute("SET ocl_use_gpu TO false;")
+    if not args.gpu:
+      cur.execute("SET ocl_use_gpu TO false;")
     cur.execute("SET kde_enable TO true;")
 
 # Initialize the training phase.
