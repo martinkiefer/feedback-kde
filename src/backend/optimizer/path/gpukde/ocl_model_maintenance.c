@@ -494,9 +494,11 @@ void ocl_runModelOptimization(ocl_estimator_t* estimator) {
   ocl_setScottsBandwidth(estimator);
   // Now check if we do a full bandwidth optimization.
   if (!kde_enable_bandwidth_optimization) return;
-  fprintf(
-      stderr, "Beginning model optimization for estimator on "
-      "table %i\n", estimator->table);
+  if (ocl_isDebug()) {
+    fprintf(
+        stderr, "Beginning model optimization for estimator on table %i\n",
+        estimator->table);
+  }
   // First, we need to fetch the feedback records for this table and push them
   // to the device.
   cl_mem device_ranges, device_selectivites;
@@ -575,13 +577,15 @@ void ocl_runModelOptimization(ocl_estimator_t* estimator) {
   nlopt_set_maxeval(global_optimizer, 100);
   double tmp;
   int err = nlopt_optimize(global_optimizer, bandwidth, &tmp);
-  if (err < 0) {
-    fprintf(stderr, "\nOptimization failed: %i!", err);
-  } else {
-    fprintf(stderr, "\nNew bandwidth:");
-    for ( i = 0; i < estimator->nr_of_dimensions ; ++i)
-      fprintf(stderr, " %e", bandwidth[i]);
-    fprintf(stderr, "\n");
+  if (ocl_isDebug()) {
+    if (err < 0) {
+      fprintf(stderr, "\nOptimization failed: %i!", err);
+    } else {
+      fprintf(stderr, "\nNew bandwidth:");
+      for ( i = 0; i < estimator->nr_of_dimensions ; ++i)
+        fprintf(stderr, " %e", bandwidth[i]);
+      fprintf(stderr, "\n");
+    }
   }
   nlopt_destroy(global_optimizer);
   // Transfer the bandwidth to the device.
