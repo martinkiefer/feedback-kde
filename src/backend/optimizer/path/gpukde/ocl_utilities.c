@@ -388,27 +388,26 @@ void ocl_printBuffer(const char* message, cl_mem buffer, int dimensions, int ite
   pfree(host_buffer);
 }
 
-cl_event sumOfArray(cl_mem input_buffer, unsigned int elements,
-                    cl_mem result_buffer, unsigned int result_buffer_offset,
-                    cl_event external_event) {
+cl_event sumOfArray(
+    cl_mem input_buffer, unsigned int elements,
+    cl_mem result_buffer, unsigned int result_buffer_offset,
+    cl_event external_event) {
   cl_int err = 0;
   ocl_context_t* context = ocl_getContext();
   cl_event init_event;
   cl_event events[] = { NULL, NULL };
   unsigned int nr_of_events = 0;
   // Fetch the required sum kernels:
-  if (init_buffer_sum == NULL)
-    init_buffer_sum = ocl_getKernel("init_zero", 0);
-  if (fast_sum == NULL)
-    fast_sum = ocl_getKernel("sum_par", 0);
-  if (slow_sum == NULL)
-    slow_sum = ocl_getKernel("sum_seq", 0);
+  if (init_buffer_sum == NULL) init_buffer_sum = ocl_getKernel("init_zero", 0);
+  if (fast_sum == NULL) fast_sum = ocl_getKernel("sum_par", 0);
+  if (slow_sum == NULL) slow_sum = ocl_getKernel("sum_seq", 0);
   struct timeval start; gettimeofday(&start, NULL);
 
   // Determine the optimal local size.
   size_t local_size;
-  clGetKernelWorkGroupInfo(fast_sum, context->device, CL_KERNEL_WORK_GROUP_SIZE,
-                           sizeof(size_t), &local_size, NULL);
+  clGetKernelWorkGroupInfo(
+      fast_sum, context->device, CL_KERNEL_WORK_GROUP_SIZE,
+      sizeof(size_t), &local_size, NULL);
   // Truncate to local memory requirements.
   local_size = Min(
       local_size,

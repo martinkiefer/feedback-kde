@@ -30,6 +30,34 @@
 
 extern ocl_kernel_type_t global_kernel_type;
 
+void ocl_allocateSampleMaintenanceBuffers(ocl_estimator_t* estimator) {
+  ocl_context_t* context = ocl_getContext();
+  ocl_sample_optimization_t* descriptor = calloc(
+      1, sizeof(ocl_sample_optimization_t));
+  // Allocate two new buffers that we use for storing sample information.
+  descriptor->sample_karma_buffer = clCreateBuffer(
+      context->context, CL_MEM_READ_WRITE,
+      sizeof(kde_float_t) * estimator->rows_in_sample, NULL, NULL);
+  descriptor->sample_contribution_buffer = clCreateBuffer(
+      context->context, CL_MEM_READ_WRITE,
+      sizeof(kde_float_t) * estimator->rows_in_sample, NULL, NULL);
+  // Register the descriptor in the estimator.
+  estimator->sample_optimization = descriptor;
+}
+
+void ocl_releaseSampleMaintenanceBuffers(ocl_estimator_t* estimator) {
+  if (estimator->sample_optimization) {
+    ocl_sample_optimization_t* descriptor = estimator->sample_optimization;
+    if (descriptor->sample_karma_buffer) {
+      clReleaseMemObject(descriptor->sample_karma_buffer);
+    }
+    if (descriptor->sample_contribution_buffer) {
+      clReleaseMemObject(descriptor->sample_contribution_buffer);
+    }
+    free(estimator->sample_optimization);
+  }
+}
+
 // GUC configuration variable.
 double kde_sample_maintenance_threshold;
 double kde_sample_maintenance_karma_decay;
@@ -46,17 +74,17 @@ const double sample_match_learning_rate = 0.02f;
 static cl_mem getBufferForNextMetric(ocl_estimator_t* estimator) {
   // Switch to the next sample maintenance metric.
   if (kde_sample_maintenance_track_impact &&
-      estimator->last_optimized_sample_metric != IMPACT) {
-    estimator->last_optimized_sample_metric = IMPACT;
+      estimator->sample_optimization->last_optimized_sample_metric != IMPACT) {
+    estimator->sample_optimization->last_optimized_sample_metric = IMPACT;
   } else if (kde_sample_maintenance_track_karma &&
-      estimator->last_optimized_sample_metric != KARMA) {
-    estimator->last_optimized_sample_metric = KARMA;
+      estimator->sample_optimization->last_optimized_sample_metric != KARMA) {
+    estimator->sample_optimization->last_optimized_sample_metric = KARMA;
   }
   // Now return the buffer for the chosen metric.
-  if (estimator->last_optimized_sample_metric == IMPACT) {
-    return estimator->sample_contribution_buffer;
-  } else if (estimator->last_optimized_sample_metric == KARMA) {
-    return estimator->sample_karma_buffer;
+  if (estimator->sample_optimization->last_optimized_sample_metric == IMPACT) {
+    return estimator->sample_optimization->sample_contribution_buffer;
+  } else {
+    return estimator->sample_optimization->sample_karma_buffer;
   }
 }
 
@@ -115,13 +143,16 @@ static unsigned int *getMinPenaltyIndexBelowThreshold(
           ctxt->context, CL_MEM_READ_WRITE,
           sizeof(kde_float_t), NULL, NULL);
   
-  event = minOfArray(estimator->sample_karma_buffer, estimator->rows_in_sample,
-                    min_val, min_idx, 0, wait_event);
+  event = minOfArray(
+      estimator->sample_optimization->sample_karma_buffer,
+      estimator->rows_in_sample, min_val, min_idx, 0, wait_event);
   
-  clEnqueueReadBuffer(ctxt->queue,min_idx, CL_TRUE, 0,
-	                    sizeof(unsigned int), index, 1, &event, NULL);
-  clEnqueueReadBuffer(ctxt->queue,min_val, CL_TRUE, 0,
-	               sizeof(kde_float_t), &val, 1, &event, NULL);
+  clEnqueueReadBuffer(
+      ctxt->queue,min_idx, CL_TRUE, 0, sizeof(unsigned int),
+      index, 1, &event, NULL);
+  clEnqueueReadBuffer(
+      ctxt->queue,min_val, CL_TRUE, 0, sizeof(kde_float_t),
+      &val, 1, &event, NULL);
 
   clReleaseMemObject(min_idx);
   clReleaseMemObject(min_val);
@@ -377,9 +408,9 @@ void ocl_notifySampleMaintenanceOfSelectivity(
   err |= clSetKernelArg(
       kernel, 0, sizeof(cl_mem), &(ctxt->result_buffer));
   err |= clSetKernelArg(
-      kernel, 1, sizeof(cl_mem), &(estimator->sample_karma_buffer));
+      kernel, 1, sizeof(cl_mem), &(estimator->sample_optimization->sample_karma_buffer));
   err |= clSetKernelArg(
-      kernel, 2, sizeof(cl_mem), &(estimator->sample_contribution_buffer));
+      kernel, 2, sizeof(cl_mem), &(estimator->sample_optimization->sample_contribution_buffer));
   err |= clSetKernelArg(
       kernel, 3, sizeof(unsigned int), &(estimator->rows_in_sample));
   err |= clSetKernelArg(

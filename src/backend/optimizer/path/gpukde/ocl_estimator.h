@@ -15,58 +15,38 @@
 
 #ifdef USE_OPENCL
 
-typedef enum ocl_estimator_quality_metric {
-  IMPACT = 0,
-  KARMA = 1
-} ocl_estimator_quality_metric_t;
+// Forward declaration for sample and model maintenance data structures.
+struct ocl_sample_optimization;
+struct ocl_bandwidth_optimization;
 
 /*
  * Definition of a constructed KDE estimator.
  */
 typedef struct ocl_estimator {
   /* Information about the scope of this estimator */
-  Oid table;    // For which table ss this estimator configured?
+  Oid table;    // For which table is this estimator configured?
   int32 columns;	 // Bitmap encoding which columns are stored in the estimator.
   unsigned int* column_order; // Order of the columns on the device.
-  /* Some statistics about the estimator */
+  /* statistics about the estimator */
   unsigned int nr_of_dimensions;
-  /* Buffers that keeps the current bandwidth estimate*/
+  /* Buffers that keeps the current bandwidth.*/
   cl_mem bandwidth_buffer;
-  /* Fields for the sample */
+  /* Fields for the sample. */
   unsigned int rows_in_table;   // Current number of tuples in the table.
   unsigned int rows_in_sample;  // Current number of tuples in the sample.
-  size_t sample_buffer_size;      // Size of the sample buffer in bytes.
-  cl_mem sample_buffer;           // Buffer that stores the data sample.
-  cl_mem sample_karma_buffer;     // Buffer to track the karma of the sample points.
-  cl_mem sample_contribution_buffer; // Buffer to track the total probability contributions for the sample points.
-  ocl_estimator_quality_metric_t last_optimized_sample_metric;
-  /* Fields for tracking mini-batch updates to the bandwidth. */
-  cl_mem gradient_accumulator;
-  cl_mem squared_gradient_accumulator;
-  cl_mem hessian_accumulator;
-  cl_mem squared_hessian_accumulator;
-  unsigned int nr_of_accumulated_gradients;
-  /* Fields for computing the adaptive learning rate */
-  bool online_learning_initialized;
-  cl_mem last_gradient;
-  cl_mem learning_rate;
-  cl_mem running_gradient_average;
-  cl_mem running_squared_gradient_average;
-  cl_mem running_hessian_average;
-  cl_mem running_squared_hessian_average;
-  cl_mem current_time_constant;
-  /* Fields for pre-computing the gradient for online learning */
-  cl_mem temp_gradient_buffer;
-  cl_mem temp_shifted_gradient_buffer;
-  cl_mem temp_shifted_result_buffer;
-  cl_event online_learning_event;
-  double learning_boost_rate;
-  /* Normalization factors */
-  double* scale_factors;    // Scale factors that were applied to the data in the sample.
+  size_t sample_buffer_size;    // Size of the sample buffer in bytes.
+  cl_mem sample_buffer;         // Buffer to store the data sample.
+  /* Fields for the estimator. */
+  cl_mem input_buffer;          // Buffer to store query bounds.
+  cl_mem local_results_buffer;  // Buffer to store the local selectivities.
+  cl_mem result_buffer;         // Buffer to store the final estimate.
+  cl_kernel kde_kernel;         // Kernel to compute the estimate.
+  /* Model optimization structures */
+  struct ocl_bandwidth_optimization* bandwidth_optimization;
+  struct ocl_sample_optimization* sample_optimization;
   /* Runtime information */
-  bool open_estimation;     // Set to true if this estimator has produced a valid estimation for which we are still waiting for feedback.
+  bool open_estimation;     // Set to true if this estimator has produced a valid estimation for which we are still awaiting feedback.
   double last_selectivity;  // Stores the last selectivity computed by this estimator.
-  cl_kernel estimator;
   unsigned long nr_of_estimations;
 } ocl_estimator_t;
 

@@ -66,8 +66,10 @@ typedef struct {
  * Note: Both functions only work if kde_debug is set.
  */
 
-void ocl_dumpBufferToFile(const char* file, cl_mem buffer, int dimensions, int items);
-void ocl_printBuffer(const char* message, cl_mem buffer, int dimensions, int items);
+void ocl_dumpBufferToFile(
+    const char* file, cl_mem buffer, int dimensions, int items);
+void ocl_printBuffer(
+    const char* message, cl_mem buffer, int dimensions, int items);
 
 // Returns true if debugging is enabled.
 bool ocl_isDebug(void);
@@ -109,19 +111,19 @@ cl_kernel ocl_getKernel(const char* kernel_name, int dimensions);
 /*
  * Computes the sum of the elements in input_buffer, writing it to the
  * specified position in result_buffer.
- *
  */
-cl_event sumOfArray(cl_mem input_buffer, unsigned int elements,
-                    cl_mem result_buffer, unsigned int result_buffer_offset,
-                    cl_event external_event);
+cl_event sumOfArray(
+    cl_mem input_buffer, unsigned int elements,
+    cl_mem result_buffer, unsigned int result_buffer_offset,
+    cl_event external_event);
 /*
  * Computes the min of the elements in input_buffer, writing minimum and value
  * to the specified position in result_* buffers.
- *
  */
-cl_event minOfArray(cl_mem input_buffer, unsigned int elements,
-                    cl_mem result_min, cl_mem result_index,
-                    unsigned int result_buffer_offset, cl_event external_event);
+cl_event minOfArray(
+    cl_mem input_buffer, unsigned int elements,
+    cl_mem result_min, cl_mem result_index,
+    unsigned int result_buffer_offset, cl_event external_event);
 
 #endif /* USE_OPENCL */
 #endif /* OCL_UTILITIES_H_ */
