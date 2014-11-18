@@ -777,7 +777,7 @@ static void ocl_runRmspropOnlineLearningStep(
   cl_event accumulator_event;
   err |= clEnqueueNDRangeKernel(
       context->queue, accumulate, 1, NULL, &global_size, NULL, 1,
-      &(estimator->online_learning_event), &accumulator_event);
+      &(descriptor->online_learning_event), &accumulator_event);
 
   // Debug print the accumulated buffers.
   ocl_printBuffer(
