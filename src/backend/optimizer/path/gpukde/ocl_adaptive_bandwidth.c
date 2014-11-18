@@ -752,8 +752,6 @@ static void ocl_runRmspropOnlineLearningStep(
   cl_event init_event;
   ocl_bandwidth_optimization_t* descriptor = estimator->bandwidth_optimization;
 
-  descriptor->online_learning_event = NULL;
-
   // Compute the scaling factor for the gradient.
   kde_float_t gradient_factor =
       M_SQRT2 / (sqrt(M_PI) * pow(2.0, estimator->nr_of_dimensions));
@@ -778,8 +776,8 @@ static void ocl_runRmspropOnlineLearningStep(
   Assert(! err);
   cl_event accumulator_event;
   err |= clEnqueueNDRangeKernel(
-      context->queue, accumulate, 1, NULL, &global_size, NULL, 0, NULL,
-      &accumulator_event);
+      context->queue, accumulate, 1, NULL, &global_size, NULL, 1,
+      &(estimator->online_learning_event), &accumulator_event);
 
   // Debug print the accumulated buffers.
   ocl_printBuffer(
