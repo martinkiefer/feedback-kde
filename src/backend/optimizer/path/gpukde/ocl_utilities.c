@@ -204,9 +204,9 @@ static const char *kernel_names[] = {
 };
 static const unsigned int nr_of_kernels = 7;
 
-static void concatFiles(unsigned int nr_of_files,
-                        char** file_buffers, size_t* file_lengths,
-                        char** result_file, size_t* result_file_length) {
+static void concatFiles(
+    unsigned int nr_of_files, char** file_buffers, size_t* file_lengths,
+    char** result_file, size_t* result_file_length) {
   unsigned int i;
   unsigned int wpos;
   // Compute the total length.
@@ -225,82 +225,82 @@ static void concatFiles(unsigned int nr_of_files,
 }
 
 // Helper function to build a program from all kernel files using the given build params
-static cl_program buildProgram(ocl_context_t* context, const char* build_params) {
-	unsigned int i;
-	// Load all kernel files:
-	char** file_buffers = (char**)malloc(sizeof(char*)*nr_of_kernels);
-	size_t* file_lengths = (size_t*)malloc(sizeof(size_t)*nr_of_kernels);
-	for (i = 0; i < nr_of_kernels; ++i) {
-		FILE* f = fopen(kernel_names[i], "rb");
-		readFile(f, &(file_buffers[i]), &(file_lengths[i]));
-		fclose(f);
-	}
-	// Concatenate all kernels into a single buffer.
-	char* kernel_sources;
-	size_t kernel_source_length;
-	concatFiles(
+static cl_program buildProgram(
+    ocl_context_t* context, const char* build_params) {
+  unsigned int i;
+  // Load all kernel files:
+  char** file_buffers = (char**)malloc(sizeof(char*)*nr_of_kernels);
+  size_t* file_lengths = (size_t*)malloc(sizeof(size_t)*nr_of_kernels);
+  for (i = 0; i < nr_of_kernels; ++i) {
+    FILE* f = fopen(kernel_names[i], "rb");
+    readFile(f, &(file_buffers[i]), &(file_lengths[i]));
+    fclose(f);
+  }
+  // Concatenate all kernels into a single buffer.
+  char* kernel_sources;
+  size_t kernel_source_length;
+  concatFiles(
       nr_of_kernels, file_buffers, file_lengths,
       &kernel_sources, &kernel_source_length);
-   
-   // Write the sources to a debug file (if requested).
-   char kernel_source_file_name[1024];
-   if (ocl_isDebug()) {
-      sprintf(kernel_source_file_name, "%s/kernel_debug.cl", DataDir);
-      FILE* kernel_source_file = fopen(kernel_source_file_name, "w");
-	   fwrite(kernel_sources, kernel_source_length, 1, kernel_source_file);
-	   fclose(kernel_source_file);
-   }
+  // Write the sources to a debug file (if requested).
+  char kernel_source_file_name[1024];
+  if (ocl_isDebug()) {
+    sprintf(kernel_source_file_name, "%s/kernel_debug.cl", DataDir);
+    FILE* kernel_source_file = fopen(kernel_source_file_name, "w");
+    fwrite(kernel_sources, kernel_source_length, 1, kernel_source_file);
+    fclose(kernel_source_file);
+  }
+  // Construct the device-specific build parameters.
+  char device_params[1024];
+  sprintf(device_params, "-DMAXBLOCKSIZE=%i ", (int)(context->max_workgroup_size));
+  if (context->is_gpu) {
+    strcat(device_params, "-DDEVICE_GPU ");
+  } else {
+    strcat(device_params, "-DDEVICE_CPU ");
+    if (ocl_isDebug()) {
+      // Add the required debug flags.
+      strcat(device_params, "-g -s \"");
+      strcat(device_params, kernel_source_file_name);
+      strcat(device_params, "\" ");
+    }
+  }
+  if (sizeof(kde_float_t) == sizeof(double)) {
+    strcat(device_params, "-DTYPE=8 ");
+  } else if (sizeof(kde_float_t) == sizeof(float)) {
+    strcat(device_params, "-DTYPE=4 ");
+  }
+  strcat(device_params, build_params);
 
-	// Construct the device-specific build parameters.
-	char device_params[1024];
-	sprintf(device_params, "-DMAXBLOCKSIZE=%i ", (int)(context->max_workgroup_size));
-	if (context->is_gpu) {
-		strcat(device_params, "-DDEVICE_GPU ");
-	} else {
-		strcat(device_params, "-DDEVICE_CPU ");
-      if (ocl_isDebug()) {
-         // Add the required debug flags.
-         strcat(device_params, "-g -s \"");
-         strcat(device_params, kernel_source_file_name);
-         strcat(device_params, "\" ");
-      }
-	}
-	if (sizeof(kde_float_t) == sizeof(double)) {
-	  strcat(device_params, "-DTYPE=8 ");
-	} else if (sizeof(kde_float_t) == sizeof(float)) {
-	  strcat(device_params, "-DTYPE=4 ");
-	}
-	strcat(device_params, build_params);
-
-	// Ok, build the program.
-	cl_program program = clCreateProgramWithSource(
-	    context->context, 1, (const char**)&kernel_sources,
-	    &kernel_source_length, NULL);
-	fprintf(stderr, "Compiling OpenCL kernels %s\n", device_params);
-	cl_int err = clBuildProgram(program, 1, &(context->device), device_params, NULL, NULL);
-	if (err != CL_SUCCESS) {
-		// Print the error log
-		fprintf(stderr, "Error compiling the program:\n");
-		size_t log_size;
-		clGetProgramBuildInfo(program, context->device, CL_PROGRAM_BUILD_LOG, 0, NULL, &log_size);
-		char* log = malloc(log_size+1);
-		clGetProgramBuildInfo(program, context->device, CL_PROGRAM_BUILD_LOG, log_size, log, NULL);
-		fprintf(stderr, "%s\n", log);
-		free(log);
-		program = NULL;
-		goto cleanup;
-	}
-	// And add it to the registry:
-	dictionary_insert(context->program_registry, build_params, program);
+  // Ok, build the program.
+  cl_program program = clCreateProgramWithSource(
+      context->context, 1, (const char**)&kernel_sources,
+      &kernel_source_length, NULL);
+  fprintf(stderr, "Compiling OpenCL kernels %s\n", device_params);
+  cl_int err = clBuildProgram(program, 1, &(context->device), device_params, NULL, NULL);
+  if (err != CL_SUCCESS) {
+    // Print the error log
+    fprintf(stderr, "Error compiling the program:\n");
+    size_t log_size;
+    clGetProgramBuildInfo(program, context->device, CL_PROGRAM_BUILD_LOG, 0, NULL, &log_size);
+    char* log = malloc(log_size+1);
+    clGetProgramBuildInfo(program, context->device, CL_PROGRAM_BUILD_LOG, log_size, log, NULL);
+    fprintf(stderr, "%s\n", log);
+    free(log);
+    program = NULL;
+    goto cleanup;
+  }
+  // And add it to the registry:
+  dictionary_insert(context->program_registry, build_params, program);
 
 cleanup:
-	// Release the resources.
-	for (i = 0; i < nr_of_kernels; ++i)
-		free(file_buffers[i]);
-	free(file_buffers);
-	free(file_lengths);
-	// We are done.
-	return program;
+  // Release the resources.
+  for (i = 0; i < nr_of_kernels; ++i) {
+    free(file_buffers[i]);
+  }
+  free(file_buffers);
+  free(file_lengths);
+  // We are done.
+  return program;
 }
 
 /*
@@ -310,38 +310,38 @@ cl_kernel ocl_getKernel(const char* kernel_name, int dimensions) {
   // We only introduce the number of dimensions into the kernels.
   char build_params[16];
   sprintf(build_params, "-DD=%i", dimensions);
-	// Get the context
-	ocl_context_t* context = ocl_getContext();
-	// Check if we already know the program for the given build_params
-	cl_program program = (cl_program)dictionary_get(context->program_registry,
-	                                                build_params);
-	if (program == NULL) {
-		// The program was not found, build a new program using the given build_params.
-		program = buildProgram(context, build_params);
-		if (program == NULL) {
-			return NULL;
-		}
-	}
-	// Ok, we have the program, create the kernel.
-	cl_int err;
-	cl_kernel result = clCreateKernel(program, kernel_name, &err);
-	if (err != CL_SUCCESS) 
-		return NULL;
-	else
-		return result;
+  // Get the context
+  ocl_context_t* context = ocl_getContext();
+  // Check if we already know the program for the given build_params
+  cl_program program = (cl_program)dictionary_get(
+      context->program_registry, build_params);
+  if (program == NULL) {
+    // The program was not found, build a new program using the given build_params.
+    program = buildProgram(context, build_params);
+    if (program == NULL) {
+      return NULL;
+    }
+  }
+  // Ok, we have the program, create the kernel.
+  cl_int err;
+  cl_kernel result = clCreateKernel(program, kernel_name, &err);
+  if (err != CL_SUCCESS) {
+    return NULL;
+  } else {
+    return result;
+  }
 }
 
-void ocl_dumpBufferToFile(const char* file, cl_mem buffer,
-                          int dimensions, int items) {
+void ocl_dumpBufferToFile(
+    const char* file, cl_mem buffer, int dimensions, int items) {
 
   ocl_context_t* context = ocl_getContext();
   clFinish(context->queue);
-
   // Fetch the buffer to disk.
   kde_float_t* host_buffer = palloc(sizeof(kde_float_t) * dimensions * items);
-  clEnqueueReadBuffer(context->queue, buffer, CL_TRUE,
-                      0, sizeof(kde_float_t) * dimensions * items,
-                      host_buffer, 0, NULL, NULL);
+  clEnqueueReadBuffer(
+      context->queue, buffer, CL_TRUE, 0,
+      sizeof(kde_float_t) * dimensions * items, host_buffer, 0, NULL, NULL);
 
   FILE* f = fopen(file, "w");
   unsigned int i,j;
@@ -356,7 +356,8 @@ void ocl_dumpBufferToFile(const char* file, cl_mem buffer,
   pfree(host_buffer);
 }
 
-void ocl_printBuffer(const char* message, cl_mem buffer, int dimensions, int items) {
+void ocl_printBuffer(
+    const char* message, cl_mem buffer, int dimensions, int items) {
   if (!kde_debug) return;
 
   ocl_context_t* context = ocl_getContext();
@@ -366,9 +367,9 @@ void ocl_printBuffer(const char* message, cl_mem buffer, int dimensions, int ite
 
   // Fetch the buffer to the host.
   kde_float_t* host_buffer = palloc(sizeof(kde_float_t) * dimensions * items);
-  clEnqueueReadBuffer(context->queue, buffer, CL_TRUE,
-                      0, sizeof(kde_float_t) * dimensions * items,
-                      host_buffer, 0, NULL, NULL);
+  clEnqueueReadBuffer(
+      context->queue, buffer, CL_TRUE, 0,
+      sizeof(kde_float_t) * dimensions * items, host_buffer, 0, NULL, NULL);
   fprintf(stderr, "%s", message);
   if (items == 1) {
     fprintf(stderr, " ");
