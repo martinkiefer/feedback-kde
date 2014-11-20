@@ -105,4 +105,3 @@ __kernel void sum_par(
    // Ok, we are done, write the result back.
    if (local_id == 0) result[get_group_id(0)] = scratch[0] + scratch[1];
 }
-

@@ -409,7 +409,7 @@ ocl_aggregation_descriptor_t* prepareSumDescriptor(
   descriptor->intermediate_result_buffer =  clCreateBuffer(
       context->context, CL_MEM_READ_WRITE,
       sizeof(kde_float_t) * context->max_compute_units, NULL, NULL);
-  // Figure out how many elements we can aggregate per thread in the parallel part:
+  // Figure out how many elements we have to aggregate per thread:
   unsigned int tuples_per_thread =
       elements / (context->max_compute_units * descriptor->local_size);
   if (tuples_per_thread * (context->max_compute_units * descriptor->local_size) < elements) {
@@ -471,7 +471,8 @@ cl_event predefinedSumOfArray(
   if (external_event) {
     clEnqueueNDRangeKernel(
         context->queue, sum_descriptor->pre_aggregation, 1, NULL, &global_size,
-        &(sum_descriptor->local_size), 1, &external_event, &pre_aggregation_event);
+        &(sum_descriptor->local_size), 1, &external_event,
+        &pre_aggregation_event);
   } else {
     clEnqueueNDRangeKernel(
         context->queue, sum_descriptor->pre_aggregation, 1, NULL, &global_size,
@@ -495,6 +496,7 @@ cl_event sumOfArray(
       input_buffer, elements, result_buffer, result_buffer_offset);
   cl_event result_event = predefinedSumOfArray(desc, external_event);
   releaseAggregationDescriptor(desc);
+  return result_event;
 }
 
 cl_event minOfArray(
