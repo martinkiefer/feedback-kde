@@ -102,6 +102,10 @@ static ocl_estimator_t* allocateEstimator(
       result->kde_kernel, 2, sizeof(cl_mem), &(result->input_buffer));
   clSetKernelArg(
       result->kde_kernel, 3, sizeof(cl_mem), &(result->bandwidth_buffer));
+  // Prepare the sum descriptor.
+  result->sum_descriptor = prepareSumDescriptor(
+      result->local_results_buffer, result->rows_in_sample,
+      result->result_buffer, 0);
   // Delegate to allocate the required buffers for the optimization:
   ocl_allocateSampleMaintenanceBuffers(result);
   ocl_allocateBandwidthOptimizatztionBuffers(result);
@@ -123,6 +127,7 @@ static void freeEstimator(ocl_estimator_t* estimator) {
   if (estimator->kde_kernel) clReleaseKernel(estimator->kde_kernel);
   // Release the column map.
   if (estimator->column_order) free(estimator->column_order);
+  releaseAggregationDescriptor(estimator->sum_descriptor);
   // Release the required buffers for the optimization.
   ocl_releaseSampleMaintenanceBuffers(estimator);
   ocl_releaseBandwidthOptimizatztionBuffers(estimator);
@@ -457,9 +462,8 @@ static double rangeKDE(
   }
   clReleaseEvent(input_transfer_event);
   // Compute the final estimation by summing up the local contributions.
-  cl_event sum_event = sumOfArray(
-      estimator->local_results_buffer, estimator->rows_in_sample,
-      estimator->result_buffer, 0, kde_event);
+  cl_event sum_event = predefinedSumOfArray(
+      estimator->sum_descriptor, kde_event);
   clReleaseEvent(kde_event);
   // Transfer the summed up contributions back, and normalize them.
   kde_float_t result;

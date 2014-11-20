@@ -220,6 +220,9 @@ typedef struct {
   cl_mem error_accumulator_buffer;
   cl_mem gradient_buffer;
   cl_mem error_buffer;
+  // Required event and accumulation buffers.
+  ocl_aggregation_descriptor_t** summation_descriptors;
+  cl_mem* summation_buffers;
 } optimization_config_t;
 
 /**
@@ -340,22 +343,15 @@ static double computeGradient(
       context->queue, gradient_kernel, 1, NULL, &global_size, &local_size, 1,
       &input_transfer_event, &partial_gradient_event);
   // Sum up the individual error contributions ...
-  cl_event* events = palloc(sizeof(cl_event) * (1 + estimator->nr_of_dimensions));
-  events[0] = sumOfArray(
-      conf->error_accumulator_buffer, conf->nr_of_observations,
-      conf->error_buffer, 0, partial_gradient_event);
+  cl_event* summation_events = palloc(
+      sizeof(cl_event) * (1 + estimator->nr_of_dimensions));
+
+  summation_events[0] = predefinedSumOfArray(
+      conf->summation_descriptors[0], partial_gradient_event);
   // .. and the individual gradients.
-  cl_mem* sub_buffers = palloc(sizeof(cl_mem) * estimator->nr_of_dimensions);
   for (i=0; i<estimator->nr_of_dimensions; ++i) {
-    cl_buffer_region region;
-    region.size = conf->stride_size;
-    region.origin = i * conf->stride_size;
-    sub_buffers[i] = clCreateSubBuffer(
-        conf->gradient_accumulator_buffer, CL_MEM_READ_ONLY,
-        CL_BUFFER_CREATE_TYPE_REGION, &region, &err);
-    events[i + 1] = sumOfArray(
-        sub_buffers[i], conf->nr_of_observations,
-        conf->gradient_buffer, i, partial_gradient_event);
+    summation_events[i + 1] = predefinedSumOfArray(
+        conf->summation_descriptors[i + 1], partial_gradient_event);
   }
   // Now transfer the gradient back to the device.
   cl_event result_events[2];
@@ -365,12 +361,13 @@ static double computeGradient(
       context->queue, conf->gradient_buffer, CL_FALSE,
       0, sizeof(kde_float_t) * estimator->nr_of_dimensions,
       tmp_gradient, estimator->nr_of_dimensions + 1,
-      events, &(result_events[0]));
+      summation_events, &(result_events[0]));
+  // As well as the error.
   kde_float_t error;
   err |= clEnqueueReadBuffer(
       context->queue, conf->error_buffer, CL_FALSE,
       0, sizeof(kde_float_t), &error,
-      estimator->nr_of_dimensions + 1, events, &(result_events[1]));
+      1, &(summation_events[0]),  &(result_events[1]));
   err |= clWaitForEvents(2, result_events);
   
   if (err != 0) {
@@ -407,13 +404,11 @@ static double computeGradient(
   }
   // Ok, clean everything up.
   for (i=0; i<estimator->nr_of_dimensions; ++i) {
-    clReleaseMemObject(sub_buffers[i]);
-    clReleaseEvent(events[i]);
+    clReleaseEvent(summation_events[i]);
   }
+  pfree(summation_events);
   pfree(tmp_gradient);
   if (fbandwidth) pfree(fbandwidth);
-  pfree(events);
-  pfree(sub_buffers);
   clReleaseEvent(input_transfer_event);
   clReleaseEvent(partial_gradient_event);
   clReleaseEvent(result_events[0]);
@@ -532,7 +527,6 @@ void ocl_runModelOptimization(ocl_estimator_t* estimator) {
   for (i=0; i<estimator->nr_of_dimensions; ++i) {
     bandwidth[i] = fbandwidth[i];
   }
-
   // Package all required buffers.
   optimization_config_t params;
   params.estimator = estimator;
@@ -565,6 +559,28 @@ void ocl_runModelOptimization(ocl_estimator_t* estimator) {
       estimator->nr_of_dimensions * sizeof(kde_float_t), NULL, NULL);
   params.error_buffer = clCreateBuffer(
       context->context, CL_MEM_READ_WRITE, sizeof(kde_float_t), NULL, NULL);
+  // Prepare the summation buffers.
+  params.summation_descriptors = palloc(
+      sizeof(ocl_aggregation_descriptor_t) * (1 + estimator->nr_of_dimensions));
+  // Prepare the partial aggregations for the error.
+  params.summation_descriptors[0] = prepareSumDescriptor(
+      params.error_accumulator_buffer, params.nr_of_observations,
+      params.error_buffer, 0);
+  // .. and for each dimension.
+  params.summation_buffers = palloc(
+      sizeof(cl_mem) * estimator->nr_of_dimensions);
+  for (i=0; i<estimator->nr_of_dimensions; ++i) {
+    cl_buffer_region region;
+    region.size = params.stride_size;
+    region.origin = i * params.stride_size;
+    params.summation_buffers[i] = clCreateSubBuffer(
+        params.gradient_accumulator_buffer, CL_MEM_READ_ONLY,
+        CL_BUFFER_CREATE_TYPE_REGION, &region, NULL);
+    params.summation_descriptors[i + 1] = prepareSumDescriptor(
+        params.summation_buffers[i], params.nr_of_observations,
+        params.gradient_buffer, i);
+  }
+
   // Ok, we are prepared. Call the optimization routine.
   gettimeofday(&opt_start, NULL);
   evaluations = 0;
@@ -572,18 +588,12 @@ void ocl_runModelOptimization(ocl_estimator_t* estimator) {
   // Prepare the bound constraints.
   double* lower_bounds = palloc(sizeof(double) * estimator->nr_of_dimensions);
   for (i=0; i<estimator->nr_of_dimensions; ++i) {
-    lower_bounds[i] = 1e-5;    // We never want to be negative.
-  }
-  // We use 10x the heuristic bandwidth as our upper bound:
-  double* upper_bounds = palloc(sizeof(double) * estimator->nr_of_dimensions);
-  for (i=0; i<estimator->nr_of_dimensions; ++i) {
-    upper_bounds[i] = 1e3;
+    lower_bounds[i] = 1e-10;    // We never want to be negative.
   }
   // Create the optimization parameter.
   nlopt_opt global_optimizer= nlopt_create(
       NLOPT_LD_MMA, estimator->nr_of_dimensions);
   nlopt_set_lower_bounds(global_optimizer, lower_bounds);
-  nlopt_set_upper_bounds(global_optimizer, upper_bounds);
   nlopt_set_min_objective(global_optimizer, computeGradient, &params);
   nlopt_set_ftol_abs(global_optimizer, 1e-10);
   nlopt_set_maxeval(global_optimizer, 100);
@@ -611,6 +621,13 @@ void ocl_runModelOptimization(ocl_estimator_t* estimator) {
   // Clean up.
   pfree(fbandwidth);
   lbfgs_free(bandwidth);
+  for (i=0; i<estimator->nr_of_dimensions; ++i) {
+    clReleaseMemObject(params.summation_buffers[i]);
+    releaseAggregationDescriptor(params.summation_descriptors[i + 1]);
+  }
+  releaseAggregationDescriptor(params.summation_descriptors[0]);
+  pfree(params.summation_descriptors);
+  pfree(params.summation_buffers);
   clReleaseMemObject(params.error_buffer);
   clReleaseMemObject(params.gradient_buffer);
   clReleaseMemObject(params.error_accumulator_buffer);

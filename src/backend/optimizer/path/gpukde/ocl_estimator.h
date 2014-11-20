@@ -41,6 +41,7 @@ typedef struct ocl_estimator {
   cl_mem local_results_buffer;  // Buffer to store the local selectivities.
   cl_mem result_buffer;         // Buffer to store the final estimate.
   cl_kernel kde_kernel;         // Kernel to compute the estimate.
+  ocl_aggregation_descriptor_t* sum_descriptor; // Descriptor for the final summation operation.
   /* Model optimization structures */
   struct ocl_bandwidth_optimization* bandwidth_optimization;
   struct ocl_sample_optimization* sample_optimization;
