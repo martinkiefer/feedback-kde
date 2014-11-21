@@ -45,12 +45,6 @@ typedef struct {
 	cl_uint required_mem_alignment; /* required memory alignment in bits */
 	/* Command queue for this device */
 	cl_command_queue queue;
-	/* Buffer for result data */
-	cl_mem result_buffer;
-	size_t result_buffer_size;
-	/* Buffer for input data */
-	cl_mem input_buffer;
-	size_t input_buffer_size;
 	/* Kernel registry */
 	dictionary_t program_registry; // Keeps a mapping from build parameters to OpenCL programs.
 } ocl_context_t;

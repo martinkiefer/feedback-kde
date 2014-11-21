@@ -118,23 +118,6 @@ void ocl_initialize(void) {
   err |= clGetDeviceInfo(device, CL_DEVICE_MAX_COMPUTE_UNITS, sizeof(cl_uint), &(ctxt->max_compute_units), NULL);
   err |= clGetDeviceInfo(device, CL_DEVICE_MEM_BASE_ADDR_ALIGN, sizeof(cl_uint), &(ctxt->required_mem_alignment), NULL);
 
-  /* Allocate a result buffer to keep kde_samplesize samples from a 10-dimensional table on the device buffer */
-  ctxt->result_buffer_size = kde_samplesize * 10 * sizeof(kde_float_t);
-  ctxt->result_buffer = clCreateBuffer(
-      ctxt->context, CL_MEM_READ_WRITE, ctxt->result_buffer_size, NULL, &err);
-  if (err != CL_SUCCESS) {
-    fprintf(stderr, "\tError allocating OpenCL result buffer.\n");
-    goto bad;
-  }
-
-  /* Allocate an input buffer for storing input requests */
-  ctxt->input_buffer_size = sizeof(kde_float_t)*10*2;	/* Lower and Upper bound for 10 dimensions */
-  ctxt->input_buffer = clCreateBuffer(ctxt->context, CL_MEM_READ_WRITE, ctxt->input_buffer_size, NULL, &err);
-  if (err != CL_SUCCESS) {
-    fprintf(stderr, "\tError allocating OpenCL input buffer.\n");
-    goto bad;
-  }
-
   // We are done.
   ocl_context = ctxt;
   fprintf(stderr, "\tOpenCL successfully initialized!\n");
@@ -143,7 +126,6 @@ void ocl_initialize(void) {
 bad:
   fprintf(stderr, "\tError during OpenCL initialization.\n");
   if (ctxt->queue) clReleaseCommandQueue(ctxt->queue);
-  if (ctxt->result_buffer) clReleaseMemObject(ctxt->result_buffer);
   if (ctxt->context) clReleaseContext(ctxt->context);
   if (ctxt) free(ctxt);
 }
@@ -165,7 +147,6 @@ void ocl_releaseContext() {
   }
   dictionary_release(ocl_context->program_registry, 0);
   // Release the result buffer.
-  clReleaseMemObject(ocl_context->result_buffer);
   clReleaseContext(ocl_context->context);
   free(ocl_context);
   ocl_context = NULL;
@@ -360,7 +341,7 @@ void ocl_printBuffer(
     const char* message, cl_mem buffer, int dimensions, int items) {
   if (!kde_debug) return;
   ocl_context_t* context = ocl_getContext();
-  clFinish(context->queue);
+  clFinish(context->queue);  // Make sure that all changes are materialized.
   unsigned int i,j;
   // Fetch the buffer to the host.
   kde_float_t* host_buffer = palloc(sizeof(kde_float_t) * dimensions * items);

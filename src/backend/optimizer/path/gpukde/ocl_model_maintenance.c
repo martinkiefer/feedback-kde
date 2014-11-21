@@ -137,9 +137,9 @@ static unsigned int ocl_extractLatestFeedbackRecordsFromCatalog(
 
 // Helper function that extracts feedback for the given estimator and
 // pushes it to the device.
-static unsigned int ocl_prepareFeedback(ocl_estimator_t* estimator,
-                                        cl_mem* device_ranges,
-                                        cl_mem* device_selectivities) {
+static unsigned int ocl_prepareFeedback(
+    ocl_estimator_t* estimator, cl_mem* device_ranges,
+    cl_mem* device_selectivities) {
   // First, we have to count how many matching feedback records are available
   // for this estimator in the query feedback table.
   if (SPI_connect() != SPI_OK_CONNECT) {
