@@ -45,12 +45,6 @@ typedef struct {
 	cl_uint required_mem_alignment; /* required memory alignment in bits */
 	/* Command queue for this device */
 	cl_command_queue queue;
-	/* Buffer for result data */
-	cl_mem result_buffer;
-	size_t result_buffer_size;
-	/* Buffer for input data */
-	cl_mem input_buffer;
-	size_t input_buffer_size;
 	/* Kernel registry */
 	dictionary_t program_registry; // Keeps a mapping from build parameters to OpenCL programs.
 } ocl_context_t;
@@ -108,14 +102,36 @@ cl_kernel ocl_getKernel(const char* kernel_name, int dimensions);
 // #########################################################################
 // ############## HELPER FUNCTIONS FOR THE COMPUTATIONS ####################
 
+typedef struct ocl_aggregation_descriptor {
+  // Temporary buffer.
+  cl_mem intermediate_result_buffer;
+  // Call sizes.
+  size_t local_size;
+  // Required kernels.
+  cl_kernel pre_aggregation;
+  cl_kernel final_aggregation;
+} ocl_aggregation_descriptor_t;
+
+// Prepares a sum aggregation descriptor for the given buffers.
+ocl_aggregation_descriptor_t* prepareSumDescriptor(
+    cl_mem input_buffer, unsigned int elements,
+    cl_mem result_buffer, unsigned int result_buffer_offset);
+
+// Release the aggregation descriptor.
+void releaseAggregationDescriptor(ocl_aggregation_descriptor_t* descriptor);
 /*
  * Computes the sum of the elements in input_buffer, writing it to the
  * specified position in result_buffer.
  */
+cl_event predefinedSumOfArray(
+    ocl_aggregation_descriptor_t* descriptor, cl_event external_event);
+
+// Helper function to compute the sum of an array.
 cl_event sumOfArray(
     cl_mem input_buffer, unsigned int elements,
     cl_mem result_buffer, unsigned int result_buffer_offset,
     cl_event external_event);
+
 /*
  * Computes the min of the elements in input_buffer, writing minimum and value
  * to the specified position in result_* buffers.

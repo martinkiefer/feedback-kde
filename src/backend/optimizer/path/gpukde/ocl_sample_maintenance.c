@@ -406,7 +406,7 @@ void ocl_notifySampleMaintenanceOfSelectivity(
   ocl_context_t * ctxt = ocl_getContext();
   cl_int err = 0;
   err |= clSetKernelArg(
-      kernel, 0, sizeof(cl_mem), &(ctxt->result_buffer));
+      kernel, 0, sizeof(cl_mem), &(estimator->result_buffer));
   err |= clSetKernelArg(
       kernel, 1, sizeof(cl_mem), &(estimator->sample_optimization->sample_karma_buffer));
   err |= clSetKernelArg(

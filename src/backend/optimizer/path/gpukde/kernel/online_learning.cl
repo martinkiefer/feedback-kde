@@ -99,22 +99,6 @@ __kernel void accumulateVsgdOnlineBuffers(
   squared_hessian_accumulator[i] += hess * hess;
 }
 
-__kernel void accumulateRmspropOnlineBuffers(
-    __global const T* gradient,
-    T gradient_factor,
-    __global const T* bandwidth,
-    __global T* gradient_accumulator
-    ) {
-  unsigned int i = get_global_id(0);
-  // For rmsprop the bandwidth
-  T h = bandwidth[i];
-
-  // Now scale the gradient and the shifted gradient.
-  T grad = gradient_factor * gradient[i] / (h * h);
-  gradient_accumulator[i] += grad;
-}
-
-
 __kernel void initializeVsgdOnlineEstimate(
     __global T* gradient_accumulator,
     __global T* squared_gradient_accumulator,
@@ -169,6 +153,18 @@ __kernel void initializeRmspropOnlineEstimate(
   last_gradient[i] = g;
 }
 
+__kernel void accumulateRmspropOnlineBuffers(
+    __global const T* gradient,
+    T gradient_factor,
+    __global const T* bandwidth,
+    __global T* gradient_accumulator
+    ) {
+  unsigned int i = get_global_id(0);
+  T h = bandwidth[i];
+  // Now scale the gradient and the shifted gradient.
+  T grad = gradient_factor * gradient[i] / (h * h);
+  gradient_accumulator[i] += grad;
+}
 
 __kernel void updateRmspropOnlineEstimate(
     __global T* gradient_accumulator,
@@ -179,7 +175,6 @@ __kernel void updateRmspropOnlineEstimate(
     unsigned int mini_batch_size
     ) {
   unsigned int i = get_global_id(0);
-
 
   // Fetch and normalize the latest observations.
   T g = gradient_accumulator[i] / mini_batch_size;
