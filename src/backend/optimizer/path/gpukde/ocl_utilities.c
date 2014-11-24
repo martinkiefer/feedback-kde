@@ -411,7 +411,7 @@ ocl_aggregation_descriptor_t* prepareSumDescriptor(
       descriptor->pre_aggregation, 4,
       sizeof(unsigned int), &elements);
   // Prepare the post-aggregation kernel.
-  unsigned int zero;
+  unsigned int zero = 0;
   clSetKernelArg(
       descriptor->final_aggregation, 0, sizeof(cl_mem),
       &(descriptor->intermediate_result_buffer));
