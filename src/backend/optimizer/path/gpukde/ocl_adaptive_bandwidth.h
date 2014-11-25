@@ -66,7 +66,6 @@ typedef struct ocl_bandwidth_optimization {
   double learning_boost_rate;
   // Fields for describing aggregation operations.
   cl_mem partial_gradient_buffer;
-
 } ocl_bandwidth_optimization_t;
 
 void ocl_allocateBandwidthOptimizatztionBuffers(ocl_estimator_t* estimator);
