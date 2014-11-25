@@ -70,6 +70,7 @@ parser.add_argument("--samplefile", action="store", help="Which samplefile shoul
 parser.add_argument("--train_workload", action="store", help="File containing the training queries")
 parser.add_argument("--test_workload", action="store", help="File containing the test queries")
 parser.add_argument("--gpu", action="store_true", help="Use the graphics card for the experiment.")
+parser.add_argument("--debug", action="store_true", help="Run in debug mode.")
 args = parser.parse_args()
 
 # Set the input file names.
@@ -94,7 +95,8 @@ conn = psycopg2.connect("dbname=%s host=localhost port=%i" % (args.dbname, args.
 conn.set_session('read uncommitted', autocommit=True)
 cur = conn.cursor()
 
-cur.execute("SET kde_debug TO false;")
+if not args.debug:
+  cur.execute("SET kde_debug TO false;")
 
 # Extract table name and dimensionality from the query file name.
 f = open(testworkload_filename)
