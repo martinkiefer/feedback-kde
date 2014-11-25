@@ -17,8 +17,9 @@ __kernel void sum_seq(
    const unsigned int result_offset
 ){
    T agg = 0;
-   for (unsigned i=0; i<elements; ++i)
-      agg += data[data_offset + i];
+   for (unsigned i=0; i<elements; ++i) {
+     agg += data[data_offset + i];
+   }
    result[result_offset] = agg;
 }
 
