@@ -560,7 +560,7 @@ static void ocl_initializeRMSProp(
   descriptor->partial_gradient_globalsize =
       descriptor->partial_gradient_localsize * (estimator->rows_in_sample / descriptor->partial_gradient_localsize);
   if (descriptor->partial_gradient_globalsize < estimator->rows_in_sample) {
-    descriptor->partial_gradient_localsize += descriptor->partial_gradient_localsize;
+    descriptor->partial_gradient_globalsize += descriptor->partial_gradient_localsize;
   }
   // Now set the kernel options.
   clSetKernelArg(
@@ -591,6 +591,9 @@ static void ocl_initializeRMSProp(
   /*
    * Initialize the partial gradient summation.
    */
+  descriptor->gradient_buffer = clCreateBuffer(
+      context->context, CL_MEM_READ_WRITE,
+      estimator->nr_of_dimensions * sizeof(kde_float_t), NULL, NULL);
   descriptor->gradient_summation_buffers = calloc(
       1, sizeof(cl_mem) * estimator->nr_of_dimensions);
   descriptor->gradient_summation_descriptors = calloc(
@@ -656,7 +659,7 @@ static void ocl_initializeRMSProp(
   descriptor->model_update = ocl_getKernel("updateRmspropOnlineEstimate", 0);
   clSetKernelArg(
       descriptor->model_update, 0, sizeof(cl_mem),
-      &(descriptor->gradient_accumulator));
+      &(descriptor->gradient_accumulator_buffer));
   clSetKernelArg(
       descriptor->model_update, 1, sizeof(cl_mem),
       &(descriptor->last_gradient_buffer));
@@ -722,7 +725,7 @@ static void ocl_prepareRmspropOnlineLearningStep(ocl_estimator_t* estimator) {
   // current bandwidth.
   cl_event partial_gradient_event = NULL;
   clEnqueueNDRangeKernel(
-      context->queue, computePartialGradient, 1, NULL,
+      context->queue, descriptor->compute_partial_gradient, 1, NULL,
       &(descriptor->partial_gradient_globalsize),
       &(descriptor->partial_gradient_localsize), 0, NULL,
       &partial_gradient_event);
@@ -776,7 +779,7 @@ static void ocl_runRmspropOnlineLearningStep(
       // In order to initialize the algorithm, we simply use the accumulated averages.
       cl_kernel initModel = ocl_getKernel("initializeRmspropOnlineEstimate", 0);
       clSetKernelArg(
-          initModel, 0, sizeof(cl_mem), &(descriptor->gradient_accumulator));
+          initModel, 0, sizeof(cl_mem), &(descriptor->gradient_accumulator_buffer));
       clSetKernelArg(
           initModel, 1, sizeof(cl_mem), &(descriptor->last_gradient_buffer));
       clSetKernelArg(
@@ -796,8 +799,8 @@ static void ocl_runRmspropOnlineLearningStep(
     }
     // Schedule the mini-batch update.
     clEnqueueNDRangeKernel(
-        context->queue, updateModel, 1, NULL, &global_size, NULL, 1,
-        &accumulator_event,
+        context->queue, descriptor->model_update, 1, NULL, &global_size,
+        NULL, 1, &accumulator_event,
         &(estimator->bandwidth_optimization->optimization_event));
     // Debug print the accumulated buffers.
     ocl_printBuffer(
