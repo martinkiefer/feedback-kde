@@ -586,7 +586,7 @@ static void ocl_initializeRMSProp(
       descriptor->compute_partial_gradient, 7, sizeof(unsigned int),
       &result_stride_elements);
   clSetKernelArg(
-      descriptor->compute_partial_gradient, 8, available_local_memory, NULL);
+      descriptor->compute_partial_gradient, 8, sizeof(cl_mem), &nullBuffer);
 
   /*
    * Initialize the partial gradient summation.
