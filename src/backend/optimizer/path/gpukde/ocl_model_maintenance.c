@@ -584,21 +584,43 @@ void ocl_runModelOptimization(ocl_estimator_t* estimator) {
   // Ok, we are prepared. Call the optimization routine.
   gettimeofday(&opt_start, NULL);
   evaluations = 0;
-  fprintf(stderr, "> Starting numerical optimization of the model:\n");
+  fprintf(stderr, "> Starting numerical optimization of the model.\n");
   // Prepare the bound constraints.
   double* lower_bounds = palloc(sizeof(double) * estimator->nr_of_dimensions);
   for (i=0; i<estimator->nr_of_dimensions; ++i) {
-    lower_bounds[i] = 1e-10;    // We never want to be negative.
+    lower_bounds[i] = 1e-20;    // We never want to be negative.
   }
-  // Create the optimization parameter.
-  nlopt_opt global_optimizer= nlopt_create(
-      NLOPT_LD_MMA, estimator->nr_of_dimensions);
-  nlopt_set_lower_bounds(global_optimizer, lower_bounds);
-  nlopt_set_min_objective(global_optimizer, computeGradient, &params);
-  nlopt_set_ftol_abs(global_optimizer, 1e-10);
-  nlopt_set_maxeval(global_optimizer, 100);
+  double* upper_bounds = palloc(sizeof(double) * estimator->nr_of_dimensions);
+  for (i=0; i<estimator->nr_of_dimensions; ++i) {
+    upper_bounds[i] = 4 * bandwidth[i];    // We never want to be negative.
+  }
   double tmp;
-  int err = nlopt_optimize(global_optimizer, bandwidth, &tmp);
+  int err;
+  // We start with a global optimization step.
+  nlopt_opt global_optimizer = nlopt_create(
+      NLOPT_GD_MLSL, estimator->nr_of_dimensions);
+  nlopt_set_lower_bounds(global_optimizer, lower_bounds);
+  nlopt_set_upper_bounds(global_optimizer, upper_bounds);
+  nlopt_set_maxeval(global_optimizer, 120);
+  nlopt_set_min_objective(global_optimizer, computeGradient, &params);
+  // Register a local LBFGS instance for the global optimizer.
+  nlopt_opt global_local_optimizer = nlopt_create(
+      NLOPT_LD_LBFGS, estimator->nr_of_dimensions);
+  nlopt_set_maxeval(global_local_optimizer, 40);
+  nlopt_set_local_optimizer(global_optimizer, global_local_optimizer);
+  fprintf(stderr, "> Running global pre-optimization: ");
+  err = nlopt_optimize(global_optimizer, bandwidth, &tmp);
+  fprintf(stderr, " done (%i, %f)\n", err, tmp);
+  // Prepare the local refinement.
+  /*nlopt_opt local_optimizer = nlopt_create(
+      NLOPT_LD_LBFGS, estimator->nr_of_dimensions);
+  nlopt_set_lower_bounds(local_optimizer, lower_bounds);
+  nlopt_set_min_objective(local_optimizer, computeGradient, &params);
+  nlopt_set_ftol_abs(local_optimizer, 1e-10);
+  nlopt_set_maxeval(local_optimizer, 1000);
+  fprintf(stderr, "> Running local refinement: ");
+  err = nlopt_optimize(local_optimizer, bandwidth, &tmp);
+  fprintf(stderr, " done (%i, %f)\n", err, tmp);
   if (ocl_isDebug()) {
     if (err < 0) {
       fprintf(stderr, "\nOptimization failed: %i!", err);
@@ -609,7 +631,7 @@ void ocl_runModelOptimization(ocl_estimator_t* estimator) {
       fprintf(stderr, "\n");
     }
   }
-  nlopt_destroy(global_optimizer);
+  nlopt_destroy(local_optimizer);*/
   // Transfer the bandwidth to the device.
   for (i=0; i<estimator->nr_of_dimensions; ++i) {
     fbandwidth[i] = bandwidth[i];
