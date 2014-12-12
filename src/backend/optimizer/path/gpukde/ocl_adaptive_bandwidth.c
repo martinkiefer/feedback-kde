@@ -219,7 +219,7 @@ static void ocl_prepareVsgdOnlineLearningStep(ocl_estimator_t* estimator) {
       computePartialGradient, 5, available_local_memory, NULL);
   err |= clSetKernelArg(
       computePartialGradient, 7, sizeof(unsigned int), &result_stride_elements);
-
+  
   // Schedule the computation of the partial gradient for the current bandwidth.
   cl_event partial_gradient_event = NULL;
   cl_mem partial_gradient_buffer = clCreateBuffer(
@@ -578,7 +578,8 @@ static void ocl_initializeRMSProp(
   clSetKernelArg(
       descriptor->compute_partial_gradient, 4, sizeof(cl_mem), &nullBuffer);
   clSetKernelArg(
-      descriptor->compute_partial_gradient, 5, available_local_memory, NULL);
+      descriptor->compute_partial_gradient, 5, descriptor->partial_gradient_localsize
+      *estimator->nr_of_dimensions * sizeof(kde_float_t), NULL);
   clSetKernelArg(
       descriptor->compute_partial_gradient, 6, sizeof(cl_mem),
       &(descriptor->partial_gradient_buffer));
