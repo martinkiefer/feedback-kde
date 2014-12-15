@@ -74,8 +74,9 @@ void ocl_initialize(void) {
     return;
   }
   cl_platform_id platforms[nr_of_platforms];
-  clGetPlatformIDs(nr_of_platforms, platforms, NULL);
-
+  err = clGetPlatformIDs(nr_of_platforms, platforms, NULL);
+  Assert(err == CL_SUCCESS);
+  
   // Now select platform and device. We simply pick the first device that is of the requested type.
   cl_platform_id platform = NULL;
   cl_device_id device = NULL;
@@ -107,7 +108,8 @@ void ocl_initialize(void) {
       ctxt->context, ctxt->device,
       CL_QUEUE_OUT_OF_ORDER_EXEC_MODE_ENABLE, &err);
   ctxt->program_registry = dictionary_init();
-
+  Assert(err == CL_SUCCESS);
+  
   // Now get some device information parameters:
   err |= clGetDeviceInfo(device, CL_DEVICE_MAX_MEM_ALLOC_SIZE, sizeof(size_t), &(ctxt->max_alloc_size), NULL);
   err |= clGetDeviceInfo(device, CL_DEVICE_GLOBAL_MEM_SIZE, sizeof(size_t), &(ctxt->global_mem_size), NULL);
@@ -117,7 +119,8 @@ void ocl_initialize(void) {
   ctxt->max_workgroup_size = Min(ctxt->max_workgroup_size, 1024);
   err |= clGetDeviceInfo(device, CL_DEVICE_MAX_COMPUTE_UNITS, sizeof(cl_uint), &(ctxt->max_compute_units), NULL);
   err |= clGetDeviceInfo(device, CL_DEVICE_MEM_BASE_ADDR_ALIGN, sizeof(cl_uint), &(ctxt->required_mem_alignment), NULL);
-
+  Assert(err == CL_SUCCESS);
+  
   // We are done.
   ocl_context = ctxt;
   fprintf(stderr, "\tOpenCL successfully initialized!\n");
@@ -125,8 +128,12 @@ void ocl_initialize(void) {
 
 bad:
   fprintf(stderr, "\tError during OpenCL initialization.\n");
-  if (ctxt->queue) clReleaseCommandQueue(ctxt->queue);
-  if (ctxt->context) clReleaseContext(ctxt->context);
+  if (ctxt->queue) err = clReleaseCommandQueue(ctxt->queue);
+  Assert(err == CL_SUCCESS);
+  
+  if (ctxt->context) err = clReleaseContext(ctxt->context);
+  Assert(err == CL_SUCCESS);
+  
   if (ctxt) free(ctxt);
 }
 
@@ -135,19 +142,25 @@ bad:
  */
 void ocl_releaseContext() {
   if (ocl_context == NULL) return;
+  cl_int err = CL_SUCCESS;
   fprintf(stderr, "Releasing OpenCL context.\n");
-  if (ocl_context->queue) clReleaseCommandQueue(ocl_context->queue);
+  if (ocl_context->queue) err |= clReleaseCommandQueue(ocl_context->queue);
+  Assert(err == CL_SUCCESS);
+  
   // Release kernel registry ressources:
   dictionary_iterator_t it = dictionary_iterator_init(
       ocl_context->program_registry);
   while (dictionary_iterator_key(ocl_context->program_registry, it)) {
-    clReleaseProgram((cl_program)dictionary_iterator_value(
+    err = clReleaseProgram((cl_program)dictionary_iterator_value(
         ocl_context->program_registry, it));
+    Assert(err == CL_SUCCESS);
     it = dictionary_iterator_next(ocl_context->program_registry, it);
   }
   dictionary_release(ocl_context->program_registry, 0);
   // Release the result buffer.
-  clReleaseContext(ocl_context->context);
+  err = clReleaseContext(ocl_context->context);
+  Assert(err == CL_SUCCESS);
+  
   free(ocl_context);
   ocl_context = NULL;
 }
@@ -253,22 +266,29 @@ static cl_program buildProgram(
   strcat(device_params, build_params);
 
   // Ok, build the program.
+  cl_int err = CL_SUCCESS;
   cl_program program = clCreateProgramWithSource(
       context->context, 1, (const char**)&kernel_sources,
-      &kernel_source_length, NULL);
+      &kernel_source_length, &err);
+  Assert(err == CL_SUCCESS);
+  
   fprintf(stderr, "Compiling OpenCL kernels %s\n", device_params);
-  cl_int err = clBuildProgram(
+  err = clBuildProgram(
       program, 1, &(context->device), device_params, NULL, NULL);
   if (err != CL_SUCCESS) {
     // Print the error log
     fprintf(stderr, "Error compiling the program:\n");
     size_t log_size;
-    clGetProgramBuildInfo(
+    err = clGetProgramBuildInfo(
         program, context->device, CL_PROGRAM_BUILD_LOG, 0, NULL, &log_size);
+    Assert(err == CL_SUCCESS);
+    
     char* log = malloc(log_size+1);
-    clGetProgramBuildInfo(
+    err = clGetProgramBuildInfo(
         program, context->device, CL_PROGRAM_BUILD_LOG, log_size, log, NULL);
     fprintf(stderr, "%s\n", log);
+    Assert(err == CL_SUCCESS);
+    
     free(log);
     program = NULL;
     goto cleanup;
@@ -318,12 +338,14 @@ void ocl_dumpBufferToFile(
     const char* file, cl_mem buffer, int dimensions, int items) {
 
   ocl_context_t* context = ocl_getContext();
+  cl_int err = CL_SUCCESS;
   clFinish(context->queue);
   // Fetch the buffer to disk.
   kde_float_t* host_buffer = palloc(sizeof(kde_float_t) * dimensions * items);
-  clEnqueueReadBuffer(
+  err = clEnqueueReadBuffer(
       context->queue, buffer, CL_TRUE, 0,
       sizeof(kde_float_t) * dimensions * items, host_buffer, 0, NULL, NULL);
+  Assert(err == CL_SUCCESS);
   FILE* f = fopen(file, "w");
   unsigned int i,j;
   for (i=0; i<items; ++i) {
@@ -341,24 +363,27 @@ void ocl_printBuffer(
     const char* message, cl_mem buffer, int dimensions, int items) {
   if (!kde_debug) return;
   ocl_context_t* context = ocl_getContext();
+  cl_int err = CL_SUCCESS;
   clFinish(context->queue);  // Make sure that all changes are materialized.
   unsigned int i,j;
   // Fetch the buffer to the host.
   kde_float_t* host_buffer = palloc(sizeof(kde_float_t) * dimensions * items);
-  clEnqueueReadBuffer(
+  err = clEnqueueReadBuffer(
       context->queue, buffer, CL_TRUE, 0,
       sizeof(kde_float_t) * dimensions * items, host_buffer, 0, NULL, NULL);
+  Assert(err == CL_SUCCESS);
+  
   fprintf(stderr, "%s", message);
   if (items == 1) {
     fprintf(stderr, " ");
     for (i=0; i<dimensions; ++i) {
-      fprintf(stderr, "%f ", host_buffer[i]);
+      fprintf(stderr, "%E ", host_buffer[i]);
     }
   } else {
     fprintf(stderr, "\n\t");
     for (i=0; i<items; ++i) {
       for (j=0; j<dimensions; ++j) {
-        fprintf(stderr, "%f ", host_buffer[i*dimensions + j]);
+        fprintf(stderr, "%E ", host_buffer[i*dimensions + j]);
       }
       fprintf(stderr, "\n\t");
     }
@@ -371,15 +396,19 @@ ocl_aggregation_descriptor_t* prepareSumDescriptor(
     cl_mem input_buffer, unsigned int elements,
     cl_mem result_buffer, unsigned int result_buffer_offset) {
   ocl_context_t* context = ocl_getContext();
+  cl_int err = CL_SUCCESS;
+  
   ocl_aggregation_descriptor_t* descriptor = calloc(
       1, sizeof(ocl_aggregation_descriptor_t));
   // Prepare the kernels.
   descriptor->pre_aggregation = ocl_getKernel("sum_par", 0);
   descriptor->final_aggregation = ocl_getKernel("sum_seq", 0);
   // Determine the optimal local size.
-  clGetKernelWorkGroupInfo(
+  err = clGetKernelWorkGroupInfo(
         descriptor->pre_aggregation, context->device, CL_KERNEL_WORK_GROUP_SIZE,
         sizeof(size_t), &(descriptor->local_size), NULL);
+  Assert(err == CL_SUCCESS);
+  
   // Truncate to local memory requirements.
   descriptor->local_size = Min(
       descriptor->local_size, context->local_mem_size / sizeof(kde_float_t));
@@ -389,7 +418,9 @@ ocl_aggregation_descriptor_t* prepareSumDescriptor(
   // Allocate the temporary result buffer.
   descriptor->intermediate_result_buffer =  clCreateBuffer(
       context->context, CL_MEM_READ_WRITE,
-      sizeof(kde_float_t) * context->max_compute_units, NULL, NULL);
+      sizeof(kde_float_t) * context->max_compute_units, NULL, &err);
+  Assert(err == CL_SUCCESS);
+  
   // Figure out how many elements we have to aggregate per thread:
   unsigned int tuples_per_thread =
       elements / (context->max_compute_units * descriptor->local_size);
@@ -397,47 +428,55 @@ ocl_aggregation_descriptor_t* prepareSumDescriptor(
     tuples_per_thread++;
   }
   // Prepare the pre-aggregation kernel.
-  clSetKernelArg(
+  err |= clSetKernelArg(
       descriptor->pre_aggregation, 0, sizeof(cl_mem), &input_buffer);
-  clSetKernelArg(
+  err |= clSetKernelArg(
       descriptor->pre_aggregation, 1,
       sizeof(kde_float_t) * descriptor->local_size, NULL);
-  clSetKernelArg(
+  err |= clSetKernelArg(
       descriptor->pre_aggregation, 2, sizeof(cl_mem),
       &(descriptor->intermediate_result_buffer));
-  clSetKernelArg(
+  err |= clSetKernelArg(
       descriptor->pre_aggregation, 3, sizeof(unsigned int), &tuples_per_thread);
-  clSetKernelArg(
+  err |= clSetKernelArg(
       descriptor->pre_aggregation, 4,
       sizeof(unsigned int), &elements);
+  Assert(err == CL_SUCCESS);
+  
   // Prepare the post-aggregation kernel.
   unsigned int zero = 0;
-  clSetKernelArg(
+  err |= clSetKernelArg(
       descriptor->final_aggregation, 0, sizeof(cl_mem),
       &(descriptor->intermediate_result_buffer));
-  clSetKernelArg(
+  err |= clSetKernelArg(
       descriptor->final_aggregation, 1, sizeof(unsigned int), &zero);
-  clSetKernelArg(
+  err |= clSetKernelArg(
       descriptor->final_aggregation, 2, sizeof(unsigned int),
       &(context->max_compute_units));
-  clSetKernelArg(
+  err |= clSetKernelArg(
       descriptor->final_aggregation, 3, sizeof(cl_mem), &result_buffer);
-  clSetKernelArg(
+  err |= clSetKernelArg(
       descriptor->final_aggregation, 4, sizeof(unsigned int),
       &result_buffer_offset);
+  Assert(err == CL_SUCCESS);
+  
   // We are done :)
   return descriptor;
 }
 
 void releaseAggregationDescriptor(ocl_aggregation_descriptor_t* descriptor) {
+  cl_int err = CL_SUCCESS;
   if (descriptor->intermediate_result_buffer) {
-    clReleaseMemObject(descriptor->intermediate_result_buffer);
+    err = clReleaseMemObject(descriptor->intermediate_result_buffer);
+    Assert(err == CL_SUCCESS);
   }
   if (descriptor->pre_aggregation) {
-    clReleaseKernel(descriptor->pre_aggregation);
+    err = clReleaseKernel(descriptor->pre_aggregation);
+    Assert(err == CL_SUCCESS);
   }
   if (descriptor->final_aggregation) {
-    clReleaseKernel(descriptor->final_aggregation);
+    err = clReleaseKernel(descriptor->final_aggregation);
+    Assert(err == CL_SUCCESS);
   }
   free(descriptor);
 }
@@ -445,27 +484,33 @@ void releaseAggregationDescriptor(ocl_aggregation_descriptor_t* descriptor) {
 cl_event predefinedSumOfArray(
     ocl_aggregation_descriptor_t* sum_descriptor, cl_event external_event) {
   ocl_context_t* context = ocl_getContext();
+  cl_int err = CL_SUCCESS;
   size_t processors = context->max_compute_units;
   // Schedule the pre-aggregation.
   size_t global_size = sum_descriptor->local_size * processors;
   cl_event pre_aggregation_event;
   if (external_event) {
-    clEnqueueNDRangeKernel(
+    err = clEnqueueNDRangeKernel(
         context->queue, sum_descriptor->pre_aggregation, 1, NULL, &global_size,
         &(sum_descriptor->local_size), 1, &external_event,
         &pre_aggregation_event);
+    Assert(err == CL_SUCCESS);
   } else {
-    clEnqueueNDRangeKernel(
+    err = clEnqueueNDRangeKernel(
         context->queue, sum_descriptor->pre_aggregation, 1, NULL, &global_size,
         &(sum_descriptor->local_size), 0, NULL, &pre_aggregation_event);
   }
   // Now perform a final pass over the data to compute the aggregate.
   global_size = 1;
   cl_event finalize_event;
-  clEnqueueNDRangeKernel(
+  err = clEnqueueNDRangeKernel(
       context->queue, sum_descriptor->final_aggregation, 1, NULL, &global_size,
       NULL, 1, &pre_aggregation_event, &finalize_event);
-  clReleaseEvent(pre_aggregation_event);
+  Assert(err == CL_SUCCESS);
+  
+  err = clReleaseEvent(pre_aggregation_event);
+  Assert(err == CL_SUCCESS);
+  
   return finalize_event;
 }
 
@@ -484,7 +529,7 @@ cl_event minOfArray(
     cl_mem input_buffer, unsigned int elements,
     cl_mem result_min,cl_mem result_index, unsigned int result_buffer_offset,
     cl_event external_event) {
-  cl_int err = 0;
+  cl_int err = CL_SUCCESS;
   ocl_context_t* context = ocl_getContext();
 
   cl_event events[] = { NULL, NULL };
@@ -499,9 +544,11 @@ cl_event minOfArray(
 
   // Determine the optimal local size.
   size_t local_size;
-  clGetKernelWorkGroupInfo(
+  err = clGetKernelWorkGroupInfo(
       fast_sum, context->device, CL_KERNEL_WORK_GROUP_SIZE,
       sizeof(size_t), &local_size, NULL);
+  Assert(err == CL_SUCCESS);
+  
   // Truncate to local memory requirements, we need two local floating points per thread
   local_size = Min(
       local_size,
@@ -521,11 +568,13 @@ cl_event minOfArray(
   // Allocate a temporary result buffers.
   cl_mem tmp_buffer_min = clCreateBuffer(
       context->context, CL_MEM_READ_WRITE,
-      sizeof(kde_float_t) * (processors + 1), NULL, NULL);
+      sizeof(kde_float_t) * (processors + 1), NULL, &err);
+  Assert(err == CL_SUCCESS);
   
   cl_mem tmp_buffer_index = clCreateBuffer(
       context->context, CL_MEM_READ_WRITE,
-      sizeof(unsigned int) * (processors + 1), NULL, NULL);
+      sizeof(unsigned int) * (processors + 1), NULL, &err);
+  Assert(err == CL_SUCCESS);
   
   size_t global_size = processors + 1; 
   
@@ -533,11 +582,13 @@ cl_event minOfArray(
   kde_float_t inf = INFINITY;
   err |= clSetKernelArg(init_buffer_min, 0, sizeof(cl_mem), &tmp_buffer_min);
   err |= clSetKernelArg(init_buffer_min, 1, sizeof(kde_float_t), &inf);
+  Assert(err == CL_SUCCESS);
   
   cl_event init_event;
-  err |= clEnqueueNDRangeKernel(
+  err = clEnqueueNDRangeKernel(
       context->queue, init_buffer_min, 1, NULL, &global_size,
       NULL, 0, NULL, &init_event);
+  Assert(err == CL_SUCCESS);
   
   // Ok, we selected the correct kernel and parameters. Now prepare the arguments.
   err |= clSetKernelArg(fast_min, 0, sizeof(cl_mem), &input_buffer);
@@ -552,19 +603,22 @@ cl_event minOfArray(
   err |= clSetKernelArg(slow_min, 3, sizeof(cl_mem), &tmp_buffer_min);
   err |= clSetKernelArg(slow_min, 4, sizeof(cl_mem), &tmp_buffer_index);
   err |= clSetKernelArg(slow_min, 5, sizeof(unsigned int), &slow_kernel_result_offset);
+  Assert(err == CL_SUCCESS);
   
   // Fire the kernel
   if (tuples_per_thread) {
     global_size = local_size * processors;
     cl_event event;
-    err |= clEnqueueNDRangeKernel(
+    err = clEnqueueNDRangeKernel(
         context->queue, fast_min, 1, NULL, &global_size,
         &local_size, 1, &init_event, &event);
+    Assert(err == CL_SUCCESS);
     events[nr_of_events++] = event;
   }
   if (slow_kernel_elements) {
     cl_event event;
-    err |= clEnqueueTask(context->queue, slow_min, 1, &init_event, &event);
+    err = clEnqueueTask(context->queue, slow_min, 1, &init_event, &event);
+    Assert(err == CL_SUCCESS);
     events[nr_of_events++] = event;
   }
 
@@ -580,14 +634,21 @@ cl_event minOfArray(
   err |= clSetKernelArg(last_min, 4, sizeof(cl_mem), &result_min);
   err |= clSetKernelArg(last_min, 5, sizeof(cl_mem), &result_index);
   err |= clSetKernelArg(last_min, 6, sizeof(unsigned int), &result_buffer_offset);  
+  Assert(err == CL_SUCCESS);
   
   cl_event finalize_event;
-  err |= clEnqueueTask(context->queue, last_min, nr_of_events, events, &finalize_event);
+  err = clEnqueueTask(context->queue, last_min, nr_of_events, events, &finalize_event);
+  Assert(err == CL_SUCCESS);
+  
   // Clean up ...
-  clReleaseMemObject(tmp_buffer_min);
-  clReleaseMemObject(tmp_buffer_index);
-  if (events[0]) clReleaseEvent(events[0]);
-  if (events[1]) clReleaseEvent(events[1]);
+  err |= clReleaseMemObject(tmp_buffer_min);
+  err |= clReleaseMemObject(tmp_buffer_index);
+  Assert(err == CL_SUCCESS);
+  
+  if (events[0]) err |= clReleaseEvent(events[0]);
+  if (events[1]) err |= clReleaseEvent(events[1]);
+  Assert(err == CL_SUCCESS);
+  
   return finalize_event;
 }
 

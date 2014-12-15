@@ -32,27 +32,35 @@ extern ocl_kernel_type_t global_kernel_type;
 
 void ocl_allocateSampleMaintenanceBuffers(ocl_estimator_t* estimator) {
   ocl_context_t* context = ocl_getContext();
+  cl_int err = CL_SUCCESS;
   ocl_sample_optimization_t* descriptor = calloc(
       1, sizeof(ocl_sample_optimization_t));
   // Allocate two new buffers that we use for storing sample information.
   descriptor->sample_karma_buffer = clCreateBuffer(
       context->context, CL_MEM_READ_WRITE,
-      sizeof(kde_float_t) * estimator->rows_in_sample, NULL, NULL);
+      sizeof(kde_float_t) * estimator->rows_in_sample, NULL, &err);
+  Assert(err == CL_SUCCESS);
+  
   descriptor->sample_contribution_buffer = clCreateBuffer(
       context->context, CL_MEM_READ_WRITE,
-      sizeof(kde_float_t) * estimator->rows_in_sample, NULL, NULL);
+      sizeof(kde_float_t) * estimator->rows_in_sample, NULL, &err);
+  Assert(err == CL_SUCCESS);
+  
   // Register the descriptor in the estimator.
   estimator->sample_optimization = descriptor;
 }
 
 void ocl_releaseSampleMaintenanceBuffers(ocl_estimator_t* estimator) {
   if (estimator->sample_optimization) {
+    cl_int err = CL_SUCCESS;
     ocl_sample_optimization_t* descriptor = estimator->sample_optimization;
     if (descriptor->sample_karma_buffer) {
-      clReleaseMemObject(descriptor->sample_karma_buffer);
+      err = clReleaseMemObject(descriptor->sample_karma_buffer);
+      Assert(err == CL_SUCCESS);
     }
     if (descriptor->sample_contribution_buffer) {
       clReleaseMemObject(descriptor->sample_contribution_buffer);
+      Assert(err == CL_SUCCESS);
     }
     free(estimator->sample_optimization);
   }
@@ -94,30 +102,34 @@ static int getMinPenaltyIndex(
   cl_event event;
   unsigned int index;
   kde_float_t val;
+  cl_int err = CL_SUCCESS;
   
   // Allocate device memory for indices and values.
   cl_mem min_idx = clCreateBuffer(
           ctxt->context, CL_MEM_READ_WRITE,
-          sizeof(unsigned int), NULL, NULL);
+          sizeof(unsigned int), NULL, &err);
   cl_mem min_val = clCreateBuffer(
           ctxt->context, CL_MEM_READ_WRITE,
-          sizeof(kde_float_t), NULL, NULL);
+          sizeof(kde_float_t), NULL, &err);
   
   // Now fetch the minimum penalty.
   cl_mem target_metric_buffer = getBufferForNextMetric(estimator);
   event = minOfArray(
       target_metric_buffer, estimator->rows_in_sample,
       min_val, min_idx, 0, NULL);
-  clEnqueueReadBuffer(
+  err |= clEnqueueReadBuffer(
       ctxt->queue, min_idx, CL_TRUE, 0, sizeof(unsigned int),
       &index, 1, &event, NULL);
-  clEnqueueReadBuffer(
+  err |= clEnqueueReadBuffer(
       ctxt->queue, min_val, CL_TRUE, 0, sizeof(kde_float_t),
       &val, 1, &event, NULL);
+  Assert(err == CL_SUCCESS);
 
-  clReleaseEvent(event);
-  clReleaseMemObject(min_idx);
-  clReleaseMemObject(min_val);
+  err = clReleaseEvent(event);
+  Assert(err == CL_SUCCESS);
+  
+  err |= clReleaseMemObject(min_idx);
+  err |= clReleaseMemObject(min_val);
 
   if (val < 0.1) {
     return index;
@@ -132,38 +144,45 @@ static unsigned int *getMinPenaltyIndexBelowThreshold(
     ocl_context_t*  ctxt, ocl_estimator_t* estimator,
     double threshold, cl_event wait_event){
   cl_event event;
+  cl_int err = CL_SUCCESS;
   unsigned int *index = palloc(sizeof(unsigned int));
   kde_float_t val;
   
   //Allocate device memory for indices and values.
   cl_mem min_idx = clCreateBuffer(
           ctxt->context, CL_MEM_READ_WRITE,
-          sizeof(unsigned int), NULL, NULL);
+          sizeof(unsigned int), NULL, &err);
+  Assert(err == CL_SUCCESS);
   cl_mem min_val = clCreateBuffer(
           ctxt->context, CL_MEM_READ_WRITE,
-          sizeof(kde_float_t), NULL, NULL);
+          sizeof(kde_float_t), NULL, &err);
+  Assert(err == CL_SUCCESS);
   
   event = minOfArray(
       estimator->sample_optimization->sample_karma_buffer,
       estimator->rows_in_sample, min_val, min_idx, 0, wait_event);
   
-  clEnqueueReadBuffer(
+  err |= clEnqueueReadBuffer(
       ctxt->queue,min_idx, CL_TRUE, 0, sizeof(unsigned int),
       index, 1, &event, NULL);
-  clEnqueueReadBuffer(
+  err |= clEnqueueReadBuffer(
       ctxt->queue,min_val, CL_TRUE, 0, sizeof(kde_float_t),
       &val, 1, &event, NULL);
-
-  clReleaseMemObject(min_idx);
-  clReleaseMemObject(min_val);
+  Assert(err == CL_SUCCESS);
+  
+  err |= clReleaseMemObject(min_idx);
+  err |= clReleaseMemObject(min_val);
   
   if(val < threshold) {
-    clReleaseEvent(event);
+    err = clReleaseEvent(event);
+    Assert(err == CL_SUCCESS);
     return index;
   }
   
   pfree(index);
-  clReleaseEvent(event);
+  err = clReleaseEvent(event);
+  Assert(err == CL_SUCCESS);
+  
   return NULL; 
 }
 
@@ -423,11 +442,12 @@ void ocl_notifySampleMaintenanceOfSelectivity(
       kernel, 7, sizeof(double), &(kde_sample_maintenance_karma_decay));
   err |= clSetKernelArg(
       kernel, 8, sizeof(double), &(kde_sample_maintenance_contribution_decay));
-  err |= clEnqueueNDRangeKernel(
+  Assert(err == CL_SUCCESS);
+  
+  err = clEnqueueNDRangeKernel(
       ctxt->queue, kernel, 1, NULL, &global_size,
       NULL, 0, NULL, &quality_update_event);
-
-  Assert(err == 0);
+  Assert(err == CL_SUCCESS);
 
   if (kde_sample_maintenance_query_option == THRESHOLD) {
     //It might be more efficient to first determine the number of elements to replace

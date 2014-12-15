@@ -49,93 +49,122 @@ static void ocl_initializeVsgdBuffersForOnlineLearning(
   // Initialize the accumulator buffers and fill them with zero.
   descriptor->gradient_accumulator = clCreateBuffer(
       context->context, CL_MEM_READ_WRITE,
-      sizeof(kde_float_t) * estimator->nr_of_dimensions, NULL, NULL);
-  err |= clSetKernelArg(
+      sizeof(kde_float_t) * estimator->nr_of_dimensions, NULL, &err);
+  Assert(err == CL_SUCCESS);
+  err = clSetKernelArg(
       init_zero, 0, sizeof(cl_mem), &(descriptor->gradient_accumulator));
-  err |= clEnqueueNDRangeKernel(
+  Assert(err == CL_SUCCESS);
+  err = clEnqueueNDRangeKernel(
       context->queue, init_zero, 1, NULL, &global_size, NULL, 0, NULL, NULL);
+  Assert(err == CL_SUCCESS);
 
   descriptor->squared_gradient_accumulator = clCreateBuffer(
       context->context, CL_MEM_READ_WRITE,
-      sizeof(kde_float_t) * estimator->nr_of_dimensions, NULL, NULL);
-  err |= clSetKernelArg(
+      sizeof(kde_float_t) * estimator->nr_of_dimensions, NULL, &err);
+  Assert(err == CL_SUCCESS);
+  err = clSetKernelArg(
       init_zero, 0, sizeof(cl_mem),
       &(descriptor->squared_gradient_accumulator));
-  err |= clEnqueueNDRangeKernel(
+  Assert(err == CL_SUCCESS);
+  err = clEnqueueNDRangeKernel(
       context->queue, init_zero, 1, NULL, &global_size, NULL, 0, NULL, NULL);
-
+  Assert(err == CL_SUCCESS);
+  
   descriptor->hessian_accumulator = clCreateBuffer(
       context->context, CL_MEM_READ_WRITE,
-      sizeof(kde_float_t) * estimator->nr_of_dimensions, NULL, NULL);
-  err |= clSetKernelArg(
+      sizeof(kde_float_t) * estimator->nr_of_dimensions, NULL, &err);
+  Assert(err == CL_SUCCESS);
+  err = clSetKernelArg(
       init_zero, 0, sizeof(cl_mem), &(descriptor->hessian_accumulator));
-  err |= clEnqueueNDRangeKernel(
+  Assert(err == CL_SUCCESS);
+  err = clEnqueueNDRangeKernel(
       context->queue, init_zero, 1, NULL, &global_size, NULL, 0, NULL, NULL);
+  Assert(err == CL_SUCCESS);
 
   descriptor->squared_hessian_accumulator = clCreateBuffer(
       context->context, CL_MEM_READ_WRITE,
-      sizeof(kde_float_t) * estimator->nr_of_dimensions, NULL, NULL);
-  err |= clSetKernelArg(
+      sizeof(kde_float_t) * estimator->nr_of_dimensions, NULL, &err);
+  Assert(err == CL_SUCCESS);
+  err = clSetKernelArg(
       init_zero, 0, sizeof(cl_mem), &(descriptor->squared_hessian_accumulator));
-  err |= clEnqueueNDRangeKernel(
+  Assert(err == CL_SUCCESS);
+  err = clEnqueueNDRangeKernel(
       context->queue, init_zero, 1, NULL, &global_size, NULL, 0, NULL, NULL);
-
+  Assert(err == CL_SUCCESS);
+  
   // Initialize the running average buffers with zero.
   descriptor->running_gradient_average = clCreateBuffer(
       context->context, CL_MEM_READ_WRITE,
-      sizeof(kde_float_t) * estimator->nr_of_dimensions, NULL, NULL);
+      sizeof(kde_float_t) * estimator->nr_of_dimensions, NULL, &err);
+  Assert(err == CL_SUCCESS);
   // We initialize the gradient average buffer with a small positive value,
   // since this gradient is used by the online estimator to determine the
   // finite difference step to estimate the Hessian.
-  err |= clSetKernelArg(
+  err = clSetKernelArg(
       init_one, 0, sizeof(cl_mem), &(descriptor->running_gradient_average));
-  err |= clEnqueueNDRangeKernel(
+  Assert(err == CL_SUCCESS);
+  err = clEnqueueNDRangeKernel(
       context->queue, init_one, 1, NULL, &global_size, NULL, 0, NULL, NULL);
+  Assert(err == CL_SUCCESS);
 
   descriptor->running_squared_gradient_average = clCreateBuffer(
       context->context, CL_MEM_READ_WRITE,
-      sizeof(kde_float_t) * estimator->nr_of_dimensions, NULL, NULL);
-  err |= clSetKernelArg(
+      sizeof(kde_float_t) * estimator->nr_of_dimensions, NULL, &err);
+  Assert(err == CL_SUCCESS);
+  err = clSetKernelArg(
       init_zero, 0, sizeof(cl_mem),
       &(descriptor->running_squared_gradient_average));
-  err |= clEnqueueNDRangeKernel(
+  Assert(err == CL_SUCCESS);
+  err = clEnqueueNDRangeKernel(
       context->queue, init_zero, 1, NULL, &global_size, NULL, 0, NULL, NULL);
+  Assert(err == CL_SUCCESS);
 
   descriptor->running_hessian_average = clCreateBuffer(
       context->context, CL_MEM_READ_WRITE,
-      sizeof(kde_float_t) * estimator->nr_of_dimensions, NULL, NULL);
-  err |= clSetKernelArg(
+      sizeof(kde_float_t) * estimator->nr_of_dimensions, NULL, &err);
+  Assert(err == CL_SUCCESS);
+  err = clSetKernelArg(
       init_zero, 0, sizeof(cl_mem), &(descriptor->running_hessian_average));
-  err |= clEnqueueNDRangeKernel(
+  Assert(err == CL_SUCCESS);
+  err = clEnqueueNDRangeKernel(
       context->queue, init_zero, 1, NULL, &global_size, NULL, 0, NULL, NULL);
+  Assert(err == CL_SUCCESS);
 
   descriptor->running_squared_hessian_average = clCreateBuffer(
       context->context, CL_MEM_READ_WRITE,
-      sizeof(kde_float_t) * estimator->nr_of_dimensions, NULL, NULL);
-  err |= clSetKernelArg(
+      sizeof(kde_float_t) * estimator->nr_of_dimensions, NULL, &err);
+  err = clSetKernelArg(
       init_zero, 0, sizeof(cl_mem),
       &(descriptor->running_squared_hessian_average));
-  err |= clEnqueueNDRangeKernel(
+  Assert(err == CL_SUCCESS);
+  err = clEnqueueNDRangeKernel(
       context->queue, init_zero, 1, NULL, &global_size, NULL, 0, NULL, NULL);
-
+  Assert(err == CL_SUCCESS);
+  
   // Initialize the time constant buffer to two.
   descriptor->current_time_constant = clCreateBuffer(
       context->context, CL_MEM_READ_WRITE,
-      sizeof(kde_float_t) * estimator->nr_of_dimensions, NULL, NULL);
-  err |= clSetKernelArg(
+      sizeof(kde_float_t) * estimator->nr_of_dimensions, NULL, &err);
+  Assert(err == CL_SUCCESS);
+  err = clSetKernelArg(
       init_one, 0, sizeof(cl_mem), &(descriptor->current_time_constant));
-  err |= clEnqueueNDRangeKernel(
+  Assert(err == CL_SUCCESS);
+  err = clEnqueueNDRangeKernel(
       context->queue, init_one, 1, NULL, &global_size, NULL, 0, NULL, NULL);
+  Assert(err == CL_SUCCESS);
 
   // Allocate the buffers to compute temporary gradients.
   descriptor->temp_gradient_buffer = clCreateBuffer(
       context->context, CL_MEM_READ_WRITE,
-      sizeof(kde_float_t) * estimator->nr_of_dimensions, NULL, NULL);
+      sizeof(kde_float_t) * estimator->nr_of_dimensions, NULL, &err);
+  Assert(err == CL_SUCCESS);
   descriptor->temp_shifted_gradient_buffer= clCreateBuffer(
       context->context, CL_MEM_READ_WRITE,
-      sizeof(kde_float_t) * estimator->nr_of_dimensions, NULL, NULL);
+      sizeof(kde_float_t) * estimator->nr_of_dimensions, NULL, &err);
+  Assert(err == CL_SUCCESS);
   descriptor->temp_shifted_result_buffer = clCreateBuffer(
-      context->context, CL_MEM_READ_WRITE, sizeof(kde_float_t), NULL, NULL);
+      context->context, CL_MEM_READ_WRITE, sizeof(kde_float_t), NULL, &err);
+  Assert(err == CL_SUCCESS);
 
   // And finish.
   clFinish(context->queue);
@@ -179,24 +208,27 @@ static void ocl_prepareVsgdOnlineLearningStep(ocl_estimator_t* estimator) {
   }
   // We start with the maximum supporter local size.
   size_t local_size;
-  clGetKernelWorkGroupInfo(
+  err = clGetKernelWorkGroupInfo(
       computePartialGradient, context->device, CL_KERNEL_WORK_GROUP_SIZE,
       sizeof(size_t), &local_size, NULL);
+  Assert(err == CL_SUCCESS);
   // Then we cap this to the local memory requirements.
   size_t available_local_memory;
-  clGetKernelWorkGroupInfo(
+  err = clGetKernelWorkGroupInfo(
       computePartialGradient, context->device, CL_KERNEL_LOCAL_MEM_SIZE,
       sizeof(size_t), &available_local_memory, NULL);
+  Assert(err == CL_SUCCESS);
   available_local_memory = context->local_mem_size - available_local_memory;
   local_size = Min(
       local_size,
       available_local_memory / (sizeof(kde_float_t) * estimator->nr_of_dimensions));
   // And finally ensure that the local size is a multiple of the preferred size.
   size_t preferred_local_size_multiple;
-  clGetKernelWorkGroupInfo(
+  err = clGetKernelWorkGroupInfo(
       computePartialGradient, context->device,
       CL_KERNEL_PREFERRED_WORK_GROUP_SIZE_MULTIPLE,
       sizeof(size_t), &preferred_local_size_multiple, NULL);
+  Assert(err == CL_SUCCESS);
   local_size = preferred_local_size_multiple
       * (local_size / preferred_local_size_multiple);
 
@@ -204,6 +236,12 @@ static void ocl_prepareVsgdOnlineLearningStep(ocl_estimator_t* estimator) {
   size_t global_size = local_size * (estimator->rows_in_sample / local_size);
   if (global_size < estimator->rows_in_sample) global_size += local_size;
 
+    // Schedule the computation of the partial gradient for the current bandwidth.
+  cl_event partial_gradient_event = NULL;
+  cl_mem partial_gradient_buffer = clCreateBuffer(
+      context->context, CL_MEM_READ_WRITE,
+      stride_size * estimator->nr_of_dimensions, NULL, &err);
+  
   // Set the common parameters for the partial gradient computations.
   err |= clSetKernelArg(
       computePartialGradient, 0, sizeof(cl_mem), &(estimator->sample_buffer));
@@ -219,22 +257,19 @@ static void ocl_prepareVsgdOnlineLearningStep(ocl_estimator_t* estimator) {
       computePartialGradient, 5, available_local_memory, NULL);
   err |= clSetKernelArg(
       computePartialGradient, 7, sizeof(unsigned int), &result_stride_elements);
-  
-  // Schedule the computation of the partial gradient for the current bandwidth.
-  cl_event partial_gradient_event = NULL;
-  cl_mem partial_gradient_buffer = clCreateBuffer(
-      context->context, CL_MEM_READ_WRITE,
-      stride_size * estimator->nr_of_dimensions, NULL, &err);
   err |= clSetKernelArg(
       computePartialGradient, 4, sizeof(cl_mem), &null_buffer);
   err |= clSetKernelArg(
       computePartialGradient, 6, sizeof(cl_mem), &partial_gradient_buffer);
   err |= clSetKernelArg(
       computePartialGradient, 8, sizeof(cl_mem), &null_buffer);
-  err |= clEnqueueNDRangeKernel(
+  Assert(err == CL_SUCCESS);
+  
+  err = clEnqueueNDRangeKernel(
       context->queue, computePartialGradient, 1, NULL,
       &global_size, &local_size, 0, NULL, &partial_gradient_event);
-
+  Assert(err == CL_SUCCESS);
+  
   // Now schedule the summation of the partial gradient computations.
   for (i=0; i<estimator->nr_of_dimensions; ++i) {
     cl_buffer_region region;
@@ -246,25 +281,31 @@ static void ocl_prepareVsgdOnlineLearningStep(ocl_estimator_t* estimator) {
     summation_events[i] = sumOfArray(
         gradient_sub_buffer, estimator->rows_in_sample,
         descriptor->temp_gradient_buffer, i, partial_gradient_event);
-    clReleaseMemObject(gradient_sub_buffer);
+    err = clReleaseMemObject(gradient_sub_buffer);
+    Assert(err == CL_SUCCESS);
   }
-  clReleaseEvent(partial_gradient_event);
-
+  err = clReleaseEvent(partial_gradient_event);
+  Assert(err == CL_SUCCESS);
+  
   // Schedule the computation of the partial gradient for the shifted bandwidth.
   cl_event partial_shifted_gradient_event = NULL;
   cl_mem partial_shifted_gradient_buffer = clCreateBuffer(
       context->context, CL_MEM_READ_WRITE,
       stride_size * estimator->nr_of_dimensions, NULL, &err);
+  Assert(err == CL_SUCCESS);
   cl_mem partial_shifted_result_buffer = clCreateBuffer(
       context->context, CL_MEM_READ_WRITE,
       sizeof(kde_float_t) * estimator->rows_in_sample, NULL, &err);
+  Assert(err == CL_SUCCESS);
   err |= clSetKernelArg(computePartialGradient, 4, sizeof(cl_mem),
       &(descriptor->running_gradient_average));
   err |= clSetKernelArg(computePartialGradient, 6, sizeof(cl_mem),
       &partial_shifted_gradient_buffer);
   err |= clSetKernelArg(computePartialGradient, 8, sizeof(cl_mem),
       &partial_shifted_result_buffer);
-  err |= clEnqueueNDRangeKernel(context->queue, computePartialGradient, 1,
+  Assert(err == CL_SUCCESS);
+  
+  err = clEnqueueNDRangeKernel(context->queue, computePartialGradient, 1,
       NULL, &global_size, &local_size, 0, NULL,
       &partial_shifted_gradient_event);
 
@@ -276,18 +317,21 @@ static void ocl_prepareVsgdOnlineLearningStep(ocl_estimator_t* estimator) {
     cl_mem shifted_gradient_sub_buffer = clCreateSubBuffer(
         partial_shifted_gradient_buffer, CL_MEM_READ_ONLY,
         CL_BUFFER_CREATE_TYPE_REGION, &region, &err);
+    Assert(err == CL_SUCCESS);
     summation_events[estimator->nr_of_dimensions + i] = sumOfArray(
         shifted_gradient_sub_buffer, estimator->rows_in_sample,
         descriptor->temp_shifted_gradient_buffer, i,
         partial_shifted_gradient_event);
-    clReleaseMemObject(shifted_gradient_sub_buffer);
+    err = clReleaseMemObject(shifted_gradient_sub_buffer);
+    Assert(err == CL_SUCCESS);
   }
   // Also schedule the kernel that computes the sum of local result contributions
   // for the shifted gradient.
   summation_events[2 * estimator->nr_of_dimensions] = sumOfArray(
       partial_shifted_result_buffer, estimator->rows_in_sample,
       descriptor->temp_shifted_result_buffer, 0, partial_shifted_gradient_event);
-  clReleaseEvent(partial_shifted_gradient_event);
+  err = clReleaseEvent(partial_shifted_gradient_event);
+  Assert(err == CL_SUCCESS);
 
   ocl_printBuffer(
       " > Gradient at bandwidth:", descriptor->temp_gradient_buffer,
@@ -306,22 +350,26 @@ static void ocl_prepareVsgdOnlineLearningStep(ocl_estimator_t* estimator) {
       &(descriptor->temp_shifted_result_buffer));
   err |= clSetKernelArg(
       finalizeKernel, 1, sizeof(kde_float_t), &normalization_factor);
-  err |= clEnqueueTask(
+  Assert(err == CL_SUCCESS);
+  err = clEnqueueTask(
       context->queue, finalizeKernel,
       2*estimator->nr_of_dimensions + 1,
       summation_events, &(descriptor->optimization_event));
-
+  Assert(err == CL_SUCCESS);
+  
   // Clean up.
   for (i=0; i<(2 * estimator->nr_of_dimensions + 1); ++i) {
-    clReleaseEvent(summation_events[i]);
+    err = clReleaseEvent(summation_events[i]);
+    Assert(err == CL_SUCCESS);
   }
   pfree(summation_events);
   if (partial_gradient_buffer)
-    clReleaseMemObject(partial_gradient_buffer);
+    err |= clReleaseMemObject(partial_gradient_buffer);
   if (partial_shifted_gradient_buffer)
-    clReleaseMemObject(partial_shifted_gradient_buffer);
+    err |= clReleaseMemObject(partial_shifted_gradient_buffer);
   if (partial_shifted_result_buffer)
-    clReleaseMemObject(partial_shifted_result_buffer);
+    err |= clReleaseMemObject(partial_shifted_result_buffer);
+  Assert(err == CL_SUCCESS);
 }
 
 static void ocl_runVsgdOnlineLearningStep(
@@ -335,11 +383,13 @@ static void ocl_runVsgdOnlineLearningStep(
 
   // Fetch the estimate for the shifted bandwidth.
   kde_float_t shifted_estimate;
-  clEnqueueReadBuffer(
+  err = clEnqueueReadBuffer(
       context->queue, descriptor->temp_shifted_result_buffer, CL_TRUE,
       0, sizeof(kde_float_t), &shifted_estimate, 1,
       &(descriptor->optimization_event), NULL);
-  clReleaseEvent(descriptor->optimization_event);
+  Assert(err == CL_SUCCESS);
+  err = clReleaseEvent(descriptor->optimization_event);
+  Assert(err == CL_SUCCESS);
   descriptor->optimization_event = NULL;
 
   // Compute the scaling factor for the gradient.
@@ -383,11 +433,13 @@ static void ocl_runVsgdOnlineLearningStep(
   err |= clSetKernelArg(
       accumulate, 9, sizeof(cl_mem),
       &(descriptor->squared_hessian_accumulator));
+  Assert(err == CL_SUCCESS);
   cl_event accumulator_event;
-  err |= clEnqueueNDRangeKernel(
+  err = clEnqueueNDRangeKernel(
       context->queue, accumulate, 1, NULL, &global_size, NULL, 0, NULL,
       &accumulator_event);
-
+  Assert(err == CL_SUCCESS);
+  
   // Debug print the accumulated buffers.
   ocl_printBuffer(
       "\tAccumulated gradient:", descriptor->gradient_accumulator,
@@ -443,9 +495,11 @@ static void ocl_runVsgdOnlineLearningStep(
       err |= clSetKernelArg(
           updateModel, 11, sizeof(kde_float_t),
           &(descriptor->learning_boost_rate));
-      err |= clEnqueueNDRangeKernel(
+      Assert(err == CL_SUCCESS);
+      err = clEnqueueNDRangeKernel(
           context->queue, updateModel, 1, NULL, &global_size, NULL, 1,
           &accumulator_event, &(descriptor->optimization_event));
+      Assert(err == CL_SUCCESS);
     } else {
       // In order to initialize the algorithm, we simply use the accumulated averages.
       if (initModel == NULL) {
@@ -477,9 +531,11 @@ static void ocl_runVsgdOnlineLearningStep(
       err |= clSetKernelArg(
           initModel, 9, sizeof(unsigned int),
           &kde_adaptive_bandwidth_minibatch_size);
-      err |= clEnqueueNDRangeKernel(
+      Assert(err == CL_SUCCESS);
+      err = clEnqueueNDRangeKernel(
           context->queue, initModel, 1, NULL, &global_size, NULL, 1,
           &accumulator_event, &(descriptor->optimization_event));
+      Assert(err == CL_SUCCESS);
       descriptor->online_learning_initialized = true;
     }
     descriptor->nr_of_accumulated_gradients = 0;
@@ -504,13 +560,15 @@ static void ocl_runVsgdOnlineLearningStep(
   }
 
   // Clean up.
-  clReleaseEvent(accumulator_event);
+  err = clReleaseEvent(accumulator_event);
+  Assert(err == CL_SUCCESS);
 }
 
 // Helper function to initialize rmsprop learning for a given estimator.
 static void ocl_initializeRMSProp(
     ocl_estimator_t* estimator) {
   ocl_context_t* context = ocl_getContext();
+  cl_int err = CL_SUCCESS;
   ocl_rmsPropOptimization_t* descriptor = calloc(
       1, sizeof(ocl_rmsPropOptimization_t));
   cl_mem nullBuffer = NULL;
@@ -531,29 +589,34 @@ static void ocl_initializeRMSProp(
   unsigned int result_stride_elements = stride_size / sizeof(kde_float_t);
   descriptor->partial_gradient_buffer = clCreateBuffer(
       context->context, CL_MEM_READ_WRITE,
-      stride_size * estimator->nr_of_dimensions, NULL, NULL);
+      stride_size * estimator->nr_of_dimensions, NULL, &err);
+  Assert(err == CL_SUCCESS);
   // Create the kernel, and decide on its optimal local and global sizes.
   descriptor->compute_partial_gradient =
         ocl_getKernel("computePartialGradient", estimator->nr_of_dimensions);
-  clGetKernelWorkGroupInfo(
+  err = clGetKernelWorkGroupInfo(
       descriptor->compute_partial_gradient, context->device,
       CL_KERNEL_WORK_GROUP_SIZE, sizeof(size_t),
       &(descriptor->partial_gradient_localsize), NULL);
+  Assert(err == CL_SUCCESS);
+  
   // The optimal local size is decided by a) the available local memory
   // and b) the preferred workgroup size multiple.
   size_t available_local_memory;
-  clGetKernelWorkGroupInfo(
+  err = clGetKernelWorkGroupInfo(
       descriptor->compute_partial_gradient, context->device,
       CL_KERNEL_LOCAL_MEM_SIZE, sizeof(size_t), &available_local_memory, NULL);
+  Assert(err == CL_SUCCESS);
   available_local_memory = context->local_mem_size - available_local_memory;
   descriptor->partial_gradient_localsize = Min(
       descriptor->partial_gradient_localsize,
       available_local_memory / (sizeof(kde_float_t) * estimator->nr_of_dimensions));
   size_t preferred_local_size_multiple;
-  clGetKernelWorkGroupInfo(
+  err = clGetKernelWorkGroupInfo(
       descriptor->compute_partial_gradient, context->device,
       CL_KERNEL_PREFERRED_WORK_GROUP_SIZE_MULTIPLE, sizeof(size_t),
       &preferred_local_size_multiple, NULL);
+  Assert(err == CL_SUCCESS);
   descriptor->partial_gradient_localsize = preferred_local_size_multiple
       * (descriptor->partial_gradient_localsize / preferred_local_size_multiple);
   // The global size is chosen to ensure we cover all sample items.
@@ -563,38 +626,40 @@ static void ocl_initializeRMSProp(
     descriptor->partial_gradient_globalsize += descriptor->partial_gradient_localsize;
   }
   // Now set the kernel options.
-  clSetKernelArg(
+  err |= clSetKernelArg(
       descriptor->compute_partial_gradient, 0, sizeof(cl_mem),
       &(estimator->sample_buffer));
-  clSetKernelArg(
+  err |= clSetKernelArg(
       descriptor->compute_partial_gradient, 1, sizeof(unsigned int),
       &(estimator->rows_in_sample));
-  clSetKernelArg(
+  err |= clSetKernelArg(
       descriptor->compute_partial_gradient, 2, sizeof(cl_mem),
       &(estimator->input_buffer));
-  clSetKernelArg(
+  err |= clSetKernelArg(
       descriptor->compute_partial_gradient, 3, sizeof(cl_mem),
       &(estimator->bandwidth_buffer));
-  clSetKernelArg(
+  err |= clSetKernelArg(
       descriptor->compute_partial_gradient, 4, sizeof(cl_mem), &nullBuffer);
-  clSetKernelArg(
+  err |= clSetKernelArg(
       descriptor->compute_partial_gradient, 5, descriptor->partial_gradient_localsize
       *estimator->nr_of_dimensions * sizeof(kde_float_t), NULL);
-  clSetKernelArg(
+  err |= clSetKernelArg(
       descriptor->compute_partial_gradient, 6, sizeof(cl_mem),
       &(descriptor->partial_gradient_buffer));
-  clSetKernelArg(
+  err |= clSetKernelArg(
       descriptor->compute_partial_gradient, 7, sizeof(unsigned int),
       &result_stride_elements);
-  clSetKernelArg(
+  err |= clSetKernelArg(
       descriptor->compute_partial_gradient, 8, sizeof(cl_mem), &nullBuffer);
-
+  Assert(err == CL_SUCCESS);
+  
   /*
    * Initialize the partial gradient summation.
    */
   descriptor->gradient_buffer = clCreateBuffer(
       context->context, CL_MEM_READ_WRITE,
-      estimator->nr_of_dimensions * sizeof(kde_float_t), NULL, NULL);
+      estimator->nr_of_dimensions * sizeof(kde_float_t), NULL, &err);
+  Assert(err == CL_SUCCESS);
   descriptor->gradient_summation_buffers = calloc(
       1, sizeof(cl_mem) * estimator->nr_of_dimensions);
   descriptor->gradient_summation_descriptors = calloc(
@@ -619,24 +684,28 @@ static void ocl_initializeRMSProp(
   // Allocate and zero-initialize the gradient accumulator.
   descriptor->gradient_accumulator_buffer = clCreateBuffer(
       context->context, CL_MEM_READ_WRITE,
-      sizeof(kde_float_t) * estimator->nr_of_dimensions, NULL, NULL);
+      sizeof(kde_float_t) * estimator->nr_of_dimensions, NULL, &err);
+  Assert(err == CL_SUCCESS);
   cl_kernel init_zero = ocl_getKernel("init_zero", 0);
   size_t global_size = estimator->nr_of_dimensions;
-  clSetKernelArg(
+  err = clSetKernelArg(
       init_zero, 0, sizeof(cl_mem), &(descriptor->gradient_accumulator_buffer));
-  clEnqueueNDRangeKernel(
+  Assert(err == CL_SUCCESS);
+  err = clEnqueueNDRangeKernel(
       context->queue, init_zero, 1, NULL, &global_size, NULL, 0, NULL, NULL);
-  clReleaseKernel(init_zero);
+  Assert(err == CL_SUCCESS);
+  err = clReleaseKernel(init_zero);
+  Assert(err == CL_SUCCESS);
   // Prepare the accumulation kernel.
   descriptor->gradient_accumulator = ocl_getKernel(
       "accumulateRmspropOnlineBuffers", 0);
-  clSetKernelArg(
+  err |= clSetKernelArg(
       descriptor->gradient_accumulator, 0, sizeof(cl_mem),
       &(descriptor->gradient_buffer));
-  clSetKernelArg(
+  err |= clSetKernelArg(
       descriptor->gradient_accumulator, 2, sizeof(cl_mem),
       &(estimator->bandwidth_buffer));
-  clSetKernelArg(
+  err |= clSetKernelArg(
       descriptor->gradient_accumulator, 3, sizeof(cl_mem),
       &(descriptor->gradient_accumulator_buffer));
 
@@ -646,68 +715,78 @@ static void ocl_initializeRMSProp(
    */
   descriptor->last_gradient_buffer = clCreateBuffer(
       context->context, CL_MEM_READ_WRITE,
-      sizeof(kde_float_t) * estimator->nr_of_dimensions, NULL, NULL);
+      sizeof(kde_float_t) * estimator->nr_of_dimensions, NULL, &err);
+  Assert(err == CL_SUCCESS);
   descriptor->running_squared_gradient_average_buffer = clCreateBuffer(
         context->context, CL_MEM_READ_WRITE,
-        sizeof(kde_float_t) * estimator->nr_of_dimensions, NULL, NULL);
+        sizeof(kde_float_t) * estimator->nr_of_dimensions, NULL, &err);
+  Assert(err == CL_SUCCESS);
   descriptor->learning_rate_buffer = clCreateBuffer(
         context->context, CL_MEM_READ_WRITE,
-        sizeof(kde_float_t) * estimator->nr_of_dimensions, NULL, NULL);
+        sizeof(kde_float_t) * estimator->nr_of_dimensions, NULL, &err);
+  Assert(err == CL_SUCCESS);
 
   /*
    * Initialize the update kernel.
    */
   descriptor->model_update = ocl_getKernel("updateRmspropOnlineEstimate", 0);
-  clSetKernelArg(
+  err |= clSetKernelArg(
       descriptor->model_update, 0, sizeof(cl_mem),
       &(descriptor->gradient_accumulator_buffer));
-  clSetKernelArg(
+  err |= clSetKernelArg(
       descriptor->model_update, 1, sizeof(cl_mem),
       &(descriptor->last_gradient_buffer));
-  clSetKernelArg(
+  err |= clSetKernelArg(
       descriptor->model_update, 2, sizeof(cl_mem),
       &(descriptor->running_squared_gradient_average_buffer));
-  clSetKernelArg(
+  err |= clSetKernelArg(
       descriptor->model_update, 3, sizeof(cl_mem),
       &(descriptor->learning_rate_buffer));
-  clSetKernelArg(
+  err |= clSetKernelArg(
       descriptor->model_update, 4, sizeof(cl_mem),
       &(estimator->bandwidth_buffer));
-  clSetKernelArg(
+  err |= clSetKernelArg(
       descriptor->model_update, 5, sizeof(unsigned int),
       &kde_adaptive_bandwidth_minibatch_size);
-
+  Assert(err == CL_SUCCESS);
+  
   // We are done :)
   estimator->bandwidth_optimization->rmsprop_descriptor = descriptor;
-  clFinish(context->queue);
+  err = clFinish(context->queue);
+  Assert(err == CL_SUCCESS);
 }
 
 // Helper function to release an initialized rmsprop descriptor.
 static void ocl_releaseRMSProp(ocl_estimator_t* estimator) {
   unsigned int i;
+  cl_int err = CL_SUCCESS;
   // Sanity checks.
   if (! estimator->bandwidth_optimization) return;
   if (! estimator->bandwidth_optimization->rmsprop_descriptor) return;
   // Ok, clean up the descriptor.
   ocl_rmsPropOptimization_t* descriptor =
       estimator->bandwidth_optimization->rmsprop_descriptor;
-  clReleaseKernel(descriptor->compute_partial_gradient);
-  clReleaseMemObject(descriptor->gradient_buffer);
+  err = clReleaseKernel(descriptor->compute_partial_gradient);
+  Assert(err == CL_SUCCESS);
+  err = clReleaseMemObject(descriptor->gradient_buffer);
+  Assert(err == CL_SUCCESS);
   for (i=0; i<estimator->nr_of_dimensions; ++i) {
-    clReleaseMemObject(descriptor->gradient_summation_buffers[i]);
+    err = clReleaseMemObject(descriptor->gradient_summation_buffers[i]);
+    Assert(err == CL_SUCCESS);
     releaseAggregationDescriptor(descriptor->gradient_summation_descriptors[i]);
   }
   free(descriptor->gradient_summation_buffers);
   free(descriptor->gradient_summation_descriptors);
   free(descriptor->gradient_summation_events);
-  clReleaseMemObject(descriptor->partial_gradient_buffer);
-  clReleaseMemObject(descriptor->gradient_accumulator_buffer);
-  clReleaseKernel(descriptor->gradient_accumulator);
-  clReleaseMemObject(descriptor->last_gradient_buffer);
-  clReleaseMemObject(descriptor->running_squared_gradient_average_buffer);
-  clReleaseMemObject(descriptor->learning_rate_buffer);
-  clReleaseKernel(descriptor->model_update);
-
+  err |= clReleaseMemObject(descriptor->partial_gradient_buffer);
+  err |= clReleaseMemObject(descriptor->gradient_accumulator_buffer);
+  err |= clReleaseKernel(descriptor->gradient_accumulator);
+  err |= clReleaseMemObject(descriptor->last_gradient_buffer);
+  err |= clReleaseMemObject(descriptor->running_squared_gradient_average_buffer);
+  err |= clReleaseMemObject(descriptor->learning_rate_buffer);
+  err |= clReleaseKernel(descriptor->model_update);
+  Assert(err == CL_SUCCESS);
+  
   // We are done.
   free(estimator->bandwidth_optimization->rmsprop_descriptor);
   estimator->bandwidth_optimization->rmsprop_descriptor = NULL;
@@ -715,6 +794,7 @@ static void ocl_releaseRMSProp(ocl_estimator_t* estimator) {
 // Helper function to schedule the computation of the partial gradient.
 static void ocl_prepareRmspropOnlineLearningStep(ocl_estimator_t* estimator) {
   unsigned int i;
+  cl_int err = CL_SUCCESS;
   ocl_context_t* context = ocl_getContext();
   if (! estimator->bandwidth_optimization->rmsprop_descriptor) {
     ocl_initializeRMSProp(estimator);
@@ -725,17 +805,19 @@ static void ocl_prepareRmspropOnlineLearningStep(ocl_estimator_t* estimator) {
   // Schedule the computation of the partial gradient contributions for the
   // current bandwidth.
   cl_event partial_gradient_event = NULL;
-  clEnqueueNDRangeKernel(
+  err = clEnqueueNDRangeKernel(
       context->queue, descriptor->compute_partial_gradient, 1, NULL,
       &(descriptor->partial_gradient_globalsize),
       &(descriptor->partial_gradient_localsize), 0, NULL,
       &partial_gradient_event);
+  Assert(err == CL_SUCCESS);
   // Now schedule the summation of the partial gradient computations.
   for (i=0; i<estimator->nr_of_dimensions; ++i) {
     descriptor->gradient_summation_events[i] = predefinedSumOfArray(
         descriptor->gradient_summation_descriptors[i], partial_gradient_event);
   }
-  clReleaseEvent(partial_gradient_event);
+  err = clReleaseEvent(partial_gradient_event);
+  Assert(err == CL_SUCCESS);
   ocl_printBuffer(
       " > Gradient at bandwidth:",
       descriptor->partial_gradient_buffer, estimator->nr_of_dimensions, 1);
@@ -748,6 +830,7 @@ static void ocl_runRmspropOnlineLearningStep(
 
   if (ocl_isDebug()) fprintf(stderr, ">>> Running online learning step.\n");
   ocl_context_t* context = ocl_getContext();
+  cl_int err = CL_SUCCESS;
   ocl_rmsPropOptimization_t* descriptor =
       estimator->bandwidth_optimization->rmsprop_descriptor;
 
@@ -758,15 +841,17 @@ static void ocl_runRmspropOnlineLearningStep(
       estimator->last_selectivity, selectivity, estimator->rows_in_table);
   gradient_factor *= estimator->rows_in_sample;
   // Now call the accumulator with the computed scaling factor.
-  clSetKernelArg(
+  err = clSetKernelArg(
       descriptor->gradient_accumulator, 1, sizeof(kde_float_t),
       &gradient_factor);
+  Assert(err == CL_SUCCESS);
   size_t global_size = estimator->nr_of_dimensions;
   cl_event accumulator_event;
-  clEnqueueNDRangeKernel(
+  err = clEnqueueNDRangeKernel(
       context->queue, descriptor->gradient_accumulator, 1, NULL, &global_size,
       NULL, estimator->nr_of_dimensions, descriptor->gradient_summation_events,
       &accumulator_event);
+  Assert(err == CL_SUCCESS);
   // Debug print the accumulated buffers.
   ocl_printBuffer(
       "\tAccumulated gradient:", descriptor->gradient_accumulator_buffer,
@@ -779,36 +864,42 @@ static void ocl_runRmspropOnlineLearningStep(
     if (! descriptor->optimization_initialized) {
       // In order to initialize the algorithm, we simply use the accumulated averages.
       cl_kernel initModel = ocl_getKernel("initializeRmspropOnlineEstimate", 0);
-      clSetKernelArg(
+      err |= clSetKernelArg(
           initModel, 0, sizeof(cl_mem), &(descriptor->gradient_accumulator_buffer));
-      clSetKernelArg(
+      err |= clSetKernelArg(
           initModel, 1, sizeof(cl_mem), &(descriptor->last_gradient_buffer));
-      clSetKernelArg(
+      err |= clSetKernelArg(
           initModel, 2, sizeof(cl_mem), &(descriptor->learning_rate_buffer));
-      clSetKernelArg(
+      err |= clSetKernelArg(
           initModel, 3, sizeof(cl_mem),
           &(descriptor->running_squared_gradient_average_buffer));
-      clSetKernelArg(
+      err |= clSetKernelArg(
           initModel, 4, sizeof(unsigned int),
           &kde_adaptive_bandwidth_minibatch_size);
-      clEnqueueNDRangeKernel(
+      Assert(err == CL_SUCCESS);
+      err = clEnqueueNDRangeKernel(
           context->queue, initModel, 1, NULL, &global_size, NULL, 1,
           &accumulator_event, NULL);
-      clReleaseKernel(initModel);
+      Assert(err == CL_SUCCESS);
+      err = clReleaseKernel(initModel);
+      Assert(err == CL_SUCCESS);
       descriptor->optimization_initialized = true;
-      clFinish(context->queue);
+      err = clFinish(context->queue);
+      Assert(err == CL_SUCCESS);
     }
     // Schedule the mini-batch update.
-    clEnqueueNDRangeKernel(
+    err = clEnqueueNDRangeKernel(
         context->queue, descriptor->model_update, 1, NULL, &global_size,
         NULL, 1, &accumulator_event,
         &(estimator->bandwidth_optimization->optimization_event));
+    Assert(err == CL_SUCCESS);
     // Debug print the accumulated buffers.
     ocl_printBuffer(
         "\tUpdated bandwidth:", estimator->bandwidth_buffer,
         estimator->nr_of_dimensions, 1);
   }
-  clReleaseEvent(accumulator_event);
+  err = clReleaseEvent(accumulator_event);
+  Assert(err == CL_SUCCESS);
 }
 
 void ocl_runOnlineLearningStep(
@@ -840,6 +931,7 @@ void ocl_prepareOnlineLearningStep(ocl_estimator_t* estimator) {
 }
 
 void ocl_releaseBandwidthOptimizatztionBuffers(ocl_estimator_t* estimator) {
+  cl_int err = CL_SUCCESS;
   if (! estimator->bandwidth_optimization) return;
   ocl_bandwidth_optimization_t* descriptor = estimator->bandwidth_optimization;
   if (estimator->bandwidth_optimization->rmsprop_descriptor) {
@@ -848,47 +940,48 @@ void ocl_releaseBandwidthOptimizatztionBuffers(ocl_estimator_t* estimator) {
 
   // Release the buffers.
   if (descriptor->gradient_accumulator) {
-    clReleaseMemObject(descriptor->gradient_accumulator);
+    err |= clReleaseMemObject(descriptor->gradient_accumulator);
   }
   if (descriptor->squared_gradient_accumulator) {
-    clReleaseMemObject(descriptor->squared_gradient_accumulator);
+    err |= clReleaseMemObject(descriptor->squared_gradient_accumulator);
   }
   if (descriptor->hessian_accumulator) {
-    clReleaseMemObject(descriptor->hessian_accumulator);
+    err |= clReleaseMemObject(descriptor->hessian_accumulator);
   }
   if (descriptor->squared_hessian_accumulator) {
-    clReleaseMemObject(descriptor->squared_hessian_accumulator);
+    err |= clReleaseMemObject(descriptor->squared_hessian_accumulator);
   }
   if (descriptor->running_gradient_average) {
-    clReleaseMemObject(descriptor->running_gradient_average);
+    err |= clReleaseMemObject(descriptor->running_gradient_average);
   }
   if (descriptor->running_squared_gradient_average) {
-    clReleaseMemObject(descriptor->running_squared_gradient_average);
+    err |= clReleaseMemObject(descriptor->running_squared_gradient_average);
   }
   if (descriptor->running_hessian_average) {
-    clReleaseMemObject(descriptor->running_hessian_average);
+    err |= clReleaseMemObject(descriptor->running_hessian_average);
   }
   if (descriptor->running_squared_hessian_average) {
-    clReleaseMemObject(descriptor->running_squared_hessian_average);
+    err |= clReleaseMemObject(descriptor->running_squared_hessian_average);
   }
   if (descriptor->current_time_constant) {
-    clReleaseMemObject(descriptor->current_time_constant);
+    err |= clReleaseMemObject(descriptor->current_time_constant);
   }
   if (descriptor->temp_gradient_buffer) {
-    clReleaseMemObject(descriptor->temp_gradient_buffer);
+    err |= clReleaseMemObject(descriptor->temp_gradient_buffer);
   }
   if (descriptor->temp_shifted_gradient_buffer) {
-    clReleaseMemObject(descriptor->temp_shifted_gradient_buffer);
+    err |= clReleaseMemObject(descriptor->temp_shifted_gradient_buffer);
   }
   if (descriptor->temp_shifted_result_buffer) {
-    clReleaseMemObject(descriptor->temp_shifted_result_buffer);
+    err |= clReleaseMemObject(descriptor->temp_shifted_result_buffer);
   }
   if (descriptor->last_gradient) {
-    clReleaseMemObject(descriptor->last_gradient);
+    err |= clReleaseMemObject(descriptor->last_gradient);
   }
   if (descriptor->learning_rate) {
-    clReleaseMemObject(descriptor->learning_rate);
+    err |= clReleaseMemObject(descriptor->learning_rate);
   }
+  Assert(err == CL_SUCCESS);
   // We are done :)
   free(descriptor);
 }

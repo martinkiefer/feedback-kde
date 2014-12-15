@@ -140,6 +140,7 @@ static unsigned int ocl_extractLatestFeedbackRecordsFromCatalog(
 static unsigned int ocl_prepareFeedback(
     ocl_estimator_t* estimator, cl_mem* device_ranges,
     cl_mem* device_selectivities) {
+  cl_int err = CL_SUCCESS;
   // First, we have to count how many matching feedback records are available
   // for this estimator in the query feedback table.
   if (SPI_connect() != SPI_OK_CONNECT) {
@@ -192,18 +193,28 @@ static unsigned int ocl_prepareFeedback(
   *device_ranges = clCreateBuffer(
       context->context, CL_MEM_READ_WRITE,
       sizeof(kde_float_t) * 2 * actual_records * estimator->nr_of_dimensions,
-      NULL, NULL);
-  clEnqueueWriteBuffer(
+      NULL, &err);
+  Assert(err == CL_SUCCESS);
+  
+  err = clEnqueueWriteBuffer(
       context->queue, *device_ranges, CL_FALSE, 0,
       sizeof(kde_float_t) * 2 * actual_records * estimator->nr_of_dimensions,
       range_buffer, 0, NULL, NULL);
+  Assert(err == CL_SUCCESS);
+  
   *device_selectivities = clCreateBuffer(
       context->context, CL_MEM_READ_WRITE,
-      sizeof(kde_float_t) * actual_records, NULL, NULL);
-  clEnqueueWriteBuffer(
+      sizeof(kde_float_t) * actual_records, NULL, &err);
+  Assert(err == CL_SUCCESS);
+  
+  err = clEnqueueWriteBuffer(
       context->queue, *device_selectivities, CL_FALSE, 0,
       sizeof(kde_float_t) * actual_records, selectivity_buffer, 0, NULL, NULL);
-  clFinish(context->queue);
+  Assert(err == CL_SUCCESS);
+  
+  err = clFinish(context->queue);
+  Assert(err == CL_SUCCESS);
+  
   pfree(range_buffer);
   pfree(selectivity_buffer);
   return actual_records;
@@ -245,7 +256,7 @@ struct timeval opt_start;
 static double computeGradient(
     unsigned n, const double* bandwidth, double* gradient, void* params) {
   unsigned int i;
-  cl_int err = 0;
+  cl_int err = CL_SUCCESS;
   optimization_config_t* conf = (optimization_config_t*)params;
   ocl_estimator_t* estimator = conf->estimator;
   ocl_context_t* context = ocl_getContext();
@@ -267,15 +278,17 @@ static double computeGradient(
     for (i = 0; i<estimator->nr_of_dimensions; ++i) {
       fbandwidth[i] = bandwidth[i];
     }
-    clEnqueueWriteBuffer(
+    err = clEnqueueWriteBuffer(
         context->queue, estimator->bandwidth_buffer, CL_FALSE,
         0, sizeof(kde_float_t) * estimator->nr_of_dimensions,
         fbandwidth, 0, NULL, &input_transfer_event);
+    Assert(err == CL_SUCCESS);
   } else {
-    clEnqueueWriteBuffer(
+    err = clEnqueueWriteBuffer(
         context->queue, estimator->bandwidth_buffer, CL_FALSE,
         0, sizeof(kde_float_t) * estimator->nr_of_dimensions,
         bandwidth, 0, NULL, &input_transfer_event);
+    Assert(err == CL_SUCCESS);
   }
   // Prepare the kernel that computes a gradient for each observation.
   cl_kernel gradient_kernel = ocl_getKernel(
@@ -285,22 +298,28 @@ static double computeGradient(
     // by looking at available and required local memory and by ensuring that
     // the local size is evenly divisible by the preferred workgroup multiple..
   size_t local_size;
-  clGetKernelWorkGroupInfo(
+  err = clGetKernelWorkGroupInfo(
       gradient_kernel, context->device, CL_KERNEL_WORK_GROUP_SIZE,
       sizeof(size_t), &local_size, NULL);
+  Assert(err == CL_SUCCESS);
+  
   size_t available_local_memory;
-  clGetKernelWorkGroupInfo(
+  err = clGetKernelWorkGroupInfo(
       gradient_kernel, context->device, CL_KERNEL_LOCAL_MEM_SIZE,
       sizeof(size_t), &available_local_memory, NULL);
+  Assert(err == CL_SUCCESS);
+  
   available_local_memory = context->local_mem_size - available_local_memory;
   local_size = Min(
       local_size,
       available_local_memory / (3 * sizeof(kde_float_t) * estimator->nr_of_dimensions));
   size_t preferred_local_size_multiple;
-  clGetKernelWorkGroupInfo(
+  err = clGetKernelWorkGroupInfo(
       gradient_kernel, context->device,
       CL_KERNEL_PREFERRED_WORK_GROUP_SIZE_MULTIPLE,
       sizeof(size_t), &preferred_local_size_multiple, NULL);
+  Assert(err == CL_SUCCESS);
+  
   local_size = preferred_local_size_multiple
       * (local_size / preferred_local_size_multiple);
   size_t global_size = local_size * (conf->nr_of_observations / local_size);
@@ -337,11 +356,15 @@ static double computeGradient(
       gradient_kernel, 11, sizeof(unsigned int), &stride_elements);
   err |= clSetKernelArg(
       gradient_kernel, 12, sizeof(unsigned int), &(estimator->rows_in_table));
+  Assert(err == CL_SUCCESS);
+  
   // Compute the gradient for each observation.
   cl_event partial_gradient_event;
-  err |= clEnqueueNDRangeKernel(
+  err = clEnqueueNDRangeKernel(
       context->queue, gradient_kernel, 1, NULL, &global_size, &local_size, 1,
       &input_transfer_event, &partial_gradient_event);
+  Assert(err == CL_SUCCESS);
+  
   // Sum up the individual error contributions ...
   cl_event* summation_events = palloc(
       sizeof(cl_event) * (1 + estimator->nr_of_dimensions));
@@ -357,18 +380,23 @@ static double computeGradient(
   cl_event result_events[2];
   kde_float_t* tmp_gradient = palloc(
       sizeof(kde_float_t) * estimator->nr_of_dimensions);
-  err |= clEnqueueReadBuffer(
+  err = clEnqueueReadBuffer(
       context->queue, conf->gradient_buffer, CL_FALSE,
       0, sizeof(kde_float_t) * estimator->nr_of_dimensions,
       tmp_gradient, estimator->nr_of_dimensions + 1,
       summation_events, &(result_events[0]));
+  Assert(err == CL_SUCCESS);
+  
   // As well as the error.
   kde_float_t error;
-  err |= clEnqueueReadBuffer(
+  err = clEnqueueReadBuffer(
       context->queue, conf->error_buffer, CL_FALSE,
       0, sizeof(kde_float_t), &error,
       1, &(summation_events[0]),  &(result_events[1]));
-  err |= clWaitForEvents(2, result_events);
+  Assert(err == CL_SUCCESS);
+  
+  err = clWaitForEvents(2, result_events);
+  Assert(err == CL_SUCCESS);
   
   if (err != 0) {
     fprintf(stderr, "OpenCL functions failed to compute gradient.\n");
@@ -404,21 +432,25 @@ static double computeGradient(
   }
   // Ok, clean everything up.
   for (i=0; i<estimator->nr_of_dimensions; ++i) {
-    clReleaseEvent(summation_events[i]);
+    err = clReleaseEvent(summation_events[i]);
+    Assert(err == CL_SUCCESS);
   }
   pfree(summation_events);
   pfree(tmp_gradient);
   if (fbandwidth) pfree(fbandwidth);
-  clReleaseEvent(input_transfer_event);
-  clReleaseEvent(partial_gradient_event);
-  clReleaseEvent(result_events[0]);
-  clReleaseEvent(result_events[1]);
-  clReleaseKernel(gradient_kernel);
+  err |= clReleaseEvent(input_transfer_event);
+  err |= clReleaseEvent(partial_gradient_event);
+  err |= clReleaseEvent(result_events[0]);
+  err |= clReleaseEvent(result_events[1]);
+  err |= clReleaseKernel(gradient_kernel);
+  Assert(err == CL_SUCCESS);
+  
   return error;
 }
 
 static void ocl_setScottsBandwidth(ocl_estimator_t* estimator) {
   ocl_context_t* context = ocl_getContext();
+  cl_int err = CL_SUCCESS;
   // First, we need to compute the variance for each dimension.
   unsigned int i;
   kde_float_t* variances = malloc(
@@ -426,7 +458,8 @@ static void ocl_setScottsBandwidth(ocl_estimator_t* estimator) {
   cl_mem* buffers = malloc(sizeof(cl_mem) * estimator->nr_of_dimensions);
   cl_mem averages = clCreateBuffer(
       context->context, CL_MEM_READ_WRITE,
-      sizeof(kde_float_t) * estimator->nr_of_dimensions, NULL, NULL);
+      sizeof(kde_float_t) * estimator->nr_of_dimensions, NULL, &err);
+  Assert(err == CL_SUCCESS);
   cl_event* events = malloc(sizeof(cl_event) * estimator->nr_of_dimensions);
   size_t sample_size = estimator->rows_in_sample;
   size_t dimensions = estimator->nr_of_dimensions;
@@ -434,61 +467,76 @@ static void ocl_setScottsBandwidth(ocl_estimator_t* estimator) {
     // Allocate all required buffers.
     buffers[i] = clCreateBuffer(
         context->context, CL_MEM_READ_WRITE,
-        sizeof(kde_float_t) * estimator->rows_in_sample, NULL, NULL);
+        sizeof(kde_float_t) * estimator->rows_in_sample, NULL, &err);
+    Assert(err == CL_SUCCESS);
     // First we extract all sample components for this dimension.
     cl_kernel extractComponents = ocl_getKernel("extract_dimension", 0);
-    clSetKernelArg(
+    err |= clSetKernelArg(
         extractComponents, 0, sizeof(cl_mem), &(estimator->sample_buffer));
-    clSetKernelArg(extractComponents, 1, sizeof(cl_mem), &(buffers[i]));
-    clSetKernelArg(extractComponents, 2, sizeof(unsigned int), &i);
-    clSetKernelArg(extractComponents, 3, sizeof(unsigned int),
+    err |= clSetKernelArg(extractComponents, 1, sizeof(cl_mem), &(buffers[i]));
+    err |= clSetKernelArg(extractComponents, 2, sizeof(unsigned int), &i);
+    err |= clSetKernelArg(extractComponents, 3, sizeof(unsigned int),
         &(estimator->nr_of_dimensions));
+    Assert(err == CL_SUCCESS);
+    
     cl_event extraction_event;
-    clEnqueueNDRangeKernel(
+    err = clEnqueueNDRangeKernel(
         context->queue, extractComponents, 1, NULL, &sample_size, NULL,
         0, NULL, &extraction_event);
+    Assert(err == CL_SUCCESS);
     // Now we sum them up, so we can compute the average.
     cl_event average_summation_event = sumOfArray(
         buffers[i], estimator->rows_in_sample, averages, i, extraction_event);
     // Alright, we can compute the variance contributions from each point.
     cl_kernel precomputeVariance = ocl_getKernel("precompute_variance", 0);
-    clSetKernelArg(precomputeVariance, 0, sizeof(cl_mem), &(buffers[i]));
-    clSetKernelArg(precomputeVariance, 1, sizeof(cl_mem), &averages);
-    clSetKernelArg(precomputeVariance, 2, sizeof(unsigned int), &i);
-    clSetKernelArg(precomputeVariance, 3, sizeof(unsigned int),
+    err |= clSetKernelArg(precomputeVariance, 0, sizeof(cl_mem), &(buffers[i]));
+    err |= clSetKernelArg(precomputeVariance, 1, sizeof(cl_mem), &averages);
+    err |= clSetKernelArg(precomputeVariance, 2, sizeof(unsigned int), &i);
+    err |= clSetKernelArg(precomputeVariance, 3, sizeof(unsigned int),
         &(estimator->rows_in_sample));
     cl_event variance_event;
-    clEnqueueNDRangeKernel(
+    err = clEnqueueNDRangeKernel(
         context->queue, precomputeVariance, 1, NULL, &sample_size, NULL,
         1, &average_summation_event, &variance_event);
+    Assert(err == CL_SUCCESS);
+    
     // We now sum up the single contributions to compute the variance.
     cl_event variance_summation_event = sumOfArray(
         buffers[i], estimator->rows_in_sample, averages, i, variance_event);
     // Finally, we can compute and store the bandwidth for this value.
     cl_kernel finalizeBandwidth = ocl_getKernel("set_scotts_bandwidth", 0);
-    clSetKernelArg(finalizeBandwidth, 0, sizeof(cl_mem), &averages);
-    clSetKernelArg(finalizeBandwidth, 1, sizeof(cl_mem),
+    err |= clSetKernelArg(finalizeBandwidth, 0, sizeof(cl_mem), &averages);
+    err |= clSetKernelArg(finalizeBandwidth, 1, sizeof(cl_mem),
         &(estimator->bandwidth_buffer));
-    clSetKernelArg(finalizeBandwidth, 2, sizeof(unsigned int), &i);
-    clSetKernelArg(finalizeBandwidth, 3, sizeof(unsigned int),
+    err |= clSetKernelArg(finalizeBandwidth, 2, sizeof(unsigned int), &i);
+    err |= clSetKernelArg(finalizeBandwidth, 3, sizeof(unsigned int),
         &(estimator->nr_of_dimensions));
-    clSetKernelArg(finalizeBandwidth, 4, sizeof(unsigned int),
+    err |= clSetKernelArg(finalizeBandwidth, 4, sizeof(unsigned int),
         &(estimator->rows_in_sample));
-    clEnqueueNDRangeKernel(
+    Assert(err == CL_SUCCESS);
+    
+    err = clEnqueueNDRangeKernel(
         context->queue, finalizeBandwidth, 1, NULL, &dimensions, NULL,
         1, &variance_summation_event, &events[i]);
+    Assert(err == CL_SUCCESS);
     // Clean up.
-    clReleaseMemObject(buffers[i]);
-    clReleaseEvent(extraction_event);
-    clReleaseEvent(average_summation_event);
-    clReleaseEvent(variance_event);
-    clReleaseEvent(variance_summation_event);
+    err = clReleaseMemObject(buffers[i]);
+    Assert(err == CL_SUCCESS);
+    
+    err |= clReleaseEvent(extraction_event);
+    err |= clReleaseEvent(average_summation_event);
+    err |= clReleaseEvent(variance_event);
+    err |= clReleaseEvent(variance_summation_event);
+    Assert(err == CL_SUCCESS);
   }
-  clReleaseMemObject(averages);
+  err = clReleaseMemObject(averages);
+  Assert(err == CL_SUCCESS);
   // Wait for the events to finalize:
-  clWaitForEvents(estimator->nr_of_dimensions, events);
+  err = clWaitForEvents(estimator->nr_of_dimensions, events);
+  Assert(err == CL_SUCCESS);
   for (i=0; i<estimator->nr_of_dimensions; ++i) {
-    clReleaseEvent(events[i]);
+    err = clReleaseEvent(events[i]);
+    Assert(err == CL_SUCCESS);
   }
   // Clean up.
   free(variances);
@@ -497,6 +545,7 @@ static void ocl_setScottsBandwidth(ocl_estimator_t* estimator) {
 
 void ocl_runModelOptimization(ocl_estimator_t* estimator) {
   if (estimator == NULL) return;
+  cl_int err = CL_SUCCESS;
   // Set the rule-of-thumb bandwidth to initialize the estimator.
   ocl_setScottsBandwidth(estimator);
   // Now check if we do a full bandwidth optimization.
@@ -517,10 +566,11 @@ void ocl_runModelOptimization(ocl_estimator_t* estimator) {
   kde_float_t* fbandwidth = palloc(
       sizeof(kde_float_t) * estimator->nr_of_dimensions);
   ocl_context_t* context = ocl_getContext();
-  clEnqueueReadBuffer(
+  err = clEnqueueReadBuffer(
       context->queue, estimator->bandwidth_buffer, CL_TRUE, 0,
       sizeof(kde_float_t) * estimator->nr_of_dimensions,
       fbandwidth, 0, NULL, NULL);
+  Assert(err == CL_SUCCESS);
   // Cast to double (nlopt operates on double).
   double* bandwidth = lbfgs_malloc(estimator->nr_of_dimensions);
   unsigned int i;
@@ -535,7 +585,8 @@ void ocl_runModelOptimization(ocl_estimator_t* estimator) {
   params.observed_selectivities = device_selectivites;
   params.error_accumulator_buffer = clCreateBuffer(
       context->context, CL_MEM_READ_WRITE,
-      sizeof(kde_float_t) * feedback_records, NULL, NULL);
+      sizeof(kde_float_t) * feedback_records, NULL, &err);
+  Assert(err == CL_SUCCESS);
   // Allocate a buffer to hold temporary gradient contributions. This buffer
   // will keep D contributions per observation. We store all contributions
   // consecutively (i.e. 111222333444). For optimal performance, we therefore
@@ -553,12 +604,15 @@ void ocl_runModelOptimization(ocl_estimator_t* estimator) {
   params.gradient_accumulator_buffer = clCreateBuffer(
       context->context, CL_MEM_READ_WRITE,
       estimator->nr_of_dimensions * params.stride_size,
-      NULL, NULL);
+      NULL, &err);
+  Assert(err == CL_SUCCESS);
   params.gradient_buffer = clCreateBuffer(
       context->context, CL_MEM_READ_WRITE,
-      estimator->nr_of_dimensions * sizeof(kde_float_t), NULL, NULL);
+      estimator->nr_of_dimensions * sizeof(kde_float_t), NULL, &err);
+  Assert(err == CL_SUCCESS);
   params.error_buffer = clCreateBuffer(
-      context->context, CL_MEM_READ_WRITE, sizeof(kde_float_t), NULL, NULL);
+      context->context, CL_MEM_READ_WRITE, sizeof(kde_float_t), NULL, &err);
+  Assert(err == CL_SUCCESS);
   // Prepare the summation buffers.
   params.summation_descriptors = palloc(
       sizeof(ocl_aggregation_descriptor_t) * (1 + estimator->nr_of_dimensions));
@@ -575,7 +629,8 @@ void ocl_runModelOptimization(ocl_estimator_t* estimator) {
     region.origin = i * params.stride_size;
     params.summation_buffers[i] = clCreateSubBuffer(
         params.gradient_accumulator_buffer, CL_MEM_READ_ONLY,
-        CL_BUFFER_CREATE_TYPE_REGION, &region, NULL);
+        CL_BUFFER_CREATE_TYPE_REGION, &region, &err);
+    Assert(err == CL_SUCCESS);
     params.summation_descriptors[i + 1] = prepareSumDescriptor(
         params.summation_buffers[i], params.nr_of_observations,
         params.gradient_buffer, i);
@@ -595,7 +650,7 @@ void ocl_runModelOptimization(ocl_estimator_t* estimator) {
     upper_bounds[i] = 4 * bandwidth[i];    // We never want to be negative.
   }
   double tmp;
-  int err;
+  int nl_err;
   // We start with a global optimization step.
   nlopt_opt global_optimizer = nlopt_create(
       NLOPT_GD_MLSL, estimator->nr_of_dimensions);
@@ -609,8 +664,8 @@ void ocl_runModelOptimization(ocl_estimator_t* estimator) {
   nlopt_set_maxeval(global_local_optimizer, 40);
   nlopt_set_local_optimizer(global_optimizer, global_local_optimizer);
   fprintf(stderr, "> Running global pre-optimization: ");
-  err = nlopt_optimize(global_optimizer, bandwidth, &tmp);
-  fprintf(stderr, " done (%i, %f)\n", err, tmp);
+  nl_err = nlopt_optimize(global_optimizer, bandwidth, &tmp);
+  fprintf(stderr, " done (%i, %f)\n", nl_err, tmp);
   // Prepare the local refinement.
   /*nlopt_opt local_optimizer = nlopt_create(
       NLOPT_LD_LBFGS, estimator->nr_of_dimensions);
@@ -636,24 +691,27 @@ void ocl_runModelOptimization(ocl_estimator_t* estimator) {
   for (i=0; i<estimator->nr_of_dimensions; ++i) {
     fbandwidth[i] = bandwidth[i];
   }
-  clEnqueueWriteBuffer(
+  err = clEnqueueWriteBuffer(
       context->queue, estimator->bandwidth_buffer, CL_TRUE, 0,
       sizeof(kde_float_t) * estimator->nr_of_dimensions,
       fbandwidth, 0, NULL, NULL);
+  Assert(err == CL_SUCCESS);
   // Clean up.
   pfree(fbandwidth);
   lbfgs_free(bandwidth);
   for (i=0; i<estimator->nr_of_dimensions; ++i) {
-    clReleaseMemObject(params.summation_buffers[i]);
+    err = clReleaseMemObject(params.summation_buffers[i]);
+    Assert(err == CL_SUCCESS);
     releaseAggregationDescriptor(params.summation_descriptors[i + 1]);
   }
   releaseAggregationDescriptor(params.summation_descriptors[0]);
   pfree(params.summation_descriptors);
   pfree(params.summation_buffers);
-  clReleaseMemObject(params.error_buffer);
-  clReleaseMemObject(params.gradient_buffer);
-  clReleaseMemObject(params.error_accumulator_buffer);
-  clReleaseMemObject(params.gradient_accumulator_buffer);
-  clReleaseMemObject(device_ranges);
-  clReleaseMemObject(device_selectivites);
+  err |= clReleaseMemObject(params.error_buffer);
+  err |= clReleaseMemObject(params.gradient_buffer);
+  err |= clReleaseMemObject(params.error_accumulator_buffer);
+  err |= clReleaseMemObject(params.gradient_accumulator_buffer);
+  err |= clReleaseMemObject(device_ranges);
+  err |= clReleaseMemObject(device_selectivites);
+  Assert(err == CL_SUCCESS);
 }
