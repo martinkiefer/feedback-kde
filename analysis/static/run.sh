@@ -53,12 +53,6 @@ for dataset in $DIR/*; do
               --model=kde_optimal                              \
               --error=relative --log=$DIR/result.csv
             
-            # Run KDE batch: 
-            python $DIR/replayExperiment.py                    \
-              --dbname=$PGDATABASE --port=$PGPORT              \
-              --model=kde_batch                                \
-              --error=relative --log=$DIR/result.csv
-            
             # Run KDE adpative: 
             python $DIR/replayExperiment.py                    \
               --dbname=$PGDATABASE --port=$PGPORT              \
