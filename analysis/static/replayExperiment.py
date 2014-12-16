@@ -65,6 +65,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument("--dbname", action="store", required=True, help="Database to which the script will connect.")
 parser.add_argument("--port", action="store", type=int, default=5432, help="Port of the postmaster.")
 parser.add_argument("--model", action="store", choices=["stholes", "kde_heuristic", "kde_adaptive_rmsprop","kde_adaptive_vsgd","kde_batch", "kde_optimal"], default="none", help="Which model should be used?")
+parser.add_argument("--modelsize", action="store", type=int, help="How many rows should the generated model sample?")
 parser.add_argument("--error", action="store", choices=["absolute", "relative", "normalized"], default="absolute", help="Which error metric should be optimized / reported?")
 parser.add_argument("--samplefile", action="store", help="Which samplefile should be used?")
 parser.add_argument("--train_workload", action="store", help="File containing the training queries")
@@ -106,9 +107,12 @@ table = m.groups()[0]
 m = re.match(".+([0-9]+)", table)
 dimensions = int(m.groups()[0])
 f.close()
-# Extract the modelsize from the sample file.
-with open(sample_filename) as myfile:
-   modelsize = sum(1 for line in myfile)
+if (args.model == "stholes"):
+   modelsize = args.modelsize
+else:
+   # Extract the modelsize from the sample file.
+   with open(sample_filename) as myfile:
+      modelsize = sum(1 for line in myfile)
 
 # Determine the total volume of the given table.
 cur.execute("DELETE FROM pg_kdemodels;");
