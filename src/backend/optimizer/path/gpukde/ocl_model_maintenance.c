@@ -30,6 +30,7 @@
 // Global GUC variables
 bool kde_enable_bandwidth_optimization;
 int kde_bandwidth_optimization_feedback_window;
+extern int kde_bandwidth_representation;
 
 const double learning_rate = 0.01f;
 
@@ -420,9 +421,16 @@ static double computeGradient(
     for (i = 0; i<estimator->nr_of_dimensions; ++i) {
     // Apply the gradient normalization.
       double h = bandwidth[i];
-      gradient[i] = tmp_gradient[i] * M_SQRT2 / (
-          sqrt(M_PI) * h * h * pow(2.0, estimator->nr_of_dimensions) *
-          conf->nr_of_observations * estimator->rows_in_sample);
+      if(kde_bandwidth_representation == PLAIN_BW){
+          gradient[i] = tmp_gradient[i] * M_SQRT2 / (
+              sqrt(M_PI) * h * h * pow(2.0, estimator->nr_of_dimensions) *
+              conf->nr_of_observations * estimator->rows_in_sample);
+      }
+      else {
+          gradient[i] = tmp_gradient[i] * M_SQRT2 / (
+              sqrt(M_PI) * log(h) * log(h) * h * pow(2.0, estimator->nr_of_dimensions) *
+              conf->nr_of_observations * estimator->rows_in_sample);
+      }
     }
     if (ocl_isDebug()) {
       fprintf(stderr, "\n\tGradient:");

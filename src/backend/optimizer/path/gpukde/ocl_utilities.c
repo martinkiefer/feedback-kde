@@ -13,6 +13,7 @@
 
 #include "miscadmin.h"
 #include "catalog/pg_type.h"
+#include "optimizer/path/gpukde/ocl_estimator_api.h"
 
 #ifdef USE_OPENCL
 
@@ -28,6 +29,7 @@ bool ocl_use_gpu;
 bool kde_enable;
 bool kde_debug;
 int kde_samplesize;
+int kde_bandwidth_representation;
 
 cl_kernel init_buffer_min = NULL;
 cl_kernel init_buffer_sum = NULL;
@@ -312,8 +314,15 @@ cleanup:
  */
 cl_kernel ocl_getKernel(const char* kernel_name, int dimensions) {
   // We only introduce the number of dimensions into the kernels.
-  char build_params[16];
-  sprintf(build_params, "-DD=%i", dimensions);
+  char build_params[32];
+  
+  if(kde_bandwidth_representation == LOG_BW){
+    sprintf(build_params, "-DLOG_BANDWIDTH -DD=%i",dimensions);
+  }
+  else {
+    sprintf(build_params, "-DD=%i", dimensions);
+  }  
+
   // Get the context
   ocl_context_t* context = ocl_getContext();
   // Check if we already know the program for the given build_params

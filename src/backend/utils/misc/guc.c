@@ -186,6 +186,13 @@ static const struct config_enum_entry kde_online_optimization_options[] = {
 };
 extern int kde_online_optimization_algorithm;
 
+static const struct config_enum_entry kde_bandwidth_representation_options[] = {
+  {"Plain", PLAIN_BW, false},
+  {"Log", LOG_BW, false},
+  {NULL, 0, false},
+};
+extern int kde_bandwidth_representation;
+
 static const struct config_enum_entry kde_sample_maintenance_insert_options[] = {
   {"None", NONE_I, false},
   {"Reservoir", RESERVOIR, false},
@@ -3604,6 +3611,15 @@ static struct config_enum ConfigureNamesEnum[] =
     },
     &kde_online_optimization_algorithm,
     VSGD_FD, kde_online_optimization_options,
+    NULL, NULL, NULL
+  },
+  {
+    {"kde_bandwidth_representation", PGC_USERSET, DEVELOPER_OPTIONS,
+      gettext_noop("Sets the representation of the bandwidth. (bandwidth,log(bandwidth))"),
+      NULL
+    },
+    &kde_bandwidth_representation,
+    PLAIN_BW, kde_bandwidth_representation_options,
     NULL, NULL, NULL
   },
   {

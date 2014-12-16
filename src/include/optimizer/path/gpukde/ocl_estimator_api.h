@@ -83,6 +83,14 @@ typedef enum {
 } kde_optimization_strategy_t;
 
 /*
+ * Enum definition to select a batch optimziation strategy.
+ */
+typedef enum {
+  PLAIN_BW,
+  LOG_BW
+} kde_bandwidth_representation_t;
+
+/*
  * Function for updating a range request with new bounds on a given attribute.
  */
 extern int ocl_updateRequest(ocl_estimator_request_t* request, AttrNumber column,
