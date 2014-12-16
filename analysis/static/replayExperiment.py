@@ -72,6 +72,7 @@ parser.add_argument("--train_workload", action="store", help="File containing th
 parser.add_argument("--test_workload", action="store", help="File containing the test queries")
 parser.add_argument("--gpu", action="store_true", help="Use the graphics card for the experiment.")
 parser.add_argument("--debug", action="store_true", help="Run in debug mode.")
+parser.add_argument("--log", action="store", help="Where to append the experimental results?")
 args = parser.parse_args()
 
 # Set the input file names.
@@ -265,5 +266,13 @@ if args.error == "normalized":
     error_abs = nrows * sum / row_count
     error_uniform /= row_count
     error = error_abs / error_uniform
-    
-print "Measured error: %f" % error 
+
+# Print the result.
+if args.log:
+   f = open(args.log, "a+")
+   if os.path.getsize(args.log) == 0:
+       f.write("Dataset;Dimension;Workload;Selectivity;Model;ModelSize;Trainingsize;Errortype;Error\n")
+   f.write("%s;%i;%s;%s;%s;%i;%i;%s;%f\n" % ('"', '"', '"', '"', args.model, modelsize, trainqueries, errortype, error))
+   f.close()
+else:
+   print "Measured error: %f" % error 
