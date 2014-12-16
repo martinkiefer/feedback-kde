@@ -76,6 +76,7 @@ parser.add_argument("--log", action="store", required=True, help="Where to appen
 parser.add_argument("--reuse", action="store_true", help="Don't rebuild the model.")
 parser.add_argument("--record", action="store_true", help="If set, the script will store the training & testing workload, actual selectivities, as well as the data sample to files in /tmp.")
 parser.add_argument("--gpu", action="store_true", help="Use the graphics card for the experiment.")
+parser.add_argument("--logbw", action="store_true", help="Use logarithmic bandwidth representation.")
 
 args = parser.parse_args()
 
@@ -87,6 +88,8 @@ model = args.model
 modelsize = args.modelsize
 errortype = args.error
 log = args.log
+uselogbw = args.logbw
+usegpu = args.gpu
 
 # Error log file that we will use.
 error_log = "/tmp/error_%s.log" % args.dbname
@@ -158,10 +161,12 @@ if (model == "stholes"):
 else:
     # Set KDE-specific parameters.
     cur.execute("SET kde_samplesize TO %i;" % modelsize)
-    if not args.gpu:
+    if not usegpu:
       cur.execute("SET ocl_use_gpu TO false;")
     cur.execute("SET kde_enable TO true;")
-
+if uselogbw:
+    cur.execute("SET kde_bandwidth_representation TO Log;")
+    
 # Initialize the training phase.
 if (model == "kde_batch"):
     # Drop all existing feedback and start feedback collection.
