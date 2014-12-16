@@ -59,8 +59,8 @@ __kernel void gauss_kde(
 		T local_result = erf(up / (M_SQRT2 * h));
 		local_result -= erf(lo / (M_SQRT2 * h));
 #else
-		T local_result = erf(up / (M_SQRT2 * log(h)));
-		local_result -= erf(lo / (M_SQRT2 * log(h)));
+		T local_result = erf(up / (M_SQRT2 * exp(h)));
+		local_result -= erf(lo / (M_SQRT2 * exp(h)));
 #endif
 		res *= local_result;
 	}
@@ -103,6 +103,6 @@ __kernel void set_scotts_bandwidth(
 #ifndef LOG_BANDWIDTH
   bandwidth_buffer[selected_dimension] = bandwidth;
 #else
-  bandwidth_buffer[selected_dimension] = exp(bandwidth);
+  bandwidth_buffer[selected_dimension] = log(bandwidth);
 #endif
 }

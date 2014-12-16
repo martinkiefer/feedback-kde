@@ -45,9 +45,9 @@ __kernel void computePartialGradient(
     factor1  -= isinf(hi) ? 0 : hi * exp((T)-1.0 * hi * hi / (2*h*h));
     T factor2 = erf(hi / (M_SQRT2 * h)) - erf(lo / (M_SQRT2 * h));
 #else
-    T factor1 = isinf(lo) ? 0 : lo * exp((T)-1.0 * lo * lo / (2*log(h)*log(h)));
-    factor1  -= isinf(hi) ? 0 : hi * exp((T)-1.0 * hi * hi / (2*log(h)*log(h)));
-    T factor2 = erf(hi / (M_SQRT2 * log(h))) - erf(lo / (M_SQRT2 * log(h)));
+    T factor1 = isinf(lo) ? 0 : lo * exp((T)-1.0 * lo * lo / (2*exp(h)*exp(h)));
+    factor1  -= isinf(hi) ? 0 : hi * exp((T)-1.0 * hi * hi / (2*exp(h)*exp(h)));
+    T factor2 = erf(hi / (M_SQRT2 * exp(h))) - erf(lo / (M_SQRT2 * exp(h)));
 #endif
     local_result *= factor2;
     for (unsigned int j=0; j<D; ++j) {
@@ -94,11 +94,11 @@ __kernel void accumulateVsgdOnlineBuffers(
   T dh = hs - h;
   // Now scale the gradient and the shifted gradient.
 #ifndef LOG_BANDWIDTH
-  T grad = gradient_factor * gradient[i] / (h * log(h) * log(h)  );
-  T shift_grad = shifted_gradient_factor * shifted_gradient[i] / (hs * log(hs) * log(hs));
-#else
   T grad = gradient_factor * gradient[i] / (h * h);
-  T shift_grad = shifted_gradient_factor * shifted_gradient[i] / (hs * hs);  
+  T shift_grad = shifted_gradient_factor * shifted_gradient[i] / (hs * hs);
+#else
+  T grad = gradient_factor * gradient[i] / exp(h);
+  T shift_grad = shifted_gradient_factor * shifted_gradient[i] / exp(hs);  
 #endif
   // First, compute the hessian approximation via finite differences.
   T hess = dh == 0 ? 0 : fabs ( (grad - shift_grad) / dh );
@@ -173,9 +173,9 @@ __kernel void accumulateRmspropOnlineBuffers(
   T h = bandwidth[i];
   // Now scale the gradient
 #ifndef LOG_BANDWIDTH
-  T grad = gradient_factor * gradient[i] / (h *log(h) * log(h));
-#else
   T grad = gradient_factor * gradient[i] / (h * h);
+#else
+  T grad = gradient_factor * gradient[i] / (exp(h));
 #endif
   gradient_accumulator[i] += grad;
 }
@@ -211,8 +211,6 @@ __kernel void updateRmspropOnlineEstimate(
   //Pervent negative bandwidth values by restricting bandwidth decreases
 #ifndef LOG_BANDWIDTH
   bandwidth[i] = fmax(bandwidth[i] - scaled_g*lr,((T)0.5) * bandwidth[i]);
-#else
-  bandwidth[i] = fmax(bandwidth[i] - scaled_g*lr,1.0 + (bandwidth[i]-1.0) * 0.5);
 #endif
   //Zero out the accumulators and write to memory
   gradient_accumulator[i] = 0;
@@ -284,8 +282,6 @@ __kernel void updateVsgdOnlineEstimate(
   T b = bandwidth[i] - learning_boost_rate * learning_rate * g;
 #ifndef LOG_BANDWIDTH
   b = max((T)1e-10, b);   // Never allow negative bandwidths.
-#else
-  b = max((T)1+1e-10, b);   // Never allow bandwidths <= 1.
 #endif
   bandwidth[i] = b;
 

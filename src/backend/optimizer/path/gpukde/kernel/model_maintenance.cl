@@ -87,9 +87,9 @@ __kernel void applyGradient(
 	T h = bandwidth[j];                                                   \
 	T lo = lower_bound_scratch[D*get_local_id(0) + j] - val;              \
 	T hi = upper_bound_scratch[D*get_local_id(0) + j] - val;              \
-	T factor1  = isinf(lo) ? 0 : lo * exp((T)-1.0 * lo * lo / (2*log(h)*log(h)));   \
-	  factor1 -= isinf(hi) ? 0 : hi * exp((T)-1.0 * hi * hi / (2*log(h)*log(h)));   \
-	T factor2 = erf(hi / (M_SQRT2 * log(h))) - erf(lo / (M_SQRT2 * log(h)));        \
+	T factor1  = isinf(lo) ? 0 : lo * exp((T)-1.0 * lo * lo / (2*exp(h)*exp(h)));   \
+	  factor1 -= isinf(hi) ? 0 : hi * exp((T)-1.0 * hi * hi / (2*exp(h)*exp(h)));   \
+	T factor2 = erf(hi / (M_SQRT2 * exp(h))) - erf(lo / (M_SQRT2 * exp(h)));        \
 	local_contribution *= factor2;                                        \
 	for (unsigned int k=0; k<D; ++k) {                                    \
 	  local_gradient[k] *= (k==j) ? factor1 : factor2;                    \

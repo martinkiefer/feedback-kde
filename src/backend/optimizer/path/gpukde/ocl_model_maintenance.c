@@ -428,7 +428,7 @@ static double computeGradient(
       }
       else {
           gradient[i] = tmp_gradient[i] * M_SQRT2 / (
-              sqrt(M_PI) * log(h) * log(h) * h * pow(2.0, estimator->nr_of_dimensions) *
+              sqrt(M_PI) * exp(h) * pow(2.0, estimator->nr_of_dimensions) *
               conf->nr_of_observations * estimator->rows_in_sample);
       }
     }
