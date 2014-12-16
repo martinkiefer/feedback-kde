@@ -40,10 +40,15 @@ __kernel void computePartialGradient(
     h = h <= 0 ? 1e-10 : h; // Cap H to positive values.
     T lo = range[2*i] - val;
     T hi = range[2*i + 1] - val;
-
+#ifndef LOG_BANDWIDTH
     T factor1 = isinf(lo) ? 0 : lo * exp((T)-1.0 * lo * lo / (2*h*h));
     factor1  -= isinf(hi) ? 0 : hi * exp((T)-1.0 * hi * hi / (2*h*h));
     T factor2 = erf(hi / (M_SQRT2 * h)) - erf(lo / (M_SQRT2 * h));
+#else
+    T factor1 = isinf(lo) ? 0 : lo * exp((T)-1.0 * lo * lo / (2*log(h)*log(h)));
+    factor1  -= isinf(hi) ? 0 : hi * exp((T)-1.0 * hi * hi / (2*log(h)*log(h)));
+    T factor2 = erf(hi / (M_SQRT2 * log(h))) - erf(lo / (M_SQRT2 * log(h)));
+#endif
     local_result *= factor2;
     for (unsigned int j=0; j<D; ++j) {
       scratch[D*get_local_id(0) + j] *= (j==i) ? factor1 : factor2;
@@ -88,8 +93,13 @@ __kernel void accumulateVsgdOnlineBuffers(
   hs = hs <= 0 ? 1e-10 : hs;
   T dh = hs - h;
   // Now scale the gradient and the shifted gradient.
+#ifndef LOG_BANDWIDTH
+  T grad = gradient_factor * gradient[i] / (h * log(h) * log(h)  );
+  T shift_grad = shifted_gradient_factor * shifted_gradient[i] / (hs * log(hs) * log(hs));
+#else
   T grad = gradient_factor * gradient[i] / (h * h);
-  T shift_grad = shifted_gradient_factor * shifted_gradient[i] / (hs * hs);
+  T shift_grad = shifted_gradient_factor * shifted_gradient[i] / (hs * hs);  
+#endif
   // First, compute the hessian approximation via finite differences.
   T hess = dh == 0 ? 0 : fabs ( (grad - shift_grad) / dh );
   // Now update the accumulators.
@@ -161,8 +171,12 @@ __kernel void accumulateRmspropOnlineBuffers(
     ) {
   unsigned int i = get_global_id(0);
   T h = bandwidth[i];
-  // Now scale the gradient and the shifted gradient.
+  // Now scale the gradient
+#ifndef LOG_BANDWIDTH
+  T grad = gradient_factor * gradient[i] / (h *log(h) * log(h));
+#else
   T grad = gradient_factor * gradient[i] / (h * h);
+#endif
   gradient_accumulator[i] += grad;
 }
 
@@ -195,8 +209,11 @@ __kernel void updateRmspropOnlineEstimate(
   //Rmsprop scales the gradient with the square root of the running squared gradient average.
   T scaled_g = g/sqrt(gs_avg);
   //Pervent negative bandwidth values by restricting bandwidth decreases
+#ifndef LOG_BANDWIDTH
   bandwidth[i] = fmax(bandwidth[i] - scaled_g*lr,((T)0.5) * bandwidth[i]);
-  
+#else
+  bandwidth[i] = fmax(bandwidth[i] - scaled_g*lr,1.0 + (bandwidth[i]-1.0) * 0.5);
+#endif
   //Zero out the accumulators and write to memory
   gradient_accumulator[i] = 0;
   last_gradient[i] = g;
@@ -265,7 +282,11 @@ __kernel void updateVsgdOnlineEstimate(
 
   // Update the bandwidth.
   T b = bandwidth[i] - learning_boost_rate * learning_rate * g;
+#ifndef LOG_BANDWIDTH
   b = max((T)1e-10, b);   // Never allow negative bandwidths.
+#else
+  b = max((T)1+1e-10, b);   // Never allow bandwidths <= 1.
+#endif
   bandwidth[i] = b;
 
   // Write back all running estimates.

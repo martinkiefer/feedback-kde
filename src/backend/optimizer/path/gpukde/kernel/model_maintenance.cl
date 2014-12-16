@@ -22,47 +22,88 @@ __kernel void applyGradient(
 
 // KERNELS FOR BATCH GRADIENT COMPUTATION
 
-#define BATCH_GRADIENT_COMMON()                                             \
-  if (get_global_id(0) >= nr_of_observations) return;                       \
-  /* Initialize the scratch spaces. */                                      \
-  for (unsigned int i=0; i<D; ++i) {                                        \
-    lower_bound_scratch[D * get_local_id(0) + i] =                          \
-        ranges[2 * (D * get_global_id(0) + i)];                             \
-    upper_bound_scratch[D*get_local_id(0) + i] =                            \
-        ranges[2 * (D * get_global_id(0) + i) + 1];                         \
-    gradient_scratch[D * get_local_id(0) + i] = 0;                          \
-  }                                                                         \
-  T estimate = 0;                                                           \
-  /* Iterate over all sample points. */                                     \
-  for (unsigned int i=0; i<nr_of_data_points; ++i) {                        \
-    /* Compute the local contributions from this data point. */             \
-    T local_contribution = 1.0;                                             \
-    T local_gradient[D];                                                    \
-    for (unsigned int j=0; j<D; ++j) {                                      \
-      local_gradient[j] = 1.0;                                              \
-    }                                                                       \
-    for (unsigned int j=0; j<D; ++j) {                                      \
-      T val = data[D*i + j];                                                \
-      T h = bandwidth[j];                                                   \
-      T lo = lower_bound_scratch[D*get_local_id(0) + j] - val;              \
-      T hi = upper_bound_scratch[D*get_local_id(0) + j] - val;              \
-      T factor1  = isinf(lo) ? 0 : lo * exp((T)-1.0 * lo * lo / (2*h*h));   \
-        factor1 -= isinf(hi) ? 0 : hi * exp((T)-1.0 * hi * hi / (2*h*h));   \
-      T factor2 = erf(hi / (M_SQRT2 * h)) - erf(lo / (M_SQRT2 * h));        \
-      local_contribution *= factor2;                                        \
-      for (unsigned int k=0; k<D; ++k) {                                    \
-        local_gradient[k] *= (k==j) ? factor1 : factor2;                    \
-      }                                                                     \
-    }                                                                       \
-    estimate += local_contribution;                                         \
-    for (unsigned int j=0; j<D; ++j) {                                      \
-      gradient_scratch[D * get_local_id(0) + j] += local_gradient[j];       \
-    }                                                                       \
-  }                                                                         \
-  estimate /= pow((T)2.0, D) * nr_of_data_points;                           \
-  T expected = observations[get_global_id(0)];                              \
-
-
+#ifndef LOG_BANDWIDTH                                                                                                    
+  #define BATCH_GRADIENT_COMMON()                                             \
+    if (get_global_id(0) >= nr_of_observations) return;                       \
+    /* Initialize the scratch spaces. */                                      \
+    for (unsigned int i=0; i<D; ++i) {                                        \
+      lower_bound_scratch[D * get_local_id(0) + i] =                          \
+	  ranges[2 * (D * get_global_id(0) + i)];                             \
+      upper_bound_scratch[D*get_local_id(0) + i] =                            \
+	  ranges[2 * (D * get_global_id(0) + i) + 1];                         \
+      gradient_scratch[D * get_local_id(0) + i] = 0;                          \
+    }                                                                         \
+    T estimate = 0;                                                           \
+    /* Iterate over all sample points. */                                     \
+    for (unsigned int i=0; i<nr_of_data_points; ++i) {                        \
+      /* Compute the local contributions from this data point. */             \
+      T local_contribution = 1.0;                                             \
+      T local_gradient[D];                                                    \
+      for (unsigned int j=0; j<D; ++j) {                                      \
+	local_gradient[j] = 1.0;                                              \
+      }                                                                       \
+      for (unsigned int j=0; j<D; ++j) {                                      \
+	T val = data[D*i + j];                                                \
+	T h = bandwidth[j];                                                   \
+	T lo = lower_bound_scratch[D*get_local_id(0) + j] - val;              \
+	T hi = upper_bound_scratch[D*get_local_id(0) + j] - val;              \
+	T factor1  = isinf(lo) ? 0 : lo * exp((T)-1.0 * lo * lo / (2*h*h));   \
+	  factor1 -= isinf(hi) ? 0 : hi * exp((T)-1.0 * hi * hi / (2*h*h));   \
+	T factor2 = erf(hi / (M_SQRT2 * h)) - erf(lo / (M_SQRT2 * h));        \
+	local_contribution *= factor2;                                        \
+	for (unsigned int k=0; k<D; ++k) {                                    \
+	  local_gradient[k] *= (k==j) ? factor1 : factor2;                    \
+	}                                                                     \
+      }                                                                       \
+      estimate += local_contribution;                                         \
+      for (unsigned int j=0; j<D; ++j) {                                      \
+	gradient_scratch[D * get_local_id(0) + j] += local_gradient[j];       \
+      }                                                                       \
+    }                                                                         \
+    estimate /= pow((T)2.0, D) * nr_of_data_points;                           \
+    T expected = observations[get_global_id(0)];                              
+#else
+  #define BATCH_GRADIENT_COMMON()                                             \
+    if (get_global_id(0) >= nr_of_observations) return;                       \
+    /* Initialize the scratch spaces. */                                      \
+    for (unsigned int i=0; i<D; ++i) {                                        \
+      lower_bound_scratch[D * get_local_id(0) + i] =                          \
+	  ranges[2 * (D * get_global_id(0) + i)];                             \
+      upper_bound_scratch[D*get_local_id(0) + i] =                            \
+	  ranges[2 * (D * get_global_id(0) + i) + 1];                         \
+      gradient_scratch[D * get_local_id(0) + i] = 0;                          \
+    }                                                                         \
+    T estimate = 0;                                                           \
+    /* Iterate over all sample points. */                                     \
+    for (unsigned int i=0; i<nr_of_data_points; ++i) {                        \
+      /* Compute the local contributions from this data point. */             \
+      T local_contribution = 1.0;                                             \
+      T local_gradient[D];                                                    \
+      for (unsigned int j=0; j<D; ++j) {                                      \
+	local_gradient[j] = 1.0;                                              \
+      }                                                                       \
+      for (unsigned int j=0; j<D; ++j) {                                      \
+	T val = data[D*i + j];                                                \
+	T h = bandwidth[j];                                                   \
+	T lo = lower_bound_scratch[D*get_local_id(0) + j] - val;              \
+	T hi = upper_bound_scratch[D*get_local_id(0) + j] - val;              \
+	T factor1  = isinf(lo) ? 0 : lo * exp((T)-1.0 * lo * lo / (2*log(h)*log(h)));   \
+	  factor1 -= isinf(hi) ? 0 : hi * exp((T)-1.0 * hi * hi / (2*log(h)*log(h)));   \
+	T factor2 = erf(hi / (M_SQRT2 * log(h))) - erf(lo / (M_SQRT2 * log(h)));        \
+	local_contribution *= factor2;                                        \
+	for (unsigned int k=0; k<D; ++k) {                                    \
+	  local_gradient[k] *= (k==j) ? factor1 : factor2;                    \
+	}                                                                     \
+      }                                                                       \
+      estimate += local_contribution;                                         \
+      for (unsigned int j=0; j<D; ++j) {                                      \
+	gradient_scratch[D * get_local_id(0) + j] += local_gradient[j];       \
+      }                                                                       \
+    }                                                                         \
+    estimate /= pow((T)2.0, D) * nr_of_data_points;                           \
+    T expected = observations[get_global_id(0)];                                                                                                              
+#endif
+    
 __kernel void computeBatchGradientAbsolute(
     __global T* data,
     unsigned int nr_of_data_points,
