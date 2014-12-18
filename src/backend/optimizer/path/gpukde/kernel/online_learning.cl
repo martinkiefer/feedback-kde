@@ -37,7 +37,9 @@ __kernel void computePartialGradient(
     T val = data[D*get_global_id(0) + i];
     T h = bandwidth[i];
     if (running_gradient_average) h += running_gradient_average[i];
+#ifndef LOG_BANDWIDTH
     h = h <= 0 ? 1e-10 : h; // Cap H to positive values.
+#endif
     T lo = range[2*i] - val;
     T hi = range[2*i + 1] - val;
 #ifndef LOG_BANDWIDTH
@@ -45,8 +47,8 @@ __kernel void computePartialGradient(
     factor1  -= isinf(hi) ? 0 : hi * exp((T)-1.0 * hi * hi / (2*h*h));
     T factor2 = erf(hi / (M_SQRT2 * h)) - erf(lo / (M_SQRT2 * h));
 #else
-    T factor1 = isinf(lo) ? 0 : lo * exp((T)-1.0 * lo * lo / (2*exp(h)*exp(h)));
-    factor1  -= isinf(hi) ? 0 : hi * exp((T)-1.0 * hi * hi / (2*exp(h)*exp(h)));
+    T factor1 = isinf(lo) ? 0 : lo * exp((T)-1.0 * lo * lo / (2*exp(2*h)));
+    factor1  -= isinf(hi) ? 0 : hi * exp((T)-1.0 * hi * hi / (2*exp(2*h)));
     T factor2 = erf(hi / (M_SQRT2 * exp(h))) - erf(lo / (M_SQRT2 * exp(h)));
 #endif
     local_result *= factor2;
@@ -211,7 +213,10 @@ __kernel void updateRmspropOnlineEstimate(
   //Pervent negative bandwidth values by restricting bandwidth decreases
 #ifndef LOG_BANDWIDTH
   bandwidth[i] = fmax(bandwidth[i] - scaled_g*lr,((T)0.5) * bandwidth[i]);
+#else
+  bandwidth[i] = bandwidth[i] - scaled_g*lr;
 #endif
+  
   //Zero out the accumulators and write to memory
   gradient_accumulator[i] = 0;
   last_gradient[i] = g;
