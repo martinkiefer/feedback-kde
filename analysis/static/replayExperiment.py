@@ -169,7 +169,7 @@ elif (args.model == "kde_adaptive_vsgd"):
     createModel(table, dimensions, sample_filename)
 
 # Run the training workload.
-train_queries = 0
+trainqueries = 0
 if (args.model == "kde_batch" or args.model == "kde_adaptive_vsgd" or args.model == "kde_adaptive_rmsprop"):
   with open(trainworkload_filename) as myfile:
     trainqueries = sum(1 for line in myfile)
@@ -276,7 +276,7 @@ if args.log:
    f = open(args.log, "a+")
    if os.path.getsize(args.log) == 0:
        f.write("Dataset;Dimension;Workload;Selectivity;Model;ModelSize;Trainingsize;Errortype;Error\n")
-   f.write("%s;%i;%s;%s;%s;%i;%i;%s;%f\n" % ('"', '"', '"', '"', args.model, modelsize, trainqueries, errortype, error))
+   f.write("%s;%s;%s;%s;%s;%i;%i;%s;%f\n" % ('"', '"', '"', '"', args.model, modelsize, trainqueries, col_errortype, error))
    f.close()
 else:
    print "Measured error: %f" % error 
