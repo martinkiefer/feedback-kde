@@ -314,4 +314,3 @@ print "done!"
 
 if args.record:
    wf.close()
-   raw_input("Press Enter to continue.")
