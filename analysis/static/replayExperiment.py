@@ -73,6 +73,7 @@ parser.add_argument("--test_workload", action="store", help="File containing the
 parser.add_argument("--gpu", action="store_true", help="Use the graphics card for the experiment.")
 parser.add_argument("--debug", action="store_true", help="Run in debug mode.")
 parser.add_argument("--log", action="store", help="Where to append the experimental results?")
+parser.add_argument("--logbw", action="store_true", help="Use logarithmic bandwidth representation.")
 args = parser.parse_args()
 
 # Set the input file names.
@@ -145,6 +146,9 @@ else:
     if not args.gpu:
       cur.execute("SET ocl_use_gpu TO false;")
     cur.execute("SET kde_enable TO true;")
+
+if args.logbw:
+    cur.execute("SET kde_bandwidth_representation TO Log;")
 
 # Initialize the training phase.
 if (args.model == "kde_batch"):
