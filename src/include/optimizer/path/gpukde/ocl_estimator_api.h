@@ -69,6 +69,15 @@ typedef enum sample_maintenance_query_options {
   THRESHOLD = 2, 	//Replace a sample point when it reaches a certain threshold
 } ocl_sample_maintenance_query_options_t;
 
+typedef enum sample_maintenance_options {
+  //Insert driven methods
+  NONE = 0,
+  CAR = 1,		//Correlated Acceptance Rejection Sampling
+  PRP = 2,		//Periodic Random Replacement - Replace a random sample point every N changes to the data
+  TKR = 3,		//Triggered Karma Replacement - Replace sample points above a given Karma threshold
+  PKR = 4		//Periodic Karma Replacement - Replace the sample points with the worst Karma every N queries.
+} ocl_sample_maintenance_options_t;
+
 typedef enum optimizatin_algorithms{
     VSGD_FD = 0,
     RMSPROP = 1

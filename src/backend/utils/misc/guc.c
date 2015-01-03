@@ -193,21 +193,16 @@ static const struct config_enum_entry kde_bandwidth_representation_options[] = {
 };
 extern int kde_bandwidth_representation;
 
-static const struct config_enum_entry kde_sample_maintenance_insert_options[] = {
-  {"None", NONE_I, false},
-  {"Reservoir", RESERVOIR, false},
-  {"Random", RANDOM, false},
+static const struct config_enum_entry kde_sample_maintenance_options[] = {
+  {"None", NONE, false},
+  {"CAR", CAR, false},
+  {"PRP", PRP, false},
+  {"TKR", TKR, false},
+  {"PKR", PKR, false},
   {NULL, 0, false},
 };
 
-static const struct config_enum_entry kde_sample_maintenance_query_options[] = {
-  {"None", NONE_Q, false},
-  {"Threshold", THRESHOLD, false},
-  {"Periodic", PERIODIC, false},
-  {NULL, 0, false},
-};
-extern int kde_sample_maintenance_insert_option;
-extern int kde_sample_maintenance_query_option;
+extern int kde_sample_maintenance_option;
 #endif /* USE_OPENCL */
 
 #ifdef TRACE_SORT
@@ -3623,21 +3618,12 @@ static struct config_enum ConfigureNamesEnum[] =
     NULL, NULL, NULL
   },
   {
-    {"kde_sample_maintenance_insert_propagation", PGC_USERSET, DEVELOPER_OPTIONS,
-      gettext_noop("Sets the method for maintaining sample quality after insertions."),
+    {"kde_sample_maintenance", PGC_USERSET, DEVELOPER_OPTIONS,
+      gettext_noop("Sets the method for maintaining sample quality."),
       NULL
     },
-    &kde_sample_maintenance_insert_option,
-    NONE_I, kde_sample_maintenance_insert_options,
-    NULL, NULL, NULL
-  },
-  {
-    {"kde_sample_maintenance_query_propagation", PGC_USERSET, DEVELOPER_OPTIONS,
-      gettext_noop("Sets the method for maintaining sample quality after queries."),
-      NULL
-    },
-    &kde_sample_maintenance_query_option,
-    NONE_Q, kde_sample_maintenance_query_options,
+    &kde_sample_maintenance_option,
+    NONE, kde_sample_maintenance_options,
     NULL, NULL, NULL
   },
 #endif

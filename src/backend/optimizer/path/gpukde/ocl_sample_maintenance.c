@@ -74,6 +74,7 @@ double kde_sample_maintenance_contribution_decay;
 bool kde_sample_maintenance_track_impact;
 bool kde_sample_maintenance_track_karma;
 int kde_sample_maintenance_period;
+int kde_sample_maintenance_option;
 int kde_sample_maintenance_insert_option;
 int kde_sample_maintenance_query_option;
 
