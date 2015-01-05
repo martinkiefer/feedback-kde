@@ -187,38 +187,47 @@ static unsigned int *getMinPenaltyIndexBelowThreshold(
   return NULL; 
 }
 
+//Efficient implementation of drawing from a binomial distribution for p*n small.
+static int getBinomial(int n, double p) {
+   double log_q = log(1.0 - p);
+   int x = 0;
+   double sum = 0;
+   for(;;) {
+      sum += log((double) random() / (double) (RAND_MAX - 1) ) / (n - x);
+      if(sum < log_q) {
+         return x;
+      }
+      x++;
+   }
+}
+
 void ocl_notifySampleMaintenanceOfInsertion(Relation rel, HeapTuple new_tuple) {
   // Check whether we have a table for this relation.
   ocl_estimator_t* estimator = ocl_getEstimator(rel->rd_id);
   ocl_context_t * ctxt = ocl_getContext();
-
+  int i = 0;
+  
   if (estimator == NULL) return;
   estimator->rows_in_table++;
-  if (! kde_sample_maintenance_insert_option) return;
+  if (! kde_sample_maintenance_option) return;
   int insert_position = -1;
   
   // First, check whether we still have size in the sample.
   if (estimator->rows_in_sample < ocl_maxRowsInSample(estimator)) {
     insert_position = estimator->rows_in_sample++;
-  } else if (kde_sample_maintenance_insert_option == RESERVOIR) {
-    // The sample is full, use reservoir sampling.
-    unsigned int rnd = random() % estimator->rows_in_table;
-    if (rnd >= estimator->rows_in_sample) return;
-    insert_position = rnd;
-  } else if(kde_sample_maintenance_insert_option == RANDOM) {
-    //TODO: This is not the best idea.
-    //Think of something more flexible and clever.
-    // The sample is full, use random sampling
-    unsigned int rnd = random() % estimator->rows_in_table;
-    if (rnd > estimator->rows_in_sample) return;
-    insert_position = getMinPenaltyIndex(ctxt, estimator);
+  } else if (kde_sample_maintenance_option == CAR) {
+    // The sample is full, use CAR.
+    int replacements = getBinomial(estimator->rows_in_sample, 1.0 / estimator->rows_in_table);
+    if(replacements > 0){
+      kde_float_t* item = palloc(ocl_sizeOfSampleItem(estimator));
+      ocl_extractSampleTuple(estimator, rel, new_tuple, item);
+      for(i=0; i < replacements; i++){
+	unsigned int pos = random() % estimator->rows_in_sample;
+	ocl_pushEntryToSampleBufer(estimator, pos, item);
+      }
+      pfree(item);
+    }
   }
-
-  // Finally, extract the item and send it to the sample.
-  kde_float_t* item = palloc(ocl_sizeOfSampleItem(estimator));
-  ocl_extractSampleTuple(estimator, rel, new_tuple, item);
-  ocl_pushEntryToSampleBufer(estimator, insert_position, item);
-  pfree(item);
 }
 
 void ocl_notifySampleMaintenanceOfDeletion(Relation rel) {
