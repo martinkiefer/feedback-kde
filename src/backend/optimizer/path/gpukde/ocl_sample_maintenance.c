@@ -39,12 +39,7 @@ void ocl_allocateSampleMaintenanceBuffers(ocl_estimator_t* estimator) {
   descriptor->sample_karma_buffer = clCreateBuffer(
       context->context, CL_MEM_READ_WRITE,
       sizeof(kde_float_t) * estimator->rows_in_sample, NULL, &err);
-  Assert(err == CL_SUCCESS);
-  
-  descriptor->sample_contribution_buffer = clCreateBuffer(
-      context->context, CL_MEM_READ_WRITE,
-      sizeof(kde_float_t) * estimator->rows_in_sample, NULL, &err);
-  Assert(err == CL_SUCCESS);
+  Assert(err == CL_SUCCESS);  
   
   // Register the descriptor in the estimator.
   estimator->sample_optimization = descriptor;
@@ -58,10 +53,7 @@ void ocl_releaseSampleMaintenanceBuffers(ocl_estimator_t* estimator) {
       err = clReleaseMemObject(descriptor->sample_karma_buffer);
       Assert(err == CL_SUCCESS);
     }
-    if (descriptor->sample_contribution_buffer) {
-      clReleaseMemObject(descriptor->sample_contribution_buffer);
-      Assert(err == CL_SUCCESS);
-    }
+
     free(estimator->sample_optimization);
   }
 }
@@ -69,32 +61,9 @@ void ocl_releaseSampleMaintenanceBuffers(ocl_estimator_t* estimator) {
 // GUC configuration variable.
 double kde_sample_maintenance_threshold;
 double kde_sample_maintenance_karma_decay;
-double kde_sample_maintenance_contribution_decay;
 
-bool kde_sample_maintenance_track_impact;
-bool kde_sample_maintenance_track_karma;
 int kde_sample_maintenance_period;
 int kde_sample_maintenance_option;
-int kde_sample_maintenance_query_option;
-
-const double sample_match_learning_rate = 0.02f;
-
-static cl_mem getBufferForNextMetric(ocl_estimator_t* estimator) {
-  // Switch to the next sample maintenance metric.
-  if (kde_sample_maintenance_track_impact &&
-      estimator->sample_optimization->last_optimized_sample_metric != IMPACT) {
-    estimator->sample_optimization->last_optimized_sample_metric = IMPACT;
-  } else if (kde_sample_maintenance_track_karma &&
-      estimator->sample_optimization->last_optimized_sample_metric != KARMA) {
-    estimator->sample_optimization->last_optimized_sample_metric = KARMA;
-  }
-  // Now return the buffer for the chosen metric.
-  if (estimator->sample_optimization->last_optimized_sample_metric == IMPACT) {
-    return estimator->sample_optimization->sample_contribution_buffer;
-  } else {
-    return estimator->sample_optimization->sample_karma_buffer;
-  }
-}
 
 //Convenience method for retrieving the index of the smallest element
 static int getMinPenaltyIndex(
@@ -113,9 +82,8 @@ static int getMinPenaltyIndex(
           sizeof(kde_float_t), NULL, &err);
   
   // Now fetch the minimum penalty.
-  cl_mem target_metric_buffer = getBufferForNextMetric(estimator);
   event = minOfArray(
-      target_metric_buffer, estimator->rows_in_sample,
+      estimator->sample_optimization->sample_karma_buffer, estimator->rows_in_sample,
       min_val, min_idx, 0, NULL);
   err |= clEnqueueReadBuffer(
       ctxt->queue, min_idx, CL_TRUE, 0, sizeof(unsigned int),
@@ -131,11 +99,7 @@ static int getMinPenaltyIndex(
   err |= clReleaseMemObject(min_idx);
   err |= clReleaseMemObject(min_val);
 
-  if (val < 0.1) {
-    return index;
-  } else {
-    return -1;
-  }
+  return index;
 }
 
 // Helper method to get the minimum index below a certain threshold.
@@ -200,14 +164,43 @@ static int getBinomial(int n, double p) {
    }
 }
 
+static void trigger_periodic_random_replacement(ocl_estimator_t* estimator){
+  if (kde_sample_maintenance_option == PRP &&
+      estimator->sample_optimization->nr_of_insertions + estimator->sample_optimization->nr_of_deletions % kde_sample_maintenance_period == 0 ){
+    kde_float_t* item;
+
+    HeapTuple sample_point;
+    double total_rows;
+    
+    int insert_position = random() % estimator->rows_in_sample;
+    if (insert_position >= 0) {
+      Relation onerel = try_relation_open(
+          estimator->table, ShareUpdateExclusiveLock);
+      // This often prevents Postgres from sampling.
+      /*if (ocl_isSafeToSample(onerel,(double) estimator->rows_in_table)) {
+        relation_close(onerel, ShareUpdateExclusiveLock);
+        return;
+      }*/
+      item = palloc(ocl_sizeOfSampleItem(estimator));
+      ocl_createSample(onerel,&sample_point,&total_rows,1);
+      ocl_extractSampleTuple(estimator, onerel, sample_point,item);
+      ocl_pushEntryToSampleBufer(estimator, insert_position, item);
+      heap_freetuple(sample_point);
+      pfree(item);
+      relation_close(onerel, ShareUpdateExclusiveLock);
+    }
+  }
+}
+
 void ocl_notifySampleMaintenanceOfInsertion(Relation rel, HeapTuple new_tuple) {
   // Check whether we have a table for this relation.
   ocl_estimator_t* estimator = ocl_getEstimator(rel->rd_id);
-  ocl_context_t * ctxt = ocl_getContext();
   int i = 0;
   
   if (estimator == NULL) return;
   estimator->rows_in_table++;
+  estimator->sample_optimization->nr_of_insertions++;
+  
   if (! kde_sample_maintenance_option) return;
   int insert_position = -1;
   
@@ -227,6 +220,9 @@ void ocl_notifySampleMaintenanceOfInsertion(Relation rel, HeapTuple new_tuple) {
       pfree(item);
     }
   }
+  else if(kde_sample_maintenance_option == PRP){
+    trigger_periodic_random_replacement(estimator);
+  }  
 }
 
 void ocl_notifySampleMaintenanceOfDeletion(Relation rel) {
@@ -234,6 +230,10 @@ void ocl_notifySampleMaintenanceOfDeletion(Relation rel) {
   if (estimator == NULL) return;
   // For now, we just use this to update the table counts.
   estimator->rows_in_table--;
+  estimator->sample_optimization->nr_of_deletions++;
+  if(kde_sample_maintenance_option == PRP){
+    trigger_periodic_random_replacement(estimator);
+  }
 }
 
 static unsigned int min_tuple_size(TupleDesc desc){
@@ -438,19 +438,15 @@ void ocl_notifySampleMaintenanceOfSelectivity(
   err |= clSetKernelArg(
       kernel, 1, sizeof(cl_mem), &(estimator->sample_optimization->sample_karma_buffer));
   err |= clSetKernelArg(
-      kernel, 2, sizeof(cl_mem), &(estimator->sample_optimization->sample_contribution_buffer));
+      kernel, 2, sizeof(unsigned int), &(estimator->rows_in_sample));
   err |= clSetKernelArg(
-      kernel, 3, sizeof(unsigned int), &(estimator->rows_in_sample));
+      kernel, 3, sizeof(kde_float_t), &(normalization_factor));
   err |= clSetKernelArg(
-      kernel, 4, sizeof(kde_float_t), &(normalization_factor));
+      kernel, 4, sizeof(double), &(estimator->last_selectivity));
   err |= clSetKernelArg(
-      kernel, 5, sizeof(double), &(estimator->last_selectivity));
+      kernel, 5, sizeof(double), &(actual_selectivity));
   err |= clSetKernelArg(
-      kernel, 6, sizeof(double), &(actual_selectivity));
-  err |= clSetKernelArg(
-      kernel, 7, sizeof(double), &(kde_sample_maintenance_karma_decay));
-  err |= clSetKernelArg(
-      kernel, 8, sizeof(double), &(kde_sample_maintenance_contribution_decay));
+      kernel, 6, sizeof(double), &(kde_sample_maintenance_karma_decay));
   Assert(err == CL_SUCCESS);
   
   err = clEnqueueNDRangeKernel(
@@ -458,7 +454,7 @@ void ocl_notifySampleMaintenanceOfSelectivity(
       NULL, 0, NULL, &quality_update_event);
   Assert(err == CL_SUCCESS);
 
-  if (kde_sample_maintenance_query_option == THRESHOLD) {
+  if (kde_sample_maintenance_option == TKR) {
     //It might be more efficient to first determine the number of elements to replace
     //and then create a random sample with sufficient size. Maybe later.
     unsigned int *insert_position = getMinPenaltyIndexBelowThreshold(
@@ -481,6 +477,7 @@ void ocl_notifySampleMaintenanceOfSelectivity(
       insert_position = NULL;
     }
     
+    
     while (insert_position != NULL) {
       ocl_createSample(onerel, &sample_point, &total_rows, 1);
       ocl_extractSampleTuple(estimator, onerel, sample_point,item);
@@ -492,7 +489,8 @@ void ocl_notifySampleMaintenanceOfSelectivity(
     }
     pfree(item); 
     relation_close(onerel, ShareUpdateExclusiveLock);
-  } else if (kde_sample_maintenance_query_option == PERIODIC &&
+  }
+  else if (kde_sample_maintenance_option == PKR &&
       estimator->nr_of_estimations % kde_sample_maintenance_period == 0 ){
     kde_float_t* item;
 
@@ -517,5 +515,5 @@ void ocl_notifySampleMaintenanceOfSelectivity(
       relation_close(onerel, ShareUpdateExclusiveLock);
     }
   }
-}
+}  
 #endif
