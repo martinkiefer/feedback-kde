@@ -189,9 +189,9 @@ static unsigned int *getMinPenaltyIndexBelowThreshold(
 void ocl_notifySampleMaintenanceOfInsertion(Relation rel, HeapTuple new_tuple) {
   // Check whether we have a table for this relation.
   ocl_estimator_t* estimator = ocl_getEstimator(rel->rd_id);
-  ocl_context_t * ctxt = ocl_getContext();
-
   if (estimator == NULL) return;
+
+  ocl_context_t * ctxt = ocl_getContext();
   estimator->rows_in_table++;
   if (! kde_sample_maintenance_insert_option) return;
   int insert_position = -1;
