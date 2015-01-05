@@ -51,17 +51,6 @@ typedef enum error_metrics {
   SQUARED_RELATIVE = 4,
 } ocl_error_metrics_t;
 
-/*
- * Enum definition to select a possible error metric that should be optimized.
- */
-typedef enum sample_maintenance_insert_options {
-  //Insert driven methods
-  NONE_I = 0,
-  RESERVOIR = 1, 	//Plain reservoir sampling
-  RANDOM = 2,		//Replaces the worst sample point with probability 1/number of tuples
-} ocl_sample_maintenance_insert_options_t;
-
-
 typedef enum sample_maintenance_query_options {
   //Query driven methods
   NONE_Q = 0,

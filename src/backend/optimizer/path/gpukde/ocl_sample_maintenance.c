@@ -75,7 +75,6 @@ bool kde_sample_maintenance_track_impact;
 bool kde_sample_maintenance_track_karma;
 int kde_sample_maintenance_period;
 int kde_sample_maintenance_option;
-int kde_sample_maintenance_insert_option;
 int kde_sample_maintenance_query_option;
 
 const double sample_match_learning_rate = 0.02f;
@@ -222,8 +221,8 @@ void ocl_notifySampleMaintenanceOfInsertion(Relation rel, HeapTuple new_tuple) {
       kde_float_t* item = palloc(ocl_sizeOfSampleItem(estimator));
       ocl_extractSampleTuple(estimator, rel, new_tuple, item);
       for(i=0; i < replacements; i++){
-	unsigned int pos = random() % estimator->rows_in_sample;
-	ocl_pushEntryToSampleBufer(estimator, pos, item);
+	insert_position = random() % estimator->rows_in_sample;
+	ocl_pushEntryToSampleBufer(estimator, insert_position, item);
       }
       pfree(item);
     }
