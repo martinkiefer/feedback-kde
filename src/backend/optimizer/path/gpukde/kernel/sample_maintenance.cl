@@ -8,10 +8,9 @@
   #endif
   #define TYPE_DEFINED_
 #endif /* TYPE_DEFINED */
-
-// 
+   
 __kernel void update_sample_quality_metrics(
-    __global const T* local_results,
+    __global const T* const local_results,
     __global T* karma,
     unsigned int sample_size,
     T normalization_factor,
@@ -36,4 +35,29 @@ __kernel void update_sample_quality_metrics(
   // Now update the array
   karma[get_global_id(0)] *= karma_decay;
   karma[get_global_id(0)] += (1 - karma_decay) * local_karma;
+}
+
+__kernel void get_point_deletion_hitmap(
+    __global const T* const data,
+    __constant const T* const point,
+    __global char* const hitmap
+  ) {
+  char hit = 1;
+  size_t id = get_global_id(0); 
+  
+  for(unsigned int i = 0; i < D; i++){
+    if(data[id*D+i] != point[i]){
+      hit = 0;
+    }
+  }
+  
+  hitmap[get_global_id(0)] = hit;
+}
+
+__kernel void get_karma_threshold_hitmap(
+    __global const T* const karma,
+    const T threshold,
+    __global char* const hitmap
+  ) {
+  hitmap[get_global_id(0)] = karma[get_global_id(0)] < threshold;
 }
