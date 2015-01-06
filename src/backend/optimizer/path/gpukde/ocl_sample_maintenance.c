@@ -466,39 +466,42 @@ void ocl_notifySampleMaintenanceOfSelectivity(
   if (kde_sample_maintenance_option == TKR) {
     //It might be more efficient to first determine the number of elements to replace
     //and then create a random sample with sufficient size. Maybe later.
+    unsigned int i = 0;
+    cl_event hitmap_event;
+    char* hitmap = (char*) palloc(global_size*sizeof(char));
+    
     cl_kernel kernel = ocl_getKernel(
       "get_karma_threshold_hitmap", estimator->nr_of_dimensions);
-      
-    unsigned int *insert_position = getMinPenaltyIndexBelowThreshold(
-        ctxt, estimator, kde_sample_maintenance_threshold,
-        quality_update_event);
+    err |= clSetKernelArg(
+      kernel, 0, sizeof(cl_mem), &(estimator->sample_optimization->sample_karma_buffer));
+    err |= clSetKernelArg(
+      kernel, 1, sizeof(kde_float_t), &kde_sample_maintenance_threshold);
+    err |= clSetKernelArg(
+      kernel, 2, sizeof(cl_mem), &(estimator->sample_optimization->sample_hitmap));    
+    err = clEnqueueNDRangeKernel(
+      ctxt->queue, kernel, 1, NULL, &global_size,
+      NULL, 1, &quality_update_event, &hitmap_event);
+    Assert(err == CL_SUCCESS);
     
-    if (insert_position == NULL) return;
+    err |= clEnqueueReadBuffer(
+      ctxt->queue, estimator->sample_optimization->sample_hitmap, CL_TRUE, 0, sizeof(char) * global_size,
+      hitmap, 1, &hitmap_event, NULL);
     
-    //We have got work todo. Get structures to obtain random rows.
+        //We have got work todo. Get structures to obtain random rows.
     kde_float_t* item = palloc(ocl_sizeOfSampleItem(estimator));
     HeapTuple sample_point;
     
     double total_rows;
     Relation onerel = try_relation_open(estimator->table, ShareUpdateExclusiveLock);
     
-    //If the table is in a bad condition, we won't do anything.
-    if (insert_position != NULL &&
-        ocl_isSafeToSample(onerel,(double) estimator->rows_in_table)){
-      pfree(insert_position);
-      insert_position = NULL;
-    }
-    
-    
-    while (insert_position != NULL) {
-      ocl_createSample(onerel, &sample_point, &total_rows, 1);
-      ocl_extractSampleTuple(estimator, onerel, sample_point,item);
-      ocl_pushEntryToSampleBufer(estimator, *insert_position, item);
-      pfree(insert_position);
-      heap_freetuple(sample_point);
-      insert_position = getMinPenaltyIndexBelowThreshold(
-          ctxt, estimator, kde_sample_maintenance_threshold*-1, NULL);
-    }
+    for(i=0; i < global_size; i++){
+      if(hitmap[i]){
+	ocl_createSample(onerel, &sample_point, &total_rows, 1);
+	ocl_extractSampleTuple(estimator, onerel, sample_point,item);
+	ocl_pushEntryToSampleBufer(estimator, i, item);
+	heap_freetuple(sample_point);	
+      }
+    }  
     pfree(item); 
     relation_close(onerel, ShareUpdateExclusiveLock);
   }
