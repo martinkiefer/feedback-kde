@@ -10,6 +10,8 @@
 
 typedef struct ocl_sample_optimization {
   cl_mem sample_karma_buffer;     // Buffer to track the karma of the sample points.
+  cl_mem sample_hitmap;		  // Buffer to identify qualifying sample points
+  
   unsigned long nr_of_deletions;
   unsigned long nr_of_insertions;
 } ocl_sample_optimization_t;

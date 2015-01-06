@@ -41,6 +41,11 @@ void ocl_allocateSampleMaintenanceBuffers(ocl_estimator_t* estimator) {
       sizeof(kde_float_t) * estimator->rows_in_sample, NULL, &err);
   Assert(err == CL_SUCCESS);  
   
+  descriptor->sample_hitmap = clCreateBuffer(
+      context->context, CL_MEM_READ_WRITE,
+      sizeof(char) * estimator->rows_in_sample, NULL, &err);
+  Assert(err == CL_SUCCESS);  
+    
   // Register the descriptor in the estimator.
   estimator->sample_optimization = descriptor;
 }
@@ -51,6 +56,10 @@ void ocl_releaseSampleMaintenanceBuffers(ocl_estimator_t* estimator) {
     ocl_sample_optimization_t* descriptor = estimator->sample_optimization;
     if (descriptor->sample_karma_buffer) {
       err = clReleaseMemObject(descriptor->sample_karma_buffer);
+      Assert(err == CL_SUCCESS);
+    }
+    if (descriptor->sample_hitmap) {
+      err = clReleaseMemObject(descriptor->sample_hitmap);
       Assert(err == CL_SUCCESS);
     }
 
@@ -457,6 +466,9 @@ void ocl_notifySampleMaintenanceOfSelectivity(
   if (kde_sample_maintenance_option == TKR) {
     //It might be more efficient to first determine the number of elements to replace
     //and then create a random sample with sufficient size. Maybe later.
+    cl_kernel kernel = ocl_getKernel(
+      "get_karma_threshold_hitmap", estimator->nr_of_dimensions);
+      
     unsigned int *insert_position = getMinPenaltyIndexBelowThreshold(
         ctxt, estimator, kde_sample_maintenance_threshold,
         quality_update_event);
