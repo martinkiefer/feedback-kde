@@ -328,8 +328,7 @@ ExecDelete(ItemPointer tupleid,
 	resultRelInfo = estate->es_result_relation_info;
 	resultRelationDesc = resultRelInfo->ri_RelationDesc;
 
-  ocl_notifySampleMaintenanceOfDeletion(resultRelationDesc);
-
+	ocl_notifySampleMaintenanceOfDeletion(resultRelationDesc,tupleid);
 
 	/* BEFORE ROW DELETE Triggers */
 	if (resultRelInfo->ri_TrigDesc &&
