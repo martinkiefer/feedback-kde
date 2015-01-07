@@ -230,12 +230,7 @@ static ocl_estimator_t* ocl_buildEstimatorFromCatalogEntry(
     pfree(sample_buffer);
     return NULL;
   }
-  // Read the sample contribution.
-  double* contribution_buffer = palloc(
-      sizeof(double) * estimator->rows_in_sample);
-  read_elements = fread(
-      contribution_buffer, sizeof(double),
-      estimator->rows_in_sample, file);
+
   if (read_elements != estimator->rows_in_sample) {
     fprintf(stderr, "Error reading sample from file %s\n", file_name);
     fclose(file);
@@ -251,11 +246,8 @@ static ocl_estimator_t* ocl_buildEstimatorFromCatalogEntry(
         estimator->rows_in_sample);
     kde_float_t* karma_transfer_buffer = palloc(
         sizeof(kde_float_t) * estimator->rows_in_sample);
-    kde_float_t* contribution_transfer_buffer = palloc(
-        sizeof(kde_float_t) * estimator->rows_in_sample);
     for( j=0; j < estimator->rows_in_sample; ++j){
       karma_transfer_buffer[j] = karma_buffer[j];
-      contribution_transfer_buffer[j] = contribution_buffer[j];
       for ( i=0; i<estimator->nr_of_dimensions; ++i ) {
         sample_transfer_buffer[j*estimator->nr_of_dimensions+i] =
             sample_buffer[j*estimator->nr_of_dimensions+i];
@@ -269,15 +261,10 @@ static ocl_estimator_t* ocl_buildEstimatorFromCatalogEntry(
         context->queue, estimator->sample_optimization->sample_karma_buffer,
         CL_TRUE, 0, sizeof(kde_float_t) * estimator->rows_in_sample,
         karma_transfer_buffer, 0, NULL, NULL);
-    err |= clEnqueueWriteBuffer(
-        context->queue, estimator->sample_optimization->sample_contribution_buffer,
-        CL_TRUE, 0, sizeof(kde_float_t) * estimator->rows_in_sample,
-        contribution_transfer_buffer, 0, NULL, NULL);
     Assert(err == CL_SUCCESS);
     
     pfree(sample_transfer_buffer);
     pfree(karma_transfer_buffer);
-    pfree(contribution_transfer_buffer);
   } else if (sizeof(kde_float_t) == sizeof(double)) {
     err |= clEnqueueWriteBuffer(
         context->queue, estimator->sample_buffer, CL_TRUE, 0,
@@ -287,15 +274,10 @@ static ocl_estimator_t* ocl_buildEstimatorFromCatalogEntry(
         context->queue, estimator->sample_optimization->sample_karma_buffer,
         CL_TRUE, 0, sizeof(kde_float_t) * estimator->rows_in_sample,
         karma_buffer, 0, NULL, NULL);
-    err |= clEnqueueWriteBuffer(
-        context->queue, estimator->sample_optimization->sample_contribution_buffer,
-        CL_TRUE, 0, sizeof(kde_float_t) * estimator->rows_in_sample,
-        contribution_buffer, 0, NULL, NULL);
     Assert(err == CL_SUCCESS);
   }
   pfree(sample_buffer);
   pfree(karma_buffer);
-  pfree(contribution_buffer);
   // Wait for all transfers to finish.
   clFinish(context->queue);
   // We are done.
@@ -357,8 +339,6 @@ static void ocl_updateEstimatorInCatalog(ocl_estimator_t* estimator) {
       ocl_sizeOfSampleItem(estimator) * estimator->rows_in_sample);
   kde_float_t* karma_buffer = palloc(
       sizeof(kde_float_t) * estimator->rows_in_sample);
-  kde_float_t* contribution_buffer = palloc(
-      sizeof(kde_float_t) * estimator->rows_in_sample);
   err |= clEnqueueReadBuffer(
       context->queue, estimator->sample_buffer, CL_TRUE, 0,
       ocl_sizeOfSampleItem(estimator) * estimator->rows_in_sample,
@@ -367,10 +347,6 @@ static void ocl_updateEstimatorInCatalog(ocl_estimator_t* estimator) {
       context->queue, estimator->sample_optimization->sample_karma_buffer,
       CL_TRUE, 0, sizeof(kde_float_t) * estimator->rows_in_sample,
       karma_buffer, 0, NULL, NULL);
-  err |= clEnqueueReadBuffer(
-      context->queue, estimator->sample_optimization->sample_contribution_buffer,
-      CL_TRUE, 0, sizeof(kde_float_t) * estimator->rows_in_sample,
-      contribution_buffer, 0, NULL, NULL);
   Assert(err == CL_SUCCESS);
   // Open the sample file for this table.
   char sample_file_name[1024];
@@ -383,18 +359,13 @@ static void ocl_updateEstimatorInCatalog(ocl_estimator_t* estimator) {
            estimator->rows_in_sample, sample_file);
     fwrite(karma_buffer, sizeof(kde_float_t),
            estimator->rows_in_sample, sample_file);
-    fwrite(contribution_buffer, sizeof(kde_float_t),
-           estimator->rows_in_sample, sample_file);
   } else {
     double* sample_transfer_buffer = palloc(
         sizeof(double) * estimator->nr_of_dimensions * estimator->rows_in_sample);
     double* karma_transfer_buffer = palloc(
         sizeof(double) * estimator->rows_in_sample);
-    double* contribution_transfer_buffer = palloc(
-        sizeof(double) * estimator->rows_in_sample);
     for( j=0; j < estimator->rows_in_sample; ++j){
       karma_transfer_buffer[j] = karma_buffer[j];
-      contribution_transfer_buffer[j] = contribution_buffer[j];
       for ( i=0; i<estimator->nr_of_dimensions; ++i ) {
         sample_transfer_buffer[j*estimator->nr_of_dimensions+i] =
             sample_buffer[j*estimator->nr_of_dimensions+i];
@@ -404,16 +375,12 @@ static void ocl_updateEstimatorInCatalog(ocl_estimator_t* estimator) {
            estimator->rows_in_sample, sample_file);
     fwrite(karma_transfer_buffer, sizeof(double),
            estimator->rows_in_sample, sample_file);
-    fwrite(contribution_transfer_buffer, sizeof(double),
-           estimator->rows_in_sample, sample_file);
     pfree(sample_transfer_buffer);
     pfree(karma_transfer_buffer);
-    pfree(contribution_transfer_buffer);
   }
   fclose(sample_file);
   pfree(sample_buffer);
   pfree(karma_buffer);
-  pfree(contribution_buffer);
   values[Anum_pg_kdemodels_sample_file-1] = CStringGetTextDatum(
       sample_file_name);
 
@@ -811,10 +778,6 @@ void ocl_constructEstimator(
       ctxt->queue, estimator->sample_optimization->sample_karma_buffer,
       CL_TRUE, 0, sample_size * sizeof(kde_float_t), one_buffer,
       0, NULL, NULL);
-  err |= clEnqueueWriteBuffer(
-      ctxt->queue, estimator->sample_optimization->sample_contribution_buffer,
-      CL_TRUE, 0, sample_size * sizeof(kde_float_t), one_buffer,
-      0, NULL, NULL);
   Assert(err == CL_SUCCESS);
   
   free(host_buffer);
@@ -889,10 +852,6 @@ void ocl_pushEntryToSampleBufer(
   // Initialize the metrics (both to one, so newly sampled items are not immediately replaced).
   err |= clEnqueueWriteBuffer(
       context->queue, estimator->sample_optimization->sample_karma_buffer,
-      CL_FALSE, position*sizeof(kde_float_t), sizeof(kde_float_t), &one,
-      0, NULL, NULL);
-  err |= clEnqueueWriteBuffer(
-      context->queue, estimator->sample_optimization->sample_contribution_buffer,
       CL_FALSE, position*sizeof(kde_float_t), sizeof(kde_float_t), &one,
       0, NULL, NULL);
   Assert(err == CL_SUCCESS);
