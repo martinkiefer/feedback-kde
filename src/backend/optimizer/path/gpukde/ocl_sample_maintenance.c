@@ -45,6 +45,11 @@ void ocl_allocateSampleMaintenanceBuffers(ocl_estimator_t* estimator) {
       context->context, CL_MEM_READ_WRITE,
       sizeof(char) * estimator->rows_in_sample, NULL, &err);
   Assert(err == CL_SUCCESS);  
+  
+  descriptor->deleted_point = clCreateBuffer(
+      context->context, CL_MEM_READ_WRITE,
+      sizeof(kde_float_t) * estimator->nr_of_dimensions, NULL, &err);
+  Assert(err == CL_SUCCESS);  
     
   // Register the descriptor in the estimator.
   estimator->sample_optimization = descriptor;
@@ -62,7 +67,11 @@ void ocl_releaseSampleMaintenanceBuffers(ocl_estimator_t* estimator) {
       err = clReleaseMemObject(descriptor->sample_hitmap);
       Assert(err == CL_SUCCESS);
     }
-
+    if (descriptor->deleted_point) {
+      err = clReleaseMemObject(descriptor->deleted_point);
+      Assert(err == CL_SUCCESS);
+    }
+    
     free(estimator->sample_optimization);
   }
 }
@@ -234,14 +243,77 @@ void ocl_notifySampleMaintenanceOfInsertion(Relation rel, HeapTuple new_tuple) {
   }  
 }
 
-void ocl_notifySampleMaintenanceOfDeletion(Relation rel) {
+void ocl_notifySampleMaintenanceOfDeletion(Relation rel, ItemPointer tupleid) {
   ocl_estimator_t* estimator = ocl_getEstimator(rel->rd_id);
   if (estimator == NULL) return;
+  
   // For now, we just use this to update the table counts.
   estimator->rows_in_table--;
   estimator->sample_optimization->nr_of_deletions++;
   if(kde_sample_maintenance_option == PRP){
     trigger_periodic_random_replacement(estimator);
+  }
+  else if(kde_sample_maintenance_option == CAR){
+    ocl_context_t* ctxt = ocl_getContext();
+    HeapTupleData deltuple;
+    deltuple.t_self = *tupleid;
+    Buffer		delbuffer;
+    int err = 0;
+    
+    kde_float_t* tuple_buffer = (kde_float_t *) palloc(estimator->nr_of_dimensions * (sizeof(kde_float_t)));
+    
+    heap_fetch(rel, SnapshotAny,&deltuple, &delbuffer, false, NULL);
+    ocl_extractSampleTuple(estimator,rel,&deltuple,tuple_buffer);
+    pfree(tuple_buffer);
+    err |= clEnqueueWriteBuffer(
+        ctxt->queue, estimator->sample_optimization->deleted_point, CL_TRUE, 0,
+        ocl_sizeOfSampleItem(estimator),
+        tuple_buffer, 0, NULL, NULL);
+        
+    Assert(err != CL_SUCCESS);
+    
+    unsigned int i = 0;
+    cl_event hitmap_event;
+    size_t global_size = estimator->nr_of_dimensions;
+    char* hitmap = (char*) palloc(global_size*sizeof(char));
+    
+    cl_kernel kernel = ocl_getKernel(
+      "get_point_deletion_hitmap", estimator->nr_of_dimensions);
+    err |= clSetKernelArg(
+      kernel, 0, sizeof(cl_mem), &(estimator->sample_buffer));
+    err |= clSetKernelArg(
+      kernel, 1, sizeof(cl_mem), &(estimator->sample_optimization->deleted_point));
+    err |= clSetKernelArg(
+      kernel, 2, sizeof(cl_mem), &(estimator->sample_optimization->sample_hitmap));   
+    Assert(err == CL_SUCCESS);
+    
+    err = clEnqueueNDRangeKernel(
+      ctxt->queue, kernel, 1, NULL, &global_size,
+      NULL, 0, NULL, &hitmap_event);
+    Assert(err == CL_SUCCESS);
+    
+    err = clEnqueueReadBuffer(
+      ctxt->queue, estimator->sample_optimization->sample_hitmap, CL_TRUE, 0, sizeof(char) * global_size,
+      hitmap, 1, &hitmap_event, NULL);
+    Assert(err == CL_SUCCESS);
+    
+    //We have got work todo. Get structures to obtain random rows.
+    kde_float_t* item = palloc(ocl_sizeOfSampleItem(estimator));
+    HeapTuple sample_point;
+
+    double total_rows;
+    Relation onerel = try_relation_open(estimator->table, ShareUpdateExclusiveLock);
+    
+    for(i=0; i < global_size; i++){
+      if(hitmap[i]){
+	ocl_createSample(onerel, &sample_point, &total_rows, 1);
+	ocl_extractSampleTuple(estimator, onerel, sample_point,item);
+	ocl_pushEntryToSampleBufer(estimator, i, item);
+	heap_freetuple(sample_point);	
+      }
+    }  
+    pfree(item); 
+    relation_close(onerel, ShareUpdateExclusiveLock);
   }
 }
 

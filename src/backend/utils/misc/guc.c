@@ -191,7 +191,7 @@ static const struct config_enum_entry kde_bandwidth_representation_options[] = {
 extern int kde_bandwidth_representation;
 
 static const struct config_enum_entry kde_sample_maintenance_options[] = {
-  {"None", NONE, false},
+  {"None", NONE_M, false},
   {"CAR", CAR, false},
   {"PRP", PRP, false},
   {"TKR", TKR, false},
@@ -3588,7 +3588,7 @@ static struct config_enum ConfigureNamesEnum[] =
       NULL
     },
     &kde_sample_maintenance_option,
-    NONE, kde_sample_maintenance_options,
+    NONE_M, kde_sample_maintenance_options,
     NULL, NULL, NULL
   },
 #endif

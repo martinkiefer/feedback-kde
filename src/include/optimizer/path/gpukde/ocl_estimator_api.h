@@ -60,7 +60,7 @@ typedef enum sample_maintenance_query_options {
 
 typedef enum sample_maintenance_options {
   //Insert driven methods
-  NONE = 0,
+  NONE_M = 0,
   CAR = 1,		//Correlated Acceptance Rejection Sampling
   PRP = 2,		//Periodic Random Replacement - Replace a random sample point every N changes to the data
   TKR = 3,		//Triggered Karma Replacement - Replace sample points above a given Karma threshold
@@ -136,7 +136,7 @@ extern void assign_kde_estimation_quality_logfile_name(const char *newval, void 
  * Functions for propagating informations to the estimator sample maintenanec..
  */
 extern void ocl_notifySampleMaintenanceOfInsertion(Relation rel, HeapTuple new_tuple);
-extern void ocl_notifySampleMaintenanceOfDeletion(Relation rel);
+extern void ocl_notifySampleMaintenanceOfDeletion(Relation rel, ItemPointer deleted_tuple);
 
 /*
  * Propagate selectivity information to the model maintenance.
