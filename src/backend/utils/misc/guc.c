@@ -2759,7 +2759,7 @@ static struct config_real ConfigureNamesReal[] =
 	    GUC_NOT_IN_SAMPLE
 	  },
 	  &kde_sample_maintenance_threshold,
-	  64.0, 0.0, DBL_MAX,
+	  -0.2, -1.0, 1.0,
 	  NULL, NULL, NULL
 	},
 	{
@@ -2769,7 +2769,7 @@ static struct config_real ConfigureNamesReal[] =
 	    GUC_NOT_IN_SAMPLE
 	  },
 	  &kde_sample_maintenance_karma_decay,
-	  0.8, 0.0, 1.0,
+	  0.9, 0.0, 1.0,
 	  NULL, NULL, NULL
 	},
 #endif /* USE_OPENCL */

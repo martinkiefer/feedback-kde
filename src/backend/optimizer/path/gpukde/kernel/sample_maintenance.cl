@@ -26,15 +26,15 @@ __kernel void update_sample_quality_metrics(
   adjusted_estimate *= normalization_factor / (sample_size - 1);
 
   // Compute whether this improved or degraded the estimate.
-  double improvement = fabs(actual_selectivity - estimated_selectivity);
-  improvement -= fabs(actual_selectivity - (T)adjusted_estimate);
+  double improvement = fabs(actual_selectivity - adjusted_estimate);
+  improvement -= fabs(actual_selectivity - estimated_selectivity);
   
   // Now compute the karma by normalizing the improvement to [-1,1]
   double local_karma = improvement * sample_size;
 
   // Now update the array
   karma[get_global_id(0)] *= karma_decay;
-  karma[get_global_id(0)] += (1 - karma_decay) * local_karma;
+  karma[get_global_id(0)] += (1-karma_decay) * local_karma;
 }
 
 __kernel void get_point_deletion_hitmap(
