@@ -495,7 +495,6 @@ int ocl_isSafeToSample(Relation rel, double total_rows) {
 void ocl_notifySampleMaintenanceOfSelectivity(
     ocl_estimator_t* estimator, double actual_selectivity) {
   if (estimator == NULL) return;
-
   estimator->nr_of_estimations++;
 
   size_t global_size = estimator->rows_in_sample;
@@ -515,7 +514,7 @@ void ocl_notifySampleMaintenanceOfSelectivity(
   ocl_context_t * ctxt = ocl_getContext();
   cl_int err = 0;
   err |= clSetKernelArg(
-      kernel, 0, sizeof(cl_mem), &(estimator->result_buffer));
+      kernel, 0, sizeof(cl_mem), &(estimator->local_results_buffer));
   err |= clSetKernelArg(
       kernel, 1, sizeof(cl_mem), &(estimator->sample_optimization->sample_karma_buffer));
   err |= clSetKernelArg(
