@@ -554,7 +554,7 @@ cl_event minOfArray(
   // Determine the optimal local size.
   size_t local_size;
   err = clGetKernelWorkGroupInfo(
-      fast_sum, context->device, CL_KERNEL_WORK_GROUP_SIZE,
+      fast_min, context->device, CL_KERNEL_WORK_GROUP_SIZE,
       sizeof(size_t), &local_size, NULL);
   Assert(err == CL_SUCCESS);
   
