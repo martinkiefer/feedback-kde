@@ -6,7 +6,9 @@ Needs an existing estimator and a two-dimensional data set with columns c1 and c
 """
 
 import struct
+import matplotlib
 from matplotlib.patches import Rectangle
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import matplotlib.cm as cm
 import psycopg2
@@ -85,7 +87,7 @@ class SamplePlotter:
         #Plot sample points
         for point,penalty in self.sample_points:
             if(penalty >= 0 ):
-                if(dist_min == 0 ):
+                if(dist_max == 0 ):
                     factor = 0.5
                 else:    
                     factor = 0.5 - 0.5 * (float(penalty) / dist_max)
@@ -117,7 +119,7 @@ parser.add_argument("--queries_per_step", action="store", required=True, type=in
 parser.add_argument("--folder", action="store", required=True, help="Folder to drop the pictures in.")
 parser.add_argument("--sample_maintenance", action="store", choices=["threshold", "periodic","none"], default="none", help="Desired query based sample maintenance option.")
 parser.add_argument("--threshold", action="store", type=float, default=1.0, help="Negative karma limit causing a point to be resampled.")
-parser.add_argument("--period", action="store", type=int, default=25, help="Queries until we resample the worst sample point.")
+parser.add_argument("--period", action="store", type=int, default=10, help="Queries until we resample the worst sample point.")
 args = parser.parse_args()
 
 query_file = args.query_file
@@ -176,7 +178,7 @@ for i in range(0,sample_size):
     
 for i in range(0,sample_size):
     ploti.addSamplePoint(sample_points[i],penalties[i])
-      
+
 f.close();    
  
 ploti.plot(0,image_folder)
@@ -216,20 +218,21 @@ offset = 0
 for j in range(1,number_of_pictures):
     print "Executing step %i..." % j
     #We need a new connection every time, as we need the estimator persisted
-    conn = psycopg2.connect("dbname=%s host=localhost" % database_name)
+    conn = psycopg2.connect("dbname=%s host=localhost" % args.dbname)
     cur = conn.cursor()
 
     #Set the gpukde options
     cur.execute("SET ocl_use_gpu TO false;")
     if(sample_maintenance == "threshold"):
-        cur.execute("SET kde_sample_maintenance_query_propagation TO Threshold;")	
-        cur.execute("SET kde_sample_maintenance_threshold TO %s;" % threshold)	
+        cur.execute("SET kde_sample_maintenance TO TKR;")	
+        cur.execute("SET kde_sample_maintenance_karma_threshold TO %s;" % threshold)	
     if(sample_maintenance == "periodic"):
-        cur.execute("SET kde_sample_maintenance_query_propagation TO Periodic;")	
+        cur.execute("SET kde_sample_maintenance TO PKR;")	
         cur.execute("SET kde_sample_maintenance_period  TO %s;" % period )	
     cur.execute("SET kde_estimation_quality_logfile TO '/tmp/error.log';")
-    cur.execute("SET kde_debug TO false;")    
+    cur.execute("SET kde_debug TO true;")    
     cur.execute("set kde_enable to 1;")
+    cur.execute("set kde_sample_maintenance_karma_decay to 0.9;")
     
     #Execute queries and tell the plotter about it
     for i in range(0,queries_per_step):
@@ -260,7 +263,6 @@ for j in range(1,number_of_pictures):
         ploti.addSamplePoint(sample_points[i],penalties[i])
         
     f.close();    
- 
  
     ploti.plot(j,image_folder)
     ploti.clearQueries()
