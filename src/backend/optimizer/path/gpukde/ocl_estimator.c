@@ -763,12 +763,9 @@ void ocl_constructEstimator(
         &(host_buffer[i * estimator->nr_of_dimensions]));
   }
   // Allocate a buffer of ones to initialize karma and contribution.
-  kde_float_t* one_buffer = (kde_float_t*) malloc(
-      sizeof(kde_float_t) * sample_size);
-  // Re-scale the data to unit variance.
-  for ( j = 0; j < sample_size; ++j ) {
-    one_buffer[j] = 1.0f;
-  }
+  kde_float_t* zero_buffer = (kde_float_t*) calloc(
+      sizeof(kde_float_t),sample_size);
+
   // Push everything to the device.
   err |= clEnqueueWriteBuffer(
       ctxt->queue, estimator->sample_buffer, CL_TRUE, 0,
@@ -776,12 +773,12 @@ void ocl_constructEstimator(
       0, NULL, NULL);
   err |= clEnqueueWriteBuffer(
       ctxt->queue, estimator->sample_optimization->sample_karma_buffer,
-      CL_TRUE, 0, sample_size * sizeof(kde_float_t), one_buffer,
+      CL_TRUE, 0, sample_size * sizeof(kde_float_t), zero_buffer,
       0, NULL, NULL);
   Assert(err == CL_SUCCESS);
   
   free(host_buffer);
-  free(one_buffer);
+  free(zero_buffer);
   // Wait for the initialization to finish.
   err = clFinish(ocl_getContext()->queue);
   Assert(err == CL_SUCCESS);
@@ -843,7 +840,7 @@ void ocl_pushEntryToSampleBufer(
     ocl_estimator_t* estimator, int position, kde_float_t* data_item) {
   ocl_context_t* context = ocl_getContext();
   cl_int err = CL_SUCCESS;
-  kde_float_t one = 1.0;
+  kde_float_t zero = 0.0;
   size_t transfer_size = ocl_sizeOfSampleItem(estimator);
   size_t offset = position * transfer_size;
   err |= clEnqueueWriteBuffer(
@@ -852,7 +849,7 @@ void ocl_pushEntryToSampleBufer(
   // Initialize the metrics (both to one, so newly sampled items are not immediately replaced).
   err |= clEnqueueWriteBuffer(
       context->queue, estimator->sample_optimization->sample_karma_buffer,
-      CL_FALSE, position*sizeof(kde_float_t), sizeof(kde_float_t), &one,
+      CL_FALSE, position*sizeof(kde_float_t), sizeof(kde_float_t), &zero,
       0, NULL, NULL);
   Assert(err == CL_SUCCESS);
   
