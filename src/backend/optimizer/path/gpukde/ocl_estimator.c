@@ -172,6 +172,10 @@ static ocl_estimator_t* ocl_buildEstimatorFromCatalogEntry(
   ocl_estimator_t* estimator = allocateEstimator(
       table, column_map, sample_size);
 
+  datum = heap_getattr(tuple, Anum_pg_kdemodels_rowcount_table,
+                         RelationGetDescr(kde_rel), &isNull);
+  estimator->rows_in_table = DatumGetInt32(datum);
+  
   // >> Read the bandwidth and push it to the device.
   datum = heap_getattr(tuple, Anum_pg_kdemodels_bandwidth,
                        RelationGetDescr(kde_rel), &isNull);
