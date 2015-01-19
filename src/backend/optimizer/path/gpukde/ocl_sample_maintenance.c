@@ -246,7 +246,6 @@ void ocl_notifySampleMaintenanceOfInsertion(Relation rel, HeapTuple new_tuple) {
 void ocl_notifySampleMaintenanceOfDeletion(Relation rel, ItemPointer tupleid) {
   ocl_estimator_t* estimator = ocl_getEstimator(rel->rd_id);
   if (estimator == NULL) return;
-  
   // For now, we just use this to update the table counts.
   estimator->rows_in_table--;
   estimator->sample_optimization->nr_of_deletions++;
@@ -264,17 +263,19 @@ void ocl_notifySampleMaintenanceOfDeletion(Relation rel, ItemPointer tupleid) {
     
     heap_fetch(rel, SnapshotAny,&deltuple, &delbuffer, false, NULL);
     ocl_extractSampleTuple(estimator,rel,&deltuple,tuple_buffer);
-    pfree(tuple_buffer);
+    Assert(BufferIsValid(delbuffer));
+    ReleaseBuffer(delbuffer);
+    
     err |= clEnqueueWriteBuffer(
         ctxt->queue, estimator->sample_optimization->deleted_point, CL_TRUE, 0,
         ocl_sizeOfSampleItem(estimator),
         tuple_buffer, 0, NULL, NULL);
-        
-    Assert(err != CL_SUCCESS);
-    
+       
+    Assert(err == CL_SUCCESS);
+    pfree(tuple_buffer); 
     unsigned int i = 0;
     cl_event hitmap_event;
-    size_t global_size = estimator->nr_of_dimensions;
+    size_t global_size = estimator->rows_in_sample;
     char* hitmap = (char*) palloc(global_size*sizeof(char));
     
     cl_kernel kernel = ocl_getKernel(
@@ -302,18 +303,17 @@ void ocl_notifySampleMaintenanceOfDeletion(Relation rel, ItemPointer tupleid) {
     HeapTuple sample_point;
 
     double total_rows;
-    Relation onerel = try_relation_open(estimator->table, ShareUpdateExclusiveLock);
     
-    for(i=0; i < global_size; i++){
+    for(i=0; i < estimator->rows_in_sample; i++){
       if(hitmap[i]){
-	ocl_createSample(onerel, &sample_point, &total_rows, 1);
-	ocl_extractSampleTuple(estimator, onerel, sample_point,item);
+	ocl_createSample(rel, &sample_point, &total_rows, 1);
+	ocl_extractSampleTuple(estimator, rel, sample_point,item);
 	ocl_pushEntryToSampleBufer(estimator, i, item);
 	heap_freetuple(sample_point);	
       }
-    }  
+    }
     pfree(item); 
-    relation_close(onerel, ShareUpdateExclusiveLock);
+    pfree(hitmap);
   }
 }
 
