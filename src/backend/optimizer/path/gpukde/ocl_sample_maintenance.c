@@ -184,7 +184,7 @@ static int getBinomial(int n, double p) {
 
 static void trigger_periodic_random_replacement(ocl_estimator_t* estimator){
   if (kde_sample_maintenance_option == PRP &&
-      estimator->sample_optimization->nr_of_insertions + estimator->sample_optimization->nr_of_deletions % kde_sample_maintenance_period == 0 ){
+      (estimator->sample_optimization->nr_of_insertions + estimator->sample_optimization->nr_of_deletions) % kde_sample_maintenance_period == 0 ){
     kde_float_t* item;
 
     HeapTuple sample_point;
