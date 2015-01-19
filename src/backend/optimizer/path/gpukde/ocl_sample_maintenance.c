@@ -480,8 +480,7 @@ int ocl_createSample(Relation rel, HeapTuple *sample,double* estimated_rows,int 
     total_seen_tuples += tmp_tuples;
   }
   
-  *estimated_rows = vac_estimate_reltuples(
-      rel, true,blocks, total_seen_blocks, total_seen_tuples);
+  *estimated_rows = blocks * total_seen_tuples/total_seen_blocks;
   return sample_size;
 }
 
