@@ -113,6 +113,7 @@ static ocl_estimator_t* allocateEstimator(
   result->sum_descriptor = prepareSumDescriptor(
       result->local_results_buffer, result->rows_in_sample,
       result->result_buffer, 0);
+  result->stats = (ocl_stats_t*) calloc(1,sizeof(ocl_stats_t));
   // Delegate to allocate the required buffers for the optimization:
   ocl_allocateSampleMaintenanceBuffers(result);
   ocl_allocateBandwidthOptimizatztionBuffers(result);
@@ -427,6 +428,7 @@ static double rangeKDE(
       ctxt->queue, estimator->input_buffer, CL_FALSE,
       0, 2 * sizeof(kde_float_t) * estimator->nr_of_dimensions, query,
       0, NULL, &input_transfer_event);
+  estimator->stats->optimization_transfer_to_device++;
   Assert(err == CL_SUCCESS);
   // Select kernel and normalization factor based on the kernel type.
   kde_float_t normalization_factor = 1.0;
@@ -469,6 +471,7 @@ static double rangeKDE(
   err = clEnqueueReadBuffer(
       ctxt->queue, estimator->result_buffer, CL_TRUE, 0,
       sizeof(kde_float_t), &result, 1, &sum_event, NULL);
+  estimator->stats->estimation_transfer_to_host++;
   Assert(err == CL_SUCCESS);
   err = clReleaseEvent(sum_event);
   Assert(err == CL_SUCCESS);

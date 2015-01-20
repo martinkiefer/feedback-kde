@@ -106,9 +106,11 @@ static int getMinPenaltyIndex(
   err |= clEnqueueReadBuffer(
       ctxt->queue, min_idx, CL_TRUE, 0, sizeof(unsigned int),
       &index, 1, &event, NULL);
+  estimator->stats->maintenance_transfer_to_host++;
   err |= clEnqueueReadBuffer(
       ctxt->queue, min_val, CL_TRUE, 0, sizeof(kde_float_t),
       &val, 1, &event, NULL);
+  estimator->stats->maintenance_transfer_to_host++;
   Assert(err == CL_SUCCESS);
 
   err = clReleaseEvent(event);
@@ -147,9 +149,11 @@ static unsigned int *getMinPenaltyIndexBelowThreshold(
   err |= clEnqueueReadBuffer(
       ctxt->queue,min_idx, CL_TRUE, 0, sizeof(unsigned int),
       index, 1, &event, NULL);
+  estimator->stats->maintenance_transfer_to_host++;
   err |= clEnqueueReadBuffer(
       ctxt->queue,min_val, CL_TRUE, 0, sizeof(kde_float_t),
       &val, 1, &event, NULL);
+  estimator->stats->maintenance_transfer_to_host++;
   Assert(err == CL_SUCCESS);
   
   err |= clReleaseMemObject(min_idx);
@@ -270,7 +274,7 @@ void ocl_notifySampleMaintenanceOfDeletion(Relation rel, ItemPointer tupleid) {
         ctxt->queue, estimator->sample_optimization->deleted_point, CL_TRUE, 0,
         ocl_sizeOfSampleItem(estimator),
         tuple_buffer, 0, NULL, NULL);
-       
+    estimator->stats->maintenance_transfer_to_device++;   
     Assert(err == CL_SUCCESS);
     pfree(tuple_buffer); 
     unsigned int i = 0;
@@ -296,6 +300,7 @@ void ocl_notifySampleMaintenanceOfDeletion(Relation rel, ItemPointer tupleid) {
     err = clEnqueueReadBuffer(
       ctxt->queue, estimator->sample_optimization->sample_hitmap, CL_TRUE, 0, sizeof(char) * global_size,
       hitmap, 1, &hitmap_event, NULL);
+    estimator->stats->maintenance_transfer_to_host++;
     Assert(err == CL_SUCCESS);
     
     //We have got work todo. Get structures to obtain random rows.
@@ -556,6 +561,7 @@ void ocl_notifySampleMaintenanceOfSelectivity(
     err |= clEnqueueReadBuffer(
       ctxt->queue, estimator->sample_optimization->sample_hitmap, CL_TRUE, 0, sizeof(char) * global_size,
       hitmap, 1, &hitmap_event, NULL);
+    estimator->stats->maintenance_transfer_to_host++;
     
         //We have got work todo. Get structures to obtain random rows.
     kde_float_t* item = palloc(ocl_sizeOfSampleItem(estimator));
