@@ -1151,4 +1151,37 @@ Datum ocl_getBandwidth(PG_FUNCTION_ARGS) {
           FLOAT8OID, sizeof(double), FLOAT8PASSBYVAL, 'i'));
 }
 
+Datum ocl_getStats(PG_FUNCTION_ARGS){
+  Oid table_oid = PG_GETARG_OID(0);
+  if (!ocl_useKDE()) {
+    ereport(ERROR,
+        (errcode(ERRCODE_DATATYPE_MISMATCH),
+            errmsg("KDE is disabled, please set kde_enable to true!")));
+    PG_RETURN_BOOL(false);
+  }
+  // Try to fetch the estimator:
+  ocl_estimator_t* estimator = ocl_getEstimator(table_oid);
+    if (estimator == NULL) {
+    ereport(ERROR,
+        (errcode(ERRCODE_DATATYPE_MISMATCH),
+            errmsg("no KDE estimator exists for table %i", table_oid)));
+    PG_RETURN_BOOL(false);
+  }
+  Datum* datum_array = palloc(sizeof(Datum) * 9);
+  datum_array[0] = Int64GetDatum(estimator->stats->nr_of_estimations);
+  datum_array[1] = Int64GetDatum(estimator->stats->nr_of_insertions);
+  datum_array[2] = Int64GetDatum(estimator->stats->nr_of_deletions);
+  datum_array[3] = Int64GetDatum(estimator->stats->estimation_transfer_to_device);
+  datum_array[4] = Int64GetDatum(estimator->stats->estimation_transfer_to_host);
+  datum_array[5] = Int64GetDatum(estimator->stats->optimization_transfer_to_device);
+  datum_array[6] = Int64GetDatum(estimator->stats->optimization_transfer_to_host);
+  datum_array[7] = Int64GetDatum(estimator->stats->maintenance_transfer_to_device);
+  datum_array[8] = Int64GetDatum(estimator->stats->maintenance_transfer_to_host);
+  
+  PG_RETURN_ARRAYTYPE_P(
+      construct_array(
+          datum_array, 9,
+          INT8OID, sizeof(double), true, 'i'));
+}  
+
 #endif /* USE_OPENCL */

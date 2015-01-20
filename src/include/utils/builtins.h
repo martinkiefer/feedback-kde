@@ -1169,6 +1169,7 @@ extern Datum pg_cursor(PG_FUNCTION_ARGS);
 extern Datum ocl_setKDEBandwidth(PG_FUNCTION_ARGS);
 extern Datum ocl_reoptimizeBandwidth(PG_FUNCTION_ARGS);
 extern Datum ocl_getBandwidth(PG_FUNCTION_ARGS);
+extern Datum ocl_getStats(PG_FUNCTION_ARGS);
 extern Datum ocl_importKDESample(PG_FUNCTION_ARGS);
 extern Datum ocl_exportKDESample(PG_FUNCTION_ARGS);
 
