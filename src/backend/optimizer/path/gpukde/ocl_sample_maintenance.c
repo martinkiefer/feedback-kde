@@ -188,7 +188,7 @@ static int getBinomial(int n, double p) {
 
 static void trigger_periodic_random_replacement(ocl_estimator_t* estimator){
   if (kde_sample_maintenance_option == PRP &&
-      (estimator->sample_optimization->nr_of_insertions + estimator->sample_optimization->nr_of_deletions) % kde_sample_maintenance_period == 0 ){
+      (estimator->stats->nr_of_insertions + estimator->stats->nr_of_deletions) % kde_sample_maintenance_period == 0 ){
     kde_float_t* item;
 
     HeapTuple sample_point;
@@ -221,7 +221,7 @@ void ocl_notifySampleMaintenanceOfInsertion(Relation rel, HeapTuple new_tuple) {
   
   if (estimator == NULL) return;
   estimator->rows_in_table++;
-  estimator->sample_optimization->nr_of_insertions++;
+  estimator->stats->nr_of_insertions++;
   
   if (! kde_sample_maintenance_option) return;
   int insert_position = -1;
@@ -252,7 +252,7 @@ void ocl_notifySampleMaintenanceOfDeletion(Relation rel, ItemPointer tupleid) {
   if (estimator == NULL) return;
   // For now, we just use this to update the table counts.
   estimator->rows_in_table--;
-  estimator->sample_optimization->nr_of_deletions++;
+  estimator->stats->nr_of_deletions++;
   if(kde_sample_maintenance_option == PRP){
     trigger_periodic_random_replacement(estimator);
   }
@@ -499,7 +499,7 @@ int ocl_isSafeToSample(Relation rel, double total_rows) {
 void ocl_notifySampleMaintenanceOfSelectivity(
     ocl_estimator_t* estimator, double actual_selectivity) {
   if (estimator == NULL) return;
-  estimator->nr_of_estimations++;
+  estimator->stats->nr_of_estimations++;
 
   size_t global_size = estimator->rows_in_sample;
   cl_event quality_update_event;
@@ -582,7 +582,7 @@ void ocl_notifySampleMaintenanceOfSelectivity(
     relation_close(onerel, ShareUpdateExclusiveLock);
   }
   else if (kde_sample_maintenance_option == PKR &&
-      estimator->nr_of_estimations % kde_sample_maintenance_period == 0 ){
+      estimator->stats->nr_of_estimations % kde_sample_maintenance_period == 0 ){
     kde_float_t* item;
 
     HeapTuple sample_point;

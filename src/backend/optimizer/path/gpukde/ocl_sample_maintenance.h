@@ -12,9 +12,6 @@ typedef struct ocl_sample_optimization {
   cl_mem sample_karma_buffer;     // Buffer to track the karma of the sample points.
   cl_mem sample_hitmap;		  //Working memory to identify qualifying sample points
   cl_mem deleted_point;		  //Working memory to store a deleted tuple for processing
-  
-  unsigned long nr_of_deletions;
-  unsigned long nr_of_insertions;
 } ocl_sample_optimization_t;
 
 void ocl_allocateSampleMaintenanceBuffers(ocl_estimator_t* estimator);

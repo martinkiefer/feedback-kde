@@ -20,14 +20,18 @@ struct ocl_sample_optimization;
 struct ocl_bandwidth_optimization;
 
 typedef struct ocl_stats{
-  unsigned long estimation_transfer_to_device;
-  unsigned long estimation_transfer_to_host;
+  long estimation_transfer_to_device;
+  long estimation_transfer_to_host;
   
-  unsigned long maintenance_transfer_to_device;
-  unsigned long maintenance_transfer_to_host;
+  long maintenance_transfer_to_device;
+  long maintenance_transfer_to_host;
   
-  unsigned long optimization_transfer_to_device;
-  unsigned long optimization_transfer_to_host; 
+  long optimization_transfer_to_device;
+  long optimization_transfer_to_host; 
+  
+  long nr_of_estimations;
+  long nr_of_deletions;
+  long nr_of_insertions;
 } ocl_stats_t; 
 
 /*
@@ -60,7 +64,6 @@ typedef struct ocl_estimator {
   /* Runtime information */
   bool open_estimation;     // Set to true if this estimator has produced a valid estimation for which we are still awaiting feedback.
   double last_selectivity;  // Stores the last selectivity computed by this estimator.
-  unsigned long nr_of_estimations;
 } ocl_estimator_t;
 
 /*
