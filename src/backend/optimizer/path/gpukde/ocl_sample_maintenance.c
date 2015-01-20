@@ -49,8 +49,19 @@ void ocl_allocateSampleMaintenanceBuffers(ocl_estimator_t* estimator) {
   descriptor->deleted_point = clCreateBuffer(
       context->context, CL_MEM_READ_WRITE,
       sizeof(kde_float_t) * estimator->nr_of_dimensions, NULL, &err);
-  Assert(err == CL_SUCCESS);  
-    
+  Assert(err == CL_SUCCESS);
+
+    // Allocate device memory for indices and values.
+  cl_mem min_idx = clCreateBuffer(
+          context->context, CL_MEM_READ_WRITE,
+          sizeof(unsigned int), NULL, &err);
+  Assert(err == CL_SUCCESS);
+  
+  cl_mem min_val = clCreateBuffer(
+          context->context, CL_MEM_READ_WRITE,
+          sizeof(kde_float_t), NULL, &err);
+  Assert(err == CL_SUCCESS);
+  
   // Register the descriptor in the estimator.
   estimator->sample_optimization = descriptor;
 }
@@ -71,6 +82,14 @@ void ocl_releaseSampleMaintenanceBuffers(ocl_estimator_t* estimator) {
       err = clReleaseMemObject(descriptor->deleted_point);
       Assert(err == CL_SUCCESS);
     }
+    if (descriptor->min_idx) {
+      err = clReleaseMemObject(descriptor->min_idx);
+      Assert(err == CL_SUCCESS);
+    }
+    if (descriptor->min_val) {
+      err = clReleaseMemObject(descriptor->min_val);
+      Assert(err == CL_SUCCESS);
+    }    
     
     free(estimator->sample_optimization);
   }
@@ -90,34 +109,20 @@ static int getMinPenaltyIndex(
   unsigned int index;
   kde_float_t val;
   cl_int err = CL_SUCCESS;
-  
-  // Allocate device memory for indices and values.
-  cl_mem min_idx = clCreateBuffer(
-          ctxt->context, CL_MEM_READ_WRITE,
-          sizeof(unsigned int), NULL, &err);
-  cl_mem min_val = clCreateBuffer(
-          ctxt->context, CL_MEM_READ_WRITE,
-          sizeof(kde_float_t), NULL, &err);
-  
+    
   // Now fetch the minimum penalty.
   event = minOfArray(
       estimator->sample_optimization->sample_karma_buffer, estimator->rows_in_sample,
-      min_val, min_idx, 0, NULL);
+      estimator->sample_optimization->min_val, estimator->sample_optimization->min_idx, 0, NULL);
+  
   err |= clEnqueueReadBuffer(
-      ctxt->queue, min_idx, CL_TRUE, 0, sizeof(unsigned int),
+      ctxt->queue, estimator->sample_optimization->min_idx, CL_TRUE, 0, sizeof(unsigned int),
       &index, 1, &event, NULL);
-  estimator->stats->maintenance_transfer_to_host++;
-  err |= clEnqueueReadBuffer(
-      ctxt->queue, min_val, CL_TRUE, 0, sizeof(kde_float_t),
-      &val, 1, &event, NULL);
   estimator->stats->maintenance_transfer_to_host++;
   Assert(err == CL_SUCCESS);
 
   err = clReleaseEvent(event);
   Assert(err == CL_SUCCESS);
-  
-  err |= clReleaseMemObject(min_idx);
-  err |= clReleaseMemObject(min_val);
 
   return index;
 }
@@ -175,6 +180,8 @@ static unsigned int *getMinPenaltyIndexBelowThreshold(
 //Efficient implementation of drawing from a binomial distribution for p*n small.
 static int getBinomial(int n, double p) {
    double log_q = log(1.0 - p);
+   //Bad things happen if p equals 1.
+   if(log_q == -INFINITY) return n;
    int x = 0;
    double sum = 0;
    for(;;) {
