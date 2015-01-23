@@ -558,7 +558,7 @@ static void ocl_initializeRegistry() {
 
   // Allocate a new descriptor.
   registry = calloc(1, sizeof(ocl_estimator_registry_t));
-  registry->estimator_bitmap = calloc(1, 512 * 1024); // Enough for ~4M tables.
+  registry->estimator_bitmap = calloc(1, 4 * 1024 * 1024); // Enough for ~32M tables.
   registry->estimator_directory = directory_init(sizeof(Oid), 20);
 
   // Now open the KDE estimator table, read in all stored estimators and
