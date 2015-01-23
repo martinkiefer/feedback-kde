@@ -193,7 +193,7 @@ extern int kde_bandwidth_representation;
 static const struct config_enum_entry kde_sample_maintenance_options[] = {
   {"None", NONE_M, false},
   {"CAR", CAR, false},
-  {"PRP", PRP, false},
+  {"PRR", PRR, false},
   {"TKR", TKR, false},
   {"PKR", PKR, false},
   {NULL, 0, false},

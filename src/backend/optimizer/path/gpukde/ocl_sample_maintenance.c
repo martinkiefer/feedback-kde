@@ -194,7 +194,7 @@ static int getBinomial(int n, double p) {
 }
 
 static void trigger_periodic_random_replacement(ocl_estimator_t* estimator){
-  if (kde_sample_maintenance_option == PRP &&
+  if (kde_sample_maintenance_option == PRR &&
       (estimator->stats->nr_of_insertions + estimator->stats->nr_of_deletions) % kde_sample_maintenance_period == 0 ){
     kde_float_t* item;
 
@@ -249,7 +249,7 @@ void ocl_notifySampleMaintenanceOfInsertion(Relation rel, HeapTuple new_tuple) {
       pfree(item);
     }
   }
-  else if(kde_sample_maintenance_option == PRP){
+  else if(kde_sample_maintenance_option == PRR){
     trigger_periodic_random_replacement(estimator);
   }  
 }
@@ -260,7 +260,7 @@ void ocl_notifySampleMaintenanceOfDeletion(Relation rel, ItemPointer tupleid) {
   // For now, we just use this to update the table counts.
   estimator->rows_in_table--;
   estimator->stats->nr_of_deletions++;
-  if(kde_sample_maintenance_option == PRP){
+  if(kde_sample_maintenance_option == PRR){
     trigger_periodic_random_replacement(estimator);
   }
   else if(kde_sample_maintenance_option == CAR){
