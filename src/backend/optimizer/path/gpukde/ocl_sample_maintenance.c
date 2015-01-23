@@ -52,12 +52,12 @@ void ocl_allocateSampleMaintenanceBuffers(ocl_estimator_t* estimator) {
   Assert(err == CL_SUCCESS);
 
     // Allocate device memory for indices and values.
-  cl_mem min_idx = clCreateBuffer(
+  descriptor->min_idx = clCreateBuffer(
           context->context, CL_MEM_READ_WRITE,
           sizeof(unsigned int), NULL, &err);
   Assert(err == CL_SUCCESS);
   
-  cl_mem min_val = clCreateBuffer(
+  descriptor->min_val = clCreateBuffer(
           context->context, CL_MEM_READ_WRITE,
           sizeof(kde_float_t), NULL, &err);
   Assert(err == CL_SUCCESS);
@@ -107,7 +107,6 @@ static int getMinPenaltyIndex(
     ocl_context_t*  ctxt, ocl_estimator_t* estimator){
   cl_event event;
   unsigned int index;
-  kde_float_t val;
   cl_int err = CL_SUCCESS;
     
   // Now fetch the minimum penalty.
@@ -386,8 +385,7 @@ static HeapTuple sampleTuple(
     
     targpage = BufferGetPage(targbuffer);
     maxoffset = PageGetMaxOffsetNumber(targpage);
-    //This should never ever happen.
-    Assert(maxoffset <= max_tuples);  
+    
     int qualifying_rows = 0;
     
     /* Inner loop over all tuples on the selected page */
@@ -405,7 +403,7 @@ static HeapTuple sampleTuple(
 
       used_tuples[qualifying_rows].t_data = (HeapTupleHeader) PageGetItem(targpage, itemid);
       used_tuples[qualifying_rows].t_len = ItemIdGetLength(itemid);
-
+      
       switch (HeapTupleSatisfiesVacuum(
           used_tuples[qualifying_rows].t_data, OldestXmin,targbuffer)) {
         case HEAPTUPLE_LIVE:
@@ -433,8 +431,10 @@ static HeapTuple sampleTuple(
           elog(ERROR, "unexpected HeapTupleSatisfiesVacuum result");
           continue;
       }
+      
     }
-    
+    //This should never ever happen otherwise we can't guarantee uniform sampling.
+    Assert(qualifying_rows <= max_tuples);
     // Very well, we know the number of interesting tuples in the page
     // Step 4: Calculate the acceptance rate:
     double acceptance_rate = qualifying_rows/(double) max_tuples;
