@@ -2594,7 +2594,7 @@ static struct config_int ConfigureNamesInt[] =
       GUC_NOT_IN_SAMPLE
     },
     &kde_samplesize,
-    4300, 1, 1024*1024,
+    4300, 1, INT_MAX,
     NULL, assign_kde_samplesize, NULL
   },
   {
