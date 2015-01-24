@@ -28,6 +28,7 @@ ocl_context_t* ocl_context = NULL;
 bool ocl_use_gpu;
 bool kde_enable;
 bool kde_debug;
+bool kde_time;
 int kde_samplesize;
 int kde_bandwidth_representation;
 

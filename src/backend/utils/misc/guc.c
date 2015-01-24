@@ -145,6 +145,8 @@ extern void assign_ocl_use_gpu(bool newval, void *extra);
 /* Name of the file where we log estimation errors. */
 extern char* kde_estimation_quality_logfile_name;
 extern void assign_kde_estimation_quality_logfile_name(const char* newval, void *extra);
+/* Log timing information? */
+extern bool kde_time;
 /* Determines whether we use feedback collection. */
 extern bool kde_collect_feedback;
 /* Determines whether to use query feedback to pick an optimal bandwidth during estimator construction */
@@ -1537,26 +1539,26 @@ static struct config_bool ConfigureNamesBool[] =
 	},
 	//KDE
 #ifdef USE_OPENCL
-	{
-		{"kde_enable", PGC_USERSET, DEVELOPER_OPTIONS,
-			gettext_noop("Enable Kernel Density Estimation for selectivity estimation."),
-			NULL,
-			GUC_NOT_IN_SAMPLE
-		},
-		&kde_enable,
-		false,
-		NULL, assign_kde_enable, NULL
-	},
-	{
-		{"stholes_enable", PGC_USERSET, DEVELOPER_OPTIONS,
-			gettext_noop("Enable stholes for selectvity estimation."),
-			NULL,
-			GUC_NOT_IN_SAMPLE
-		},
-		&stholes_enable,
-		false,
-		NULL, NULL, NULL
-	},
+  {
+    {"kde_enable", PGC_USERSET, DEVELOPER_OPTIONS,
+      gettext_noop("Enable Kernel Density Estimation for selectivity estimation."),
+      NULL,
+      GUC_NOT_IN_SAMPLE
+    },
+    &kde_enable,
+    false,
+    NULL, assign_kde_enable, NULL
+  },
+  {
+    {"stholes_enable", PGC_USERSET, DEVELOPER_OPTIONS,
+      gettext_noop("Enable stholes for selectvity estimation."),
+      NULL,
+      GUC_NOT_IN_SAMPLE
+    },
+    &stholes_enable,
+    false,
+    NULL, NULL, NULL
+  },
   {
     {"kde_debug", PGC_USERSET, DEVELOPER_OPTIONS,
       gettext_noop("Enable the KDE debug mode."),
@@ -1567,16 +1569,16 @@ static struct config_bool ConfigureNamesBool[] =
     true,
     NULL, NULL, NULL
   },
-	{
-		{"kde_collect_feedback", PGC_USERSET, DEVELOPER_OPTIONS,
-			gettext_noop("Collect query feedback to improve the KDE model."),
-			NULL,
-			GUC_NOT_IN_SAMPLE
-		},
-		&kde_collect_feedback,
-		false,
-		NULL, NULL, NULL
-	},
+  {
+    {"kde_collect_feedback", PGC_USERSET, DEVELOPER_OPTIONS,
+      gettext_noop("Collect query feedback to improve the KDE model."),
+      NULL,
+      GUC_NOT_IN_SAMPLE
+    },
+    &kde_collect_feedback,
+    false,
+    NULL, NULL, NULL
+  },
   {
     {"kde_enable_adaptive_bandwidth", PGC_USERSET, DEVELOPER_OPTIONS,
       gettext_noop("Use online learning to adjust the bandwidth at runtime."),
@@ -1597,38 +1599,46 @@ static struct config_bool ConfigureNamesBool[] =
     false,
     NULL, NULL, NULL
   },
-	{
-		{"ocl_use_gpu", PGC_USERSET, DEVELOPER_OPTIONS,
-			gettext_noop("Use the GPU for OpenCL?"),
-			NULL,
-			GUC_NOT_IN_SAMPLE
-		},
-		&ocl_use_gpu,
-		true,
-		NULL, assign_ocl_use_gpu, NULL
-	},
-	{
-	  {"kde_sample_maintenance_track_impact", PGC_USERSET, DEVELOPER_OPTIONS,
-	    gettext_noop("Use impact tracking to maintain the sample."),
-	    NULL,
-	    GUC_NOT_IN_SAMPLE
-	  },
-	  &kde_sample_maintenance_track_impact,
-	  false,
-	  NULL, NULL, NULL
+  {
+    {"ocl_use_gpu", PGC_USERSET, DEVELOPER_OPTIONS,
+      gettext_noop("Use the GPU for OpenCL?"),
+      NULL,
+      GUC_NOT_IN_SAMPLE
+    },
+    &ocl_use_gpu,
+    true,
+    NULL, assign_ocl_use_gpu, NULL
   },
-	{
-	  {"kde_sample_maintenance_track_karma", PGC_USERSET, DEVELOPER_OPTIONS,
-	    gettext_noop("Use karma tracking to maintain the sample."),
-	    NULL,
-	    GUC_NOT_IN_SAMPLE
-	  },
-	  &kde_sample_maintenance_track_karma,
-	  false,
-	  NULL, NULL, NULL
-	},
-
-
+  {
+    {"kde_sample_maintenance_track_impact", PGC_USERSET, DEVELOPER_OPTIONS,
+      gettext_noop("Use impact tracking to maintain the sample."),
+      NULL,
+      GUC_NOT_IN_SAMPLE
+    },
+    &kde_sample_maintenance_track_impact,
+    false,
+    NULL, NULL, NULL
+  },
+  {
+   {"kde_sample_maintenance_track_karma", PGC_USERSET, DEVELOPER_OPTIONS,
+     gettext_noop("Use karma tracking to maintain the sample."),
+     NULL,
+     GUC_NOT_IN_SAMPLE
+   },
+   &kde_sample_maintenance_track_karma,
+   false,
+   NULL, NULL, NULL
+  },
+  {
+   {"kde_enable_timing", PGC_USERSET, DEVELOPER_OPTIONS,
+     gettext_noop("Track timing information for KDE?"),
+     NULL,
+     GUC_NOT_IN_SAMPLE
+   },
+   &kde_time,
+   false,
+   NULL, NULL, NULL
+  },
 #endif
 
 	/* End-of-list marker */
