@@ -28,7 +28,6 @@ ocl_context_t* ocl_context = NULL;
 bool ocl_use_gpu;
 bool kde_enable;
 bool kde_debug;
-bool kde_time;
 int kde_samplesize;
 int kde_bandwidth_representation;
 
@@ -660,6 +659,17 @@ cl_event minOfArray(
   Assert(err == CL_SUCCESS);
   
   return finalize_event;
+}
+
+/* Functions for accessing the timing file */
+static FILE* timing_file = NULL;
+char* kde_timing_logfile_name;
+
+FILE* kde_getTimingFile() { return timing_file; }
+
+void assign_kde_timing_logfile_name(const char *newval, void *extra) {
+  if (timing_file != NULL) fclose(timing_file);
+  timing_file = fopen(newval, "w");
 }
 
 #endif /* USE_OPENCL */

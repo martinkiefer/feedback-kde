@@ -145,8 +145,9 @@ extern void assign_ocl_use_gpu(bool newval, void *extra);
 /* Name of the file where we log estimation errors. */
 extern char* kde_estimation_quality_logfile_name;
 extern void assign_kde_estimation_quality_logfile_name(const char* newval, void *extra);
-/* Log timing information? */
-extern bool kde_time;
+/* Name of the file where we log timing information. */
+extern char* kde_timing_logfile_name;
+extern void assign_kde_timing_logfile_name(const char* newval, void* extra);
 /* Determines whether we use feedback collection. */
 extern bool kde_collect_feedback;
 /* Determines whether to use query feedback to pick an optimal bandwidth during estimator construction */
@@ -1626,16 +1627,6 @@ static struct config_bool ConfigureNamesBool[] =
      GUC_NOT_IN_SAMPLE
    },
    &kde_sample_maintenance_track_karma,
-   false,
-   NULL, NULL, NULL
-  },
-  {
-   {"kde_enable_timing", PGC_USERSET, DEVELOPER_OPTIONS,
-     gettext_noop("Track timing information for KDE?"),
-     NULL,
-     GUC_NOT_IN_SAMPLE
-   },
-   &kde_time,
    false,
    NULL, NULL, NULL
   },
@@ -3384,6 +3375,16 @@ static struct config_string ConfigureNamesString[] =
 		&kde_estimation_quality_logfile_name,
 		"",
 		NULL, assign_kde_estimation_quality_logfile_name, NULL
+	},
+	{
+		{"kde_timing_logfile", PGC_USERSET, DEVELOPER_OPTIONS,
+			gettext_noop("Sets the file that is used to log timing information."),
+			NULL,
+			GUC_NOT_IN_SAMPLE
+		},
+		&kde_timing_logfile_name,
+		"",
+		NULL, assign_kde_timing_logfile_name, NULL
 	},
 
 #endif	/* USE_OPENCL */

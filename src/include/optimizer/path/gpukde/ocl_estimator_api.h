@@ -132,7 +132,7 @@ extern void assign_ocl_use_gpu(bool newval, void *extra);
 extern void assign_kde_enable(bool newval, void *extra);
 extern void assign_kde_samplesize(int newval, void *extra);
 extern void assign_kde_estimation_quality_logfile_name(const char *newval, void *extra);
-
+extern void assign_kde_timing_logfile_name(const char *newval, void *extra);
 
 /*
  * Functions for propagating informations to the estimator sample maintenanec..

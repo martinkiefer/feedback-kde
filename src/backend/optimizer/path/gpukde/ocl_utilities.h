@@ -16,6 +16,8 @@
 
 #ifdef USE_OPENCL
 
+#include <sys/time.h>
+
 #include "container/dictionary.h"
 
 /*
@@ -140,6 +142,29 @@ cl_event minOfArray(
     cl_mem input_buffer, unsigned int elements,
     cl_mem result_min, cl_mem result_index,
     unsigned int result_buffer_offset, cl_event external_event);
+
+// Macros for timing operations.
+FILE* kde_getTimingFile();
+
+#define CREATE_TIMER() struct timeval __start; gettimeofday(&__start, NULL);
+#define RESET_TIMER() gettimeofday(&__start, NULL);
+#define READ_TIMER(variable) if (kde_getTimingFile()) {      \
+   struct timeval __now; gettimeofday(&__now, NULL);         \
+   long __seconds = __now.tv_sec - __start.tv_sec;           \
+   long __useconds = __now.tv_usec - __start.tv_usec;        \
+   long long __time = (__seconds) * 1000000 + __useconds;    \
+   variable = __time;                                        \
+}
+#define LOG_TIME(text, time) if (kde_getTimingFile()) {      \
+   FILE* __f = kde_getTimingFile();                          \
+   fprintf(__f, text ": %lld microseconds.\n", time);        \
+   fflush(__f);                                              \
+}
+#define LOG_TIMER(text) if (kde_getTimingFile()) {           \
+   long long ___time;                                        \
+   READ_TIMER(___time);                                      \
+   LOG_TIME(text, ___time);                                  \
+}
 
 #endif /* USE_OPENCL */
 #endif /* OCL_UTILITIES_H_ */
