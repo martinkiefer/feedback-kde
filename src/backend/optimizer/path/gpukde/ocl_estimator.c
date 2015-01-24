@@ -449,6 +449,7 @@ static void ocl_updateEstimatorInCatalog(ocl_estimator_t* estimator) {
 // Helper function to compute an actual estimate by the estimator.
 static double rangeKDE(
     ocl_context_t* ctxt, ocl_estimator_t* estimator, kde_float_t* query) {
+  CREATE_TIMER();
   // Transfer the query bounds to the device.
   cl_event input_transfer_event;
   cl_int err = CL_SUCCESS;
@@ -502,6 +503,7 @@ static double rangeKDE(
   err = clReleaseEvent(sum_event);
   Assert(err == CL_SUCCESS);
   result *= normalization_factor / estimator->rows_in_sample;
+  LOG_TIMER("Estimation");
   return result;
 }
 
@@ -742,7 +744,7 @@ void ocl_constructEstimator(
     AttrNumber* attributes, unsigned int sample_size, HeapTuple* sample) {
   unsigned int i, j;
   cl_int err = CL_SUCCESS;
-  
+  CREATE_TIMER(); 
   if (dimensionality > 10) {
     fprintf(stderr, "We only support models for up to 10 dimensions!\n");
     return;
@@ -824,6 +826,7 @@ void ocl_constructEstimator(
   Assert(err == CL_SUCCESS);
   // And hand the optimization over to the model optimization.
   ocl_runModelOptimization(estimator);
+  LOG_TIMER("Model Construction");
 }
 
 void assign_ocl_use_gpu(bool newval, void *extra) {

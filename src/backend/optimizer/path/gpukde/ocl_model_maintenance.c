@@ -40,6 +40,7 @@ const double learning_rate = 0.01f;
 
 void ocl_notifyModelMaintenanceOfSelectivity(
     Oid relation, double selected, double allrows) {
+  CREATE_TIMER();
 
   // Check if we have an estimator for this relation.
   ocl_estimator_t* estimator = ocl_getEstimator(relation);
@@ -62,6 +63,7 @@ void ocl_notifyModelMaintenanceOfSelectivity(
 
   // We are done.
   estimator->open_estimation = false;
+  LOG_TIMER("Model Maintenance");
 }
 
 // ############################################################

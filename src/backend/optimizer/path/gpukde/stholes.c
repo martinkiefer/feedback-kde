@@ -383,11 +383,14 @@ static int _disjunctivenessTest(st_head_t* head, st_hole_t* hole) {
   return 1;
 }
 
+static long long unsigned int model_update_timer = 0;
+
 /**
  * Aggregate estimated tuples recursively
  */
 static kde_float_t _est(const st_head_t* head, st_hole_t* hole,
     kde_float_t* intersection_vol) {
+  CREATE_TIMER();
   kde_float_t est = 0.0;
   *intersection_vol = 0;
   
@@ -422,13 +425,14 @@ static kde_float_t _est(const st_head_t* head, st_hole_t* hole,
   }
   
   releaseResources(q_i_b);
-  
+  LOG_TIMER("Estimation");
   return est;
 }  
 
 
 static int _propagateTuple(
     st_head_t* head, st_hole_t* hole, kde_float_t* tuple) {
+  CREATE_TIMER();
   // Check if this point is within our bounds.
   int i = 0;
   for (; i < head->dimensions; i++) {
@@ -446,6 +450,9 @@ static int _propagateTuple(
   
   // None of the children showed interest in the point, claim it for ourselves.
   hole->counter++;
+  long long unsigned int time = 0;
+  READ_TIMER(time);
+  model_update_timer += time; 
   return 1;
 }
 
@@ -1214,7 +1221,7 @@ void stholes_process_feedback(PlanState *node) {
   if (current == NULL) return;
   if (nodeTag(node) != T_SeqScanState) return;
   if (node->instrument == NULL || node->instrument->kde_rq == NULL) return;
-
+  CREATE_TIMER();
   if (((SeqScanState*) node)->ss_currentRelation->rd_id == current->table &&
       current->process_feedback) {
     // Count the statistics.
@@ -1236,4 +1243,8 @@ void stholes_process_feedback(PlanState *node) {
     // We are done processing the feedback :)
     current->process_feedback = 0;
   }
+  long long unsigned int time = 0;
+  READ_TIMER(time);
+  model_update_timer += time;  
+  LOG_TIME("Model Maintenance", model_update_timer);
 }
