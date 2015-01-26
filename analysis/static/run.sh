@@ -13,7 +13,7 @@ KDE_MODELSIZE=1024
 # Prepare a new result file.
 echo > $DIR/result.csv
 
-for dataset in $DIR/*; do
+for dataset in $DIR/datasets/*; do
     [ -d "${dataset}" ] || continue # if not a directory, skip
     datset_name=`basename $dataset`
     echo "Running experiments for $datset_name:"

@@ -1,7 +1,7 @@
 #!/bin/bash
 
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
-source $DIR/../conf.sh
+source $DIR/../../conf.sh
 
 DATASETS=(bike covtype genhist_set1 genhist_set2 power protein)
 QUERIES=2500
