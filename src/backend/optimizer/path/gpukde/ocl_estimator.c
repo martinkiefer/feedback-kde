@@ -1181,7 +1181,7 @@ Datum ocl_getStats(PG_FUNCTION_ARGS){
   PG_RETURN_ARRAYTYPE_P(
       construct_array(
           datum_array, 9,
-          INT8OID, sizeof(double), true, 'i'));
+          INT8OID, sizeof(long), true, 'i'));
 }  
 
 #endif /* USE_OPENCL */

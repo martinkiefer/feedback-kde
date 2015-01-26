@@ -4734,6 +4734,8 @@ DATA(insert OID = 4044 (  kde_export_sample  PGNSP PGUID 12 1 0 0 0 f f f f t f 
 DESCR("Export the sample that is used by the KDE estimator of the given table to the given file.");
 DATA(insert OID = 4045 (  kde_import_sample  PGNSP PGUID 12 1 0 0 0 f f f f t f s 2 0 16 "2205 25" _null_ _null_ _null_ _null_  ocl_importKDESample _null_ _null_ _null_ ));
 DESCR("Import the sample for the KDE estimator of the given table from the given file.");
+DATA(insert OID = 4046 (  kde_get_stats  PGNSP PGUID 12 1 0 0 0 f f f f t f s 1 0 2277 "2205" _null_ _null_ _null_ _null_  ocl_getStats _null_ _null_ _null_ ));
+DESCR("Returns the current estimator statistics.");
 
 /* event triggers */
 DATA(insert OID = 3566 (  pg_event_trigger_dropped_objects		PGNSP PGUID 12 10 100 0 0 f f f f t t s 0 0 2249 "" "{26,26,23,25,25,25,25}" "{o,o,o,o,o,o,o}" "{classid, objid, objsubid, object_type, schema_name, object_name, object_identity}" _null_ pg_event_trigger_dropped_objects _null_ _null_ _null_ ));
