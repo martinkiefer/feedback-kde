@@ -213,6 +213,9 @@ static void trigger_periodic_random_replacement(ocl_estimator_t* estimator){
       ocl_createSample(onerel,&sample_point,&total_rows,1);
       ocl_extractSampleTuple(estimator, onerel, sample_point,item);
       ocl_pushEntryToSampleBufer(estimator, insert_position, item);
+      estimator->stats->maintenance_transfer_to_device++;
+      
+      
       heap_freetuple(sample_point);
       pfree(item);
       relation_close(onerel, ShareUpdateExclusiveLock);
@@ -244,6 +247,7 @@ void ocl_notifySampleMaintenanceOfInsertion(Relation rel, HeapTuple new_tuple) {
       for(i=0; i < replacements; i++){
 	insert_position = random() % estimator->rows_in_sample;
 	ocl_pushEntryToSampleBufer(estimator, insert_position, item);
+	estimator->stats->maintenance_transfer_to_device++;
       }
       pfree(item);
     }
@@ -320,6 +324,7 @@ void ocl_notifySampleMaintenanceOfDeletion(Relation rel, ItemPointer tupleid) {
 	ocl_createSample(rel, &sample_point, &total_rows, 1);
 	ocl_extractSampleTuple(estimator, rel, sample_point,item);
 	ocl_pushEntryToSampleBufer(estimator, i, item);
+	estimator->stats->maintenance_transfer_to_device++;
 	heap_freetuple(sample_point);	
       }
     }
@@ -585,6 +590,7 @@ void ocl_notifySampleMaintenanceOfSelectivity(
 	ocl_createSample(onerel, &sample_point, &total_rows, 1);
 	ocl_extractSampleTuple(estimator, onerel, sample_point,item);
 	ocl_pushEntryToSampleBufer(estimator, i, item);
+	estimator->stats->maintenance_transfer_to_device++;
 	heap_freetuple(sample_point);	
       }
     }  
@@ -611,6 +617,7 @@ void ocl_notifySampleMaintenanceOfSelectivity(
       ocl_createSample(onerel,&sample_point,&total_rows,1);
       ocl_extractSampleTuple(estimator, onerel, sample_point,item);
       ocl_pushEntryToSampleBufer(estimator, insert_position, item);
+      estimator->stats->maintenance_transfer_to_device++;
       heap_freetuple(sample_point);
       pfree(item);
       relation_close(onerel, ShareUpdateExclusiveLock);
