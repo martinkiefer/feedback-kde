@@ -73,6 +73,7 @@ parser.add_argument("--test_workload", action="store", help="File containing the
 parser.add_argument("--gpu", action="store_true", help="Use the graphics card for the experiment.")
 parser.add_argument("--debug", action="store_true", help="Run in debug mode.")
 parser.add_argument("--log", action="store", help="Where to append the experimental results?")
+parser.add_argument("--logbw", action="store_true", help="Use logarithmic bandwidth representation.")
 args = parser.parse_args()
 
 # Set the input file names.
@@ -146,6 +147,9 @@ else:
       cur.execute("SET ocl_use_gpu TO false;")
     cur.execute("SET kde_enable TO true;")
 
+if args.logbw:
+    cur.execute("SET kde_bandwidth_representation TO Log;")
+
 # Initialize the training phase.
 if (args.model == "kde_batch"):
     # Drop all existing feedback and start feedback collection.
@@ -165,7 +169,7 @@ elif (args.model == "kde_adaptive_vsgd"):
     createModel(table, dimensions, sample_filename)
 
 # Run the training workload.
-train_queries = 0
+trainqueries = 0
 if (args.model == "kde_batch" or args.model == "kde_adaptive_vsgd" or args.model == "kde_adaptive_rmsprop"):
   with open(trainworkload_filename) as myfile:
     trainqueries = sum(1 for line in myfile)
@@ -272,7 +276,7 @@ if args.log:
    f = open(args.log, "a+")
    if os.path.getsize(args.log) == 0:
        f.write("Dataset;Dimension;Workload;Selectivity;Model;ModelSize;Trainingsize;Errortype;Error\n")
-   f.write("%s;%i;%s;%s;%s;%i;%i;%s;%f\n" % ('"', '"', '"', '"', args.model, modelsize, trainqueries, errortype, error))
+   f.write("%s;%s;%s;%s;%s;%i;%i;%s;%f\n" % ('"', '"', '"', '"', args.model, modelsize, trainqueries, col_errortype, error))
    f.close()
 else:
    print "Measured error: %f" % error 

@@ -205,31 +205,24 @@ clauselist_selectivity(PlannerInfo *root,
     }
     // If we have identified a request, try to run it on the device:
     if (ocl_request.table_identifier) {
-      if(ocl_useKDE()){
-	if (!ocl_estimateSelectivity(&ocl_request, &s1)) {
-	  // Ok... we were unable to evaluate this. Remove the flags from the nodes.
-	  foreach(l, clauses) {
-	    Node* clause = (Node *) lfirst(l);
-	    if (clause->type == T_Invalid)
-	      clause->type = T_RestrictInfo;
-	  }
-	  if (ocl_request.ranges) {
-	    free(ocl_request.ranges);
-	  }
-	}
-      }
-      else if(stholes_enabled()){
-	if (! stholes_est(ocl_request.table_identifier,&ocl_request,&s1)) {
-	  // Ok... we were unable to evaluate this. Remove the flags from the nodes.
-	  foreach(l, clauses) {
-	    Node* clause = (Node *) lfirst(l);
-	    if (clause->type == T_Invalid)
-	      clause->type = T_RestrictInfo;
-	  }
-	  if (ocl_request.ranges) {
-	    free(ocl_request.ranges);
-	  }	
-	}  
+      if (ocl_useKDE()) {
+        if (!ocl_estimateSelectivity(&ocl_request, &s1)) {
+          // Ok... we were unable to evaluate this. Remove flags from the nodes.
+          foreach(l, clauses) {
+            Node* clause = (Node *) lfirst(l);
+            if (clause->type == T_Invalid) clause->type = T_RestrictInfo;
+          }
+          if (ocl_request.ranges) free(ocl_request.ranges);
+        }
+      } else if (stholes_enabled()) {
+        if (! stholes_est(ocl_request.table_identifier,&ocl_request,&s1)) {
+          // Ok... we were unable to evaluate this. Remove flags from the nodes.
+          foreach(l, clauses) {
+            Node* clause = (Node *) lfirst(l);
+            if (clause->type == T_Invalid) clause->type = T_RestrictInfo;
+          }
+          if (ocl_request.ranges) free(ocl_request.ranges);
+        }
       }
     }
   }  
