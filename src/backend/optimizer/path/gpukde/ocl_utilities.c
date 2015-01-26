@@ -669,11 +669,7 @@ FILE* kde_getTimingFile() { return timing_file; }
 
 void assign_kde_timing_logfile_name(const char *newval, void *extra) {
   if (timing_file != NULL) fclose(timing_file);
-  timing_file = fopen(newval, "a");
-  if (timing_file) {
-    fprintf(timing_file, "\n");
-    fflush(timing_file);
-  }
+  timing_file = fopen(newval, "w");
 }
 
 #endif /* USE_OPENCL */
