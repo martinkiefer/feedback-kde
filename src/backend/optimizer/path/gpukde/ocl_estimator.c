@@ -428,7 +428,7 @@ static double rangeKDE(
       ctxt->queue, estimator->input_buffer, CL_FALSE,
       0, 2 * sizeof(kde_float_t) * estimator->nr_of_dimensions, query,
       0, NULL, &input_transfer_event);
-  estimator->stats->optimization_transfer_to_device++;
+  estimator->stats->estimation_transfer_to_device++;
   Assert(err == CL_SUCCESS);
   // Select kernel and normalization factor based on the kernel type.
   kde_float_t normalization_factor = 1.0;
