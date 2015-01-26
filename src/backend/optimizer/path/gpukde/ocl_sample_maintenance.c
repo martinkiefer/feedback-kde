@@ -508,6 +508,9 @@ void ocl_notifySampleMaintenanceOfSelectivity(
   if (estimator == NULL) return;
   estimator->stats->nr_of_estimations++;
 
+  //PRR and CAR do not need the karma metric.
+  if (kde_sample_maintenance_option != TKR && kde_sample_maintenance_option != PKR) return;
+  
   size_t global_size = estimator->rows_in_sample;
   cl_event quality_update_event;
 
