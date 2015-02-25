@@ -39,6 +39,7 @@
 extern bool ocl_use_gpu;
 extern bool kde_enable;
 extern int kde_samplesize;
+extern int kde_sample_maintenance_option;
 
 ocl_kernel_type_t global_kernel_type = GAUSS;
 bool scale_to_unit_variance = false;
@@ -855,7 +856,7 @@ void ocl_pushEntryToSampleBufer(
       context->queue, estimator->sample_buffer, CL_FALSE,
       offset, transfer_size, data_item, 0, NULL, &write_event);
   // Initialize the metrics (both to one, so newly sampled items are not immediately replaced)
-  if(estimator->sample_optimization == TKR || estimator->sample_optimization == PKR){
+  if(kde_sample_maintenance_option == TKR || kde_sample_maintenance_option == PKR){
     err |= clEnqueueWriteBuffer(
 	context->queue, estimator->sample_optimization->sample_karma_buffer,
 	CL_FALSE, position*sizeof(kde_float_t), sizeof(kde_float_t), &zero,
