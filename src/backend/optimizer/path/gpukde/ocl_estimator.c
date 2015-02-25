@@ -850,16 +850,20 @@ void ocl_pushEntryToSampleBufer(
   kde_float_t zero = 0.0;
   size_t transfer_size = ocl_sizeOfSampleItem(estimator);
   size_t offset = position * transfer_size;
+  cl_event write_event;
   err |= clEnqueueWriteBuffer(
       context->queue, estimator->sample_buffer, CL_FALSE,
-      offset, transfer_size, data_item, 0, NULL, NULL);
-  // Initialize the metrics (both to one, so newly sampled items are not immediately replaced).
-  err |= clEnqueueWriteBuffer(
-      context->queue, estimator->sample_optimization->sample_karma_buffer,
-      CL_FALSE, position*sizeof(kde_float_t), sizeof(kde_float_t), &zero,
-      0, NULL, NULL);
-  Assert(err == CL_SUCCESS);
+      offset, transfer_size, data_item, 0, NULL, &write_event);
+  // Initialize the metrics (both to one, so newly sampled items are not immediately replaced)
+  if(estimator->sample_optimization == TKR || estimator->sample_optimization == PKR){
+    err |= clEnqueueWriteBuffer(
+	context->queue, estimator->sample_optimization->sample_karma_buffer,
+	CL_FALSE, position*sizeof(kde_float_t), sizeof(kde_float_t), &zero,
+	1, &write_event, NULL);
+    Assert(err == CL_SUCCESS);
+  }
   
+  clReleaseEvent(write_event);
   err = clFinish(context->queue);
   Assert(err == CL_SUCCESS);
 }
@@ -1167,7 +1171,7 @@ Datum ocl_getStats(PG_FUNCTION_ARGS){
             errmsg("no KDE estimator exists for table %i", table_oid)));
     PG_RETURN_BOOL(false);
   }
-  Datum* datum_array = palloc(sizeof(Datum) * 9);
+  Datum* datum_array = palloc(sizeof(Datum) * 10);
   datum_array[0] = Int64GetDatum(estimator->stats->nr_of_estimations);
   datum_array[1] = Int64GetDatum(estimator->stats->nr_of_insertions);
   datum_array[2] = Int64GetDatum(estimator->stats->nr_of_deletions);
@@ -1177,6 +1181,7 @@ Datum ocl_getStats(PG_FUNCTION_ARGS){
   datum_array[6] = Int64GetDatum(estimator->stats->optimization_transfer_to_host);
   datum_array[7] = Int64GetDatum(estimator->stats->maintenance_transfer_to_device);
   datum_array[8] = Int64GetDatum(estimator->stats->maintenance_transfer_to_host);
+  datum_array[9] = Int64GetDatum(estimator->stats->maintenance_transfer_time);
   
   PG_RETURN_ARRAYTYPE_P(
       construct_array(

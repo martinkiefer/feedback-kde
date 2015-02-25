@@ -25,6 +25,7 @@
 #include "storage/bufmgr.h"
 
 #include <math.h>
+#include <sys/time.h>
 
 #ifdef USE_OPENCL
 
@@ -104,7 +105,7 @@ int kde_sample_maintenance_option;
 
 //Convenience method for retrieving the index of the smallest element
 static int getMinPenaltyIndex(
-    ocl_context_t*  ctxt, ocl_estimator_t* estimator){
+    ocl_context_t*  ctxt, ocl_estimator_t* estimator, cl_event wait_event){
   cl_event event;
   unsigned int index;
   cl_int err = CL_SUCCESS;
@@ -112,7 +113,7 @@ static int getMinPenaltyIndex(
   // Now fetch the minimum penalty.
   event = minOfArray(
       estimator->sample_optimization->sample_karma_buffer, estimator->rows_in_sample,
-      estimator->sample_optimization->min_val, estimator->sample_optimization->min_idx, 0, NULL);
+      estimator->sample_optimization->min_val, estimator->sample_optimization->min_idx, 0, wait_event);
   
   err |= clEnqueueReadBuffer(
       ctxt->queue, estimator->sample_optimization->min_idx, CL_TRUE, 0, sizeof(unsigned int),
@@ -199,6 +200,8 @@ static void trigger_periodic_random_replacement(ocl_estimator_t* estimator){
 
     HeapTuple sample_point;
     double total_rows;
+  
+    struct timeval tvBegin, tvEnd;
     
     int insert_position = random() % estimator->rows_in_sample;
     if (insert_position >= 0) {
@@ -212,7 +215,11 @@ static void trigger_periodic_random_replacement(ocl_estimator_t* estimator){
       item = palloc(ocl_sizeOfSampleItem(estimator));
       ocl_createSample(onerel,&sample_point,&total_rows,1);
       ocl_extractSampleTuple(estimator, onerel, sample_point,item);
+      gettimeofday(&tvBegin,NULL);
       ocl_pushEntryToSampleBufer(estimator, insert_position, item);
+      gettimeofday(&tvEnd,NULL);
+      estimator->stats->maintenance_transfer_time += (tvEnd.tv_sec - tvBegin.tv_sec) * 1000 * 1000;
+      estimator->stats->maintenance_transfer_time += (tvEnd.tv_usec - tvBegin.tv_usec);
       estimator->stats->maintenance_transfer_to_device++;
       
       
@@ -232,13 +239,12 @@ void ocl_notifySampleMaintenanceOfInsertion(Relation rel, HeapTuple new_tuple) {
   estimator->rows_in_table++;
   estimator->stats->nr_of_insertions++;
   
-  if (! kde_sample_maintenance_option) return;
+  if (kde_sample_maintenance_option != CAR  && kde_sample_maintenance_option != PRR) return;
   int insert_position = -1;
-  
+  struct timeval tvBegin, tvEnd;
+
   // First, check whether we still have size in the sample.
-  if (estimator->rows_in_sample < ocl_maxRowsInSample(estimator)) {
-    insert_position = estimator->rows_in_sample++;
-  } else if (kde_sample_maintenance_option == CAR) {
+  if (kde_sample_maintenance_option == CAR) {
     // The sample is full, use CAR.
     int replacements = getBinomial(estimator->rows_in_sample, 1.0 / estimator->rows_in_table);
     if(replacements > 0){
@@ -246,7 +252,11 @@ void ocl_notifySampleMaintenanceOfInsertion(Relation rel, HeapTuple new_tuple) {
       ocl_extractSampleTuple(estimator, rel, new_tuple, item);
       for(i=0; i < replacements; i++){
 	insert_position = random() % estimator->rows_in_sample;
+	gettimeofday(&tvBegin,NULL);
 	ocl_pushEntryToSampleBufer(estimator, insert_position, item);
+	gettimeofday(&tvEnd,NULL);
+	estimator->stats->maintenance_transfer_time += (tvEnd.tv_sec - tvBegin.tv_sec) * 1000 * 1000;
+	estimator->stats->maintenance_transfer_time += (tvEnd.tv_usec - tvBegin.tv_usec);
 	estimator->stats->maintenance_transfer_to_device++;
       }
       pfree(item);
@@ -254,12 +264,14 @@ void ocl_notifySampleMaintenanceOfInsertion(Relation rel, HeapTuple new_tuple) {
   }
   else if(kde_sample_maintenance_option == PRR){
     trigger_periodic_random_replacement(estimator);
-  }  
+  }
 }
 
 void ocl_notifySampleMaintenanceOfDeletion(Relation rel, ItemPointer tupleid) {
   ocl_estimator_t* estimator = ocl_getEstimator(rel->rd_id);
   if (estimator == NULL) return;
+  struct timeval tvBegin, tvEnd;
+
   // For now, we just use this to update the table counts.
   estimator->rows_in_table--;
   estimator->stats->nr_of_deletions++;
@@ -280,17 +292,21 @@ void ocl_notifySampleMaintenanceOfDeletion(Relation rel, ItemPointer tupleid) {
     Assert(BufferIsValid(delbuffer));
     ReleaseBuffer(delbuffer);
     
-    err |= clEnqueueWriteBuffer(
-        ctxt->queue, estimator->sample_optimization->deleted_point, CL_TRUE, 0,
-        ocl_sizeOfSampleItem(estimator),
-        tuple_buffer, 0, NULL, NULL);
     estimator->stats->maintenance_transfer_to_device++;   
     Assert(err == CL_SUCCESS);
-    pfree(tuple_buffer); 
+     
     unsigned int i = 0;
     cl_event hitmap_event;
+    cl_event write_event;
     size_t global_size = estimator->rows_in_sample;
     char* hitmap = (char*) palloc(global_size*sizeof(char));
+    
+    gettimeofday(&tvBegin,NULL);
+    
+    err |= clEnqueueWriteBuffer(
+      ctxt->queue, estimator->sample_optimization->deleted_point, CL_TRUE, 0,
+      ocl_sizeOfSampleItem(estimator),
+      tuple_buffer, 0, NULL, &write_event);
     
     cl_kernel kernel = ocl_getKernel(
       "get_point_deletion_hitmap", estimator->nr_of_dimensions);
@@ -304,7 +320,7 @@ void ocl_notifySampleMaintenanceOfDeletion(Relation rel, ItemPointer tupleid) {
     
     err = clEnqueueNDRangeKernel(
       ctxt->queue, kernel, 1, NULL, &global_size,
-      NULL, 0, NULL, &hitmap_event);
+      NULL, 1, &write_event, &hitmap_event);
     Assert(err == CL_SUCCESS);
     
     err = clEnqueueReadBuffer(
@@ -313,6 +329,11 @@ void ocl_notifySampleMaintenanceOfDeletion(Relation rel, ItemPointer tupleid) {
     estimator->stats->maintenance_transfer_to_host++;
     Assert(err == CL_SUCCESS);
     
+    gettimeofday(&tvEnd,NULL);
+    estimator->stats->maintenance_transfer_time += (tvEnd.tv_sec - tvBegin.tv_sec) * 1000 * 1000;
+    estimator->stats->maintenance_transfer_time += (tvEnd.tv_usec - tvBegin.tv_usec);
+    
+    clReleaseEvent(write_event);
     //We have got work todo. Get structures to obtain random rows.
     kde_float_t* item = palloc(ocl_sizeOfSampleItem(estimator));
     HeapTuple sample_point;
@@ -323,13 +344,18 @@ void ocl_notifySampleMaintenanceOfDeletion(Relation rel, ItemPointer tupleid) {
       if(hitmap[i]){
 	ocl_createSample(rel, &sample_point, &total_rows, 1);
 	ocl_extractSampleTuple(estimator, rel, sample_point,item);
+	gettimeofday(&tvBegin,NULL);
 	ocl_pushEntryToSampleBufer(estimator, i, item);
+	gettimeofday(&tvEnd,NULL);
+	estimator->stats->maintenance_transfer_time += (tvEnd.tv_sec - tvBegin.tv_sec) * 1000 * 1000;
+	estimator->stats->maintenance_transfer_time += (tvEnd.tv_usec - tvBegin.tv_usec);
 	estimator->stats->maintenance_transfer_to_device++;
 	heap_freetuple(sample_point);	
       }
     }
     pfree(item); 
     pfree(hitmap);
+    pfree(tuple_buffer);
   }
 }
 
@@ -515,7 +541,7 @@ void ocl_notifySampleMaintenanceOfSelectivity(
 
   //PRR and CAR do not need the karma metric.
   if (kde_sample_maintenance_option != TKR && kde_sample_maintenance_option != PKR) return;
-  
+  struct timeval tvBegin, tvEnd;
   size_t global_size = estimator->rows_in_sample;
   cl_event quality_update_event;
 
@@ -532,6 +558,7 @@ void ocl_notifySampleMaintenanceOfSelectivity(
       "update_sample_quality_metrics", estimator->nr_of_dimensions);
   ocl_context_t * ctxt = ocl_getContext();
   cl_int err = 0;
+  gettimeofday(&tvBegin,NULL);
   err |= clSetKernelArg(
       kernel, 0, sizeof(cl_mem), &(estimator->local_results_buffer));
   err |= clSetKernelArg(
@@ -547,6 +574,7 @@ void ocl_notifySampleMaintenanceOfSelectivity(
   err |= clSetKernelArg(
       kernel, 6, sizeof(double), &(kde_sample_maintenance_karma_decay));
   Assert(err == CL_SUCCESS);
+  
   
   err = clEnqueueNDRangeKernel(
       ctxt->queue, kernel, 1, NULL, &global_size,
@@ -576,7 +604,12 @@ void ocl_notifySampleMaintenanceOfSelectivity(
     err |= clEnqueueReadBuffer(
       ctxt->queue, estimator->sample_optimization->sample_hitmap, CL_TRUE, 0, sizeof(char) * global_size,
       hitmap, 1, &hitmap_event, NULL);
+    gettimeofday(&tvEnd,NULL);
+    estimator->stats->maintenance_transfer_time += (tvEnd.tv_sec - tvBegin.tv_sec) * 1000 * 1000;
+    estimator->stats->maintenance_transfer_time += (tvEnd.tv_usec - tvBegin.tv_usec);
     estimator->stats->maintenance_transfer_to_host++;
+    clReleaseEvent(hitmap_event);
+    clReleaseEvent(quality_update_event);
     
         //We have got work todo. Get structures to obtain random rows.
     kde_float_t* item = palloc(ocl_sizeOfSampleItem(estimator));
@@ -589,8 +622,12 @@ void ocl_notifySampleMaintenanceOfSelectivity(
       if(hitmap[i]){
 	ocl_createSample(onerel, &sample_point, &total_rows, 1);
 	ocl_extractSampleTuple(estimator, onerel, sample_point,item);
+	gettimeofday(&tvBegin,NULL);
 	ocl_pushEntryToSampleBufer(estimator, i, item);
-	estimator->stats->maintenance_transfer_to_device++;
+	gettimeofday(&tvEnd,NULL);
+	estimator->stats->maintenance_transfer_time += (tvEnd.tv_sec - tvBegin.tv_sec) * 1000 * 1000;
+	estimator->stats->maintenance_transfer_time += (tvEnd.tv_usec - tvBegin.tv_usec);
+	estimator->stats->maintenance_transfer_to_device += 2;
 	heap_freetuple(sample_point);	
       }
     }  
@@ -604,7 +641,12 @@ void ocl_notifySampleMaintenanceOfSelectivity(
     HeapTuple sample_point;
     double total_rows;
     
-    int insert_position = getMinPenaltyIndex(ctxt, estimator);
+    gettimeofday(&tvBegin,NULL);
+    int insert_position = getMinPenaltyIndex(ctxt, estimator,quality_update_event);
+    gettimeofday(&tvEnd,NULL);
+    clReleaseEvent(quality_update_event);
+    estimator->stats->maintenance_transfer_time += (tvEnd.tv_sec - tvBegin.tv_sec) * 1000 * 1000;
+    estimator->stats->maintenance_transfer_time += (tvEnd.tv_usec - tvBegin.tv_usec);
     if (insert_position >= 0) {
       Relation onerel = try_relation_open(
           estimator->table, ShareUpdateExclusiveLock);
@@ -616,8 +658,12 @@ void ocl_notifySampleMaintenanceOfSelectivity(
       item = palloc(ocl_sizeOfSampleItem(estimator));
       ocl_createSample(onerel,&sample_point,&total_rows,1);
       ocl_extractSampleTuple(estimator, onerel, sample_point,item);
+      gettimeofday(&tvBegin,NULL);
       ocl_pushEntryToSampleBufer(estimator, insert_position, item);
-      estimator->stats->maintenance_transfer_to_device++;
+      gettimeofday(&tvEnd,NULL);
+      estimator->stats->maintenance_transfer_time += (tvEnd.tv_sec - tvBegin.tv_sec) * 1000 * 1000;
+      estimator->stats->maintenance_transfer_time += (tvEnd.tv_usec - tvBegin.tv_usec);
+      estimator->stats->maintenance_transfer_to_device += 2;
       heap_freetuple(sample_point);
       pfree(item);
       relation_close(onerel, ShareUpdateExclusiveLock);

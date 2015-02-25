@@ -25,6 +25,7 @@ typedef struct ocl_stats{
   
   long maintenance_transfer_to_device;
   long maintenance_transfer_to_host;
+  long maintenance_transfer_time;
   
   long optimization_transfer_to_device;
   long optimization_transfer_to_host; 

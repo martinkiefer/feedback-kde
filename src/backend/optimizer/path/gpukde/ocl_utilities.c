@@ -594,10 +594,18 @@ cl_event minOfArray(
   Assert(err == CL_SUCCESS);
   
   cl_event init_event;
-  err = clEnqueueNDRangeKernel(
-      context->queue, init_buffer_min, 1, NULL, &global_size,
-      NULL, 0, NULL, &init_event);
-  Assert(err == CL_SUCCESS);
+  if(external_event == NULL){
+    err = clEnqueueNDRangeKernel(
+	context->queue, init_buffer_min, 1, NULL, &global_size,
+	NULL, 0, NULL, &init_event);
+    Assert(err == CL_SUCCESS);
+  }
+  else {
+    err = clEnqueueNDRangeKernel(
+	context->queue, init_buffer_min, 1, NULL, &global_size,
+	NULL, 1, &external_event, &init_event);
+    Assert(err == CL_SUCCESS);
+  }    
   
   // Ok, we selected the correct kernel and parameters. Now prepare the arguments.
   err |= clSetKernelArg(fast_min, 0, sizeof(cl_mem), &input_buffer);
