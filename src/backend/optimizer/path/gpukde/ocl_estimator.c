@@ -851,20 +851,20 @@ void ocl_pushEntryToSampleBufer(
   kde_float_t zero = 0.0;
   size_t transfer_size = ocl_sizeOfSampleItem(estimator);
   size_t offset = position * transfer_size;
-  cl_event write_event;
+  
   err |= clEnqueueWriteBuffer(
       context->queue, estimator->sample_buffer, CL_FALSE,
-      offset, transfer_size, data_item, 0, NULL, &write_event);
+      offset, transfer_size, data_item, 0, NULL, NULL);
+  Assert(err == CL_SUCCESS);
   // Initialize the metrics (both to one, so newly sampled items are not immediately replaced)
   if(kde_sample_maintenance_option == TKR || kde_sample_maintenance_option == PKR){
     err |= clEnqueueWriteBuffer(
 	context->queue, estimator->sample_optimization->sample_karma_buffer,
 	CL_FALSE, position*sizeof(kde_float_t), sizeof(kde_float_t), &zero,
-	1, &write_event, NULL);
+	0, NULL, NULL);
     Assert(err == CL_SUCCESS);
   }
   
-  clReleaseEvent(write_event);
   err = clFinish(context->queue);
   Assert(err == CL_SUCCESS);
 }
@@ -1186,7 +1186,7 @@ Datum ocl_getStats(PG_FUNCTION_ARGS){
   
   PG_RETURN_ARRAYTYPE_P(
       construct_array(
-          datum_array, 9,
+          datum_array, 10,
           INT8OID, sizeof(long), true, 'i'));
 }  
 

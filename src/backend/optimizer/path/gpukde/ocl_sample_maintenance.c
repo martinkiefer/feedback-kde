@@ -108,6 +108,7 @@ static int getMinPenaltyIndex(
     ocl_context_t*  ctxt, ocl_estimator_t* estimator, cl_event wait_event){
   cl_event event;
   unsigned int index;
+  struct timeval tvBegin, tvEnd;
   cl_int err = CL_SUCCESS;
     
   // Now fetch the minimum penalty.
@@ -115,9 +116,15 @@ static int getMinPenaltyIndex(
       estimator->sample_optimization->sample_karma_buffer, estimator->rows_in_sample,
       estimator->sample_optimization->min_val, estimator->sample_optimization->min_idx, 0, wait_event);
   
+  err = clWaitForEvents(1,&event);
+  Assert(err == CL_SUCCESS);
+  gettimeofday(&tvBegin,NULL);
   err |= clEnqueueReadBuffer(
       ctxt->queue, estimator->sample_optimization->min_idx, CL_TRUE, 0, sizeof(unsigned int),
       &index, 1, &event, NULL);
+  gettimeofday(&tvEnd,NULL);
+  estimator->stats->maintenance_transfer_time += (tvEnd.tv_sec - tvBegin.tv_sec) * 1000 * 1000;
+  estimator->stats->maintenance_transfer_time += (tvEnd.tv_usec - tvBegin.tv_usec);
   estimator->stats->maintenance_transfer_to_host++;
   Assert(err == CL_SUCCESS);
 
@@ -291,22 +298,22 @@ void ocl_notifySampleMaintenanceOfDeletion(Relation rel, ItemPointer tupleid) {
     ocl_extractSampleTuple(estimator,rel,&deltuple,tuple_buffer);
     Assert(BufferIsValid(delbuffer));
     ReleaseBuffer(delbuffer);
-    
-    estimator->stats->maintenance_transfer_to_device++;   
-    Assert(err == CL_SUCCESS);
      
     unsigned int i = 0;
     cl_event hitmap_event;
-    cl_event write_event;
     size_t global_size = estimator->rows_in_sample;
     char* hitmap = (char*) palloc(global_size*sizeof(char));
     
     gettimeofday(&tvBegin,NULL);
-    
     err |= clEnqueueWriteBuffer(
       ctxt->queue, estimator->sample_optimization->deleted_point, CL_TRUE, 0,
       ocl_sizeOfSampleItem(estimator),
-      tuple_buffer, 0, NULL, &write_event);
+      tuple_buffer, 0, NULL, NULL);
+    gettimeofday(&tvEnd,NULL);
+    estimator->stats->maintenance_transfer_time += (tvEnd.tv_sec - tvBegin.tv_sec) * 1000 * 1000;
+    estimator->stats->maintenance_transfer_time += (tvEnd.tv_usec - tvBegin.tv_usec);
+    estimator->stats->maintenance_transfer_to_device++;
+    Assert(err == CL_SUCCESS);
     
     cl_kernel kernel = ocl_getKernel(
       "get_point_deletion_hitmap", estimator->nr_of_dimensions);
@@ -320,20 +327,25 @@ void ocl_notifySampleMaintenanceOfDeletion(Relation rel, ItemPointer tupleid) {
     
     err = clEnqueueNDRangeKernel(
       ctxt->queue, kernel, 1, NULL, &global_size,
-      NULL, 1, &write_event, &hitmap_event);
+      NULL, 0, NULL, &hitmap_event);
     Assert(err == CL_SUCCESS);
     
+    err = clWaitForEvents(1,&hitmap_event);
+    Assert(err == CL_SUCCESS);
+    gettimeofday(&tvBegin,NULL);
     err = clEnqueueReadBuffer(
       ctxt->queue, estimator->sample_optimization->sample_hitmap, CL_TRUE, 0, sizeof(char) * global_size,
       hitmap, 1, &hitmap_event, NULL);
-    estimator->stats->maintenance_transfer_to_host++;
-    Assert(err == CL_SUCCESS);
-    
     gettimeofday(&tvEnd,NULL);
     estimator->stats->maintenance_transfer_time += (tvEnd.tv_sec - tvBegin.tv_sec) * 1000 * 1000;
     estimator->stats->maintenance_transfer_time += (tvEnd.tv_usec - tvBegin.tv_usec);
+    estimator->stats->maintenance_transfer_to_host++;
+    Assert(err == CL_SUCCESS);
+    err = clReleaseEvent(hitmap_event);
+    Assert(err == CL_SUCCESS);
+
     
-    clReleaseEvent(write_event);
+    //clReleaseEvent(write_event);
     //We have got work todo. Get structures to obtain random rows.
     kde_float_t* item = palloc(ocl_sizeOfSampleItem(estimator));
     HeapTuple sample_point;
@@ -558,7 +570,6 @@ void ocl_notifySampleMaintenanceOfSelectivity(
       "update_sample_quality_metrics", estimator->nr_of_dimensions);
   ocl_context_t * ctxt = ocl_getContext();
   cl_int err = 0;
-  gettimeofday(&tvBegin,NULL);
   err |= clSetKernelArg(
       kernel, 0, sizeof(cl_mem), &(estimator->local_results_buffer));
   err |= clSetKernelArg(
@@ -601,6 +612,8 @@ void ocl_notifySampleMaintenanceOfSelectivity(
       NULL, 1, &quality_update_event, &hitmap_event);
     Assert(err == CL_SUCCESS);
     
+    err = clWaitForEvents(1,&hitmap_event);
+    gettimeofday(&tvBegin,NULL);
     err |= clEnqueueReadBuffer(
       ctxt->queue, estimator->sample_optimization->sample_hitmap, CL_TRUE, 0, sizeof(char) * global_size,
       hitmap, 1, &hitmap_event, NULL);
@@ -608,8 +621,10 @@ void ocl_notifySampleMaintenanceOfSelectivity(
     estimator->stats->maintenance_transfer_time += (tvEnd.tv_sec - tvBegin.tv_sec) * 1000 * 1000;
     estimator->stats->maintenance_transfer_time += (tvEnd.tv_usec - tvBegin.tv_usec);
     estimator->stats->maintenance_transfer_to_host++;
-    clReleaseEvent(hitmap_event);
-    clReleaseEvent(quality_update_event);
+    err = clReleaseEvent(hitmap_event);
+    Assert(err == CL_SUCCESS);
+    err = clReleaseEvent(quality_update_event);
+    Assert(err == CL_SUCCESS);
     
         //We have got work todo. Get structures to obtain random rows.
     kde_float_t* item = palloc(ocl_sizeOfSampleItem(estimator));
@@ -634,19 +649,20 @@ void ocl_notifySampleMaintenanceOfSelectivity(
     pfree(item); 
     relation_close(onerel, ShareUpdateExclusiveLock);
   }
-  else if (kde_sample_maintenance_option == PKR &&
-      estimator->stats->nr_of_estimations % kde_sample_maintenance_period == 0 ){
+  else if (kde_sample_maintenance_option == PKR){
     kde_float_t* item;
 
     HeapTuple sample_point;
     double total_rows;
     
-    gettimeofday(&tvBegin,NULL);
+    if(estimator->stats->nr_of_estimations % kde_sample_maintenance_period != 0){
+      err = clReleaseEvent(quality_update_event);
+      Assert(err == CL_SUCCESS);
+      return;
+    }
+    
     int insert_position = getMinPenaltyIndex(ctxt, estimator,quality_update_event);
-    gettimeofday(&tvEnd,NULL);
     clReleaseEvent(quality_update_event);
-    estimator->stats->maintenance_transfer_time += (tvEnd.tv_sec - tvBegin.tv_sec) * 1000 * 1000;
-    estimator->stats->maintenance_transfer_time += (tvEnd.tv_usec - tvBegin.tv_usec);
     if (insert_position >= 0) {
       Relation onerel = try_relation_open(
           estimator->table, ShareUpdateExclusiveLock);
