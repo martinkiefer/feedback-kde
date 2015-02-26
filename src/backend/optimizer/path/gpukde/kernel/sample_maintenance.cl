@@ -33,8 +33,9 @@ __kernel void update_sample_quality_metrics(
   double local_karma = improvement * sample_size;
 
   // Now update the array
-  karma[get_global_id(0)] *= karma_decay;
-  karma[get_global_id(0)] += (1-karma_decay) * local_karma;
+  //karma[get_global_id(0)] *= karma_decay;
+  //karma[get_global_id(0)] += (1-karma_decay) * local_karma;
+  karma[get_global_id(0)] += local_karma;
 }
 
 __kernel void get_point_deletion_hitmap(
