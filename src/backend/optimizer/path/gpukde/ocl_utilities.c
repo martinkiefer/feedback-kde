@@ -104,6 +104,7 @@ void ocl_initialize(void) {
   ocl_context_t* ctxt = (ocl_context_t*)malloc(sizeof(ocl_context_t));
   memset(ctxt, 0, sizeof(ocl_context_t));
   ctxt->context = clCreateContext(NULL, 1, &device, NULL, NULL, &err);
+  Assert(err == CL_SUCCESS);
   ctxt->device = device;
   ctxt->is_gpu = ocl_use_gpu;
   ctxt->queue = clCreateCommandQueue(
