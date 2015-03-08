@@ -42,6 +42,11 @@ void ocl_allocateSampleMaintenanceBuffers(ocl_estimator_t* estimator) {
       sizeof(kde_float_t) * estimator->rows_in_sample, NULL, &err);
   Assert(err == CL_SUCCESS);  
   
+  descriptor->sample_impact_buffer = clCreateBuffer(
+      context->context, CL_MEM_READ_WRITE,
+      sizeof(kde_float_t) * estimator->rows_in_sample, NULL, &err);
+  Assert(err == CL_SUCCESS);
+  
   descriptor->sample_hitmap = clCreateBuffer(
       context->context, CL_MEM_READ_WRITE,
       sizeof(char) * estimator->rows_in_sample, NULL, &err);
@@ -99,6 +104,7 @@ void ocl_releaseSampleMaintenanceBuffers(ocl_estimator_t* estimator) {
 // GUC configuration variable.
 double kde_sample_maintenance_threshold;
 double kde_sample_maintenance_karma_decay;
+double kde_sample_maintenance_impact_decay;
 
 int kde_sample_maintenance_period;
 int kde_sample_maintenance_option;
@@ -552,7 +558,8 @@ void ocl_notifySampleMaintenanceOfSelectivity(
   estimator->stats->nr_of_estimations++;
 
   //PRR and CAR do not need the karma metric.
-  if (kde_sample_maintenance_option != TKR && kde_sample_maintenance_option != PKR) return;
+  if (kde_sample_maintenance_option != TKR && kde_sample_maintenance_option != PKR && kde_sample_maintenance_option != TKRP) 
+    return;
   struct timeval tvBegin, tvEnd;
   size_t global_size = estimator->rows_in_sample;
   cl_event quality_update_event;
@@ -575,15 +582,19 @@ void ocl_notifySampleMaintenanceOfSelectivity(
   err |= clSetKernelArg(
       kernel, 1, sizeof(cl_mem), &(estimator->sample_optimization->sample_karma_buffer));
   err |= clSetKernelArg(
-      kernel, 2, sizeof(unsigned int), &(estimator->rows_in_sample));
+      kernel, 2, sizeof(cl_mem), &(estimator->sample_optimization->sample_impact_buffer));
   err |= clSetKernelArg(
-      kernel, 3, sizeof(kde_float_t), &(normalization_factor));
+      kernel, 3, sizeof(unsigned int), &(estimator->rows_in_sample));
   err |= clSetKernelArg(
-      kernel, 4, sizeof(double), &(estimator->last_selectivity));
+      kernel, 4, sizeof(kde_float_t), &(normalization_factor));
   err |= clSetKernelArg(
-      kernel, 5, sizeof(double), &(actual_selectivity));
+      kernel, 5, sizeof(double), &(estimator->last_selectivity));
   err |= clSetKernelArg(
-      kernel, 6, sizeof(double), &(kde_sample_maintenance_karma_decay));
+      kernel, 6, sizeof(double), &(actual_selectivity));
+  err |= clSetKernelArg(
+      kernel, 7, sizeof(double), &(kde_sample_maintenance_karma_decay));
+  err |= clSetKernelArg(
+      kernel, 8, sizeof(double), &(kde_sample_maintenance_impact_decay));
   Assert(err == CL_SUCCESS);
   
   
@@ -607,6 +618,71 @@ void ocl_notifySampleMaintenanceOfSelectivity(
       kernel, 1, sizeof(kde_float_t), &kde_sample_maintenance_threshold);
     err |= clSetKernelArg(
       kernel, 2, sizeof(cl_mem), &(estimator->sample_optimization->sample_hitmap));    
+    err = clEnqueueNDRangeKernel(
+      ctxt->queue, kernel, 1, NULL, &global_size,
+      NULL, 1, &quality_update_event, &hitmap_event);
+    Assert(err == CL_SUCCESS);
+    
+    err = clWaitForEvents(1,&hitmap_event);
+    gettimeofday(&tvBegin,NULL);
+    err |= clEnqueueReadBuffer(
+      ctxt->queue, estimator->sample_optimization->sample_hitmap, CL_TRUE, 0, sizeof(char) * global_size,
+      hitmap, 1, &hitmap_event, NULL);
+    gettimeofday(&tvEnd,NULL);
+    estimator->stats->maintenance_transfer_time += (tvEnd.tv_sec - tvBegin.tv_sec) * 1000 * 1000;
+    estimator->stats->maintenance_transfer_time += (tvEnd.tv_usec - tvBegin.tv_usec);
+    estimator->stats->maintenance_transfer_to_host++;
+    err = clReleaseEvent(hitmap_event);
+    Assert(err == CL_SUCCESS);
+    err = clReleaseEvent(quality_update_event);
+    Assert(err == CL_SUCCESS);
+    
+        //We have got work todo. Get structures to obtain random rows.
+    kde_float_t* item = palloc(ocl_sizeOfSampleItem(estimator));
+    HeapTuple sample_point;
+    
+    double total_rows;
+    Relation onerel = try_relation_open(estimator->table, ShareUpdateExclusiveLock);
+    
+    for(i=0; i < global_size; i++){
+      if(hitmap[i]){
+	ocl_createSample(onerel, &sample_point, &total_rows, 1);
+	ocl_extractSampleTuple(estimator, onerel, sample_point,item);
+	gettimeofday(&tvBegin,NULL);
+	ocl_pushEntryToSampleBufer(estimator, i, item);
+	gettimeofday(&tvEnd,NULL);
+	estimator->stats->maintenance_transfer_time += (tvEnd.tv_sec - tvBegin.tv_sec) * 1000 * 1000;
+	estimator->stats->maintenance_transfer_time += (tvEnd.tv_usec - tvBegin.tv_usec);
+	estimator->stats->maintenance_transfer_to_device += 2;
+	heap_freetuple(sample_point);	
+      }
+    }  
+    pfree(item); 
+    relation_close(onerel, ShareUpdateExclusiveLock);
+  }
+  else if (kde_sample_maintenance_option == TKRP) {
+    //It might be more efficient to first determine the number of elements to replace
+    //and then create a random sample with sufficient size. Maybe later.
+    unsigned int i = 0;
+    cl_event hitmap_event;
+    char* hitmap = (char*) palloc(global_size*sizeof(char));
+    
+    cl_kernel kernel = ocl_getKernel(
+      "get_karma_threshold_plus_hitmap", estimator->nr_of_dimensions);
+    err |= clSetKernelArg(
+      kernel, 0, sizeof(cl_mem), &(estimator->sample_optimization->sample_karma_buffer));
+    err |= clSetKernelArg(
+      kernel, 1, sizeof(cl_mem), &(estimator->sample_optimization->sample_impact_buffer));
+    err |= clSetKernelArg(
+      kernel, 2, sizeof(cl_mem), &(estimator->local_results_buffer));
+    err |= clSetKernelArg(
+      kernel, 3, sizeof(kde_float_t), &kde_sample_maintenance_threshold);
+    err |= clSetKernelArg(
+      kernel, 4, sizeof(unsigned int), &(estimator->rows_in_table));
+    err |= clSetKernelArg(
+      kernel, 5, sizeof(double), &(actual_selectivity));
+    err |= clSetKernelArg(
+      kernel, 6, sizeof(cl_mem), &(estimator->sample_optimization->sample_hitmap));    
     err = clEnqueueNDRangeKernel(
       ctxt->queue, kernel, 1, NULL, &global_size,
       NULL, 1, &quality_update_event, &hitmap_event);

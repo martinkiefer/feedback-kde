@@ -64,7 +64,8 @@ typedef enum sample_maintenance_options {
   CAR = 1,		//Correlated Acceptance Rejection Sampling
   PRR = 2,		//Periodic Random Replacement - Replace a random sample point every N changes to the data
   TKR = 3,		//Triggered Karma Replacement - Replace sample points above a given Karma threshold
-  PKR = 4		//Periodic Karma Replacement - Replace the sample points with the worst Karma every N queries.
+  PKR = 4,		//Periodic Karma Replacement - Replace the sample points with the worst Karma every N queries.
+  TKRP = 5		//Triggered Karma Replacement Plus - TKR + additional heuristics to find deleted points
 } ocl_sample_maintenance_options_t;
 
 typedef enum optimizatin_algorithms{

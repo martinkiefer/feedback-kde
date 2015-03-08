@@ -5,6 +5,9 @@ import psycopg2
 import sys
 import json
 import subprocess
+import time
+import datetime
+import sys
 
 #from twisted.python import log
 from twisted.internet import reactor
@@ -39,7 +42,8 @@ class MyServerProtocol(WebSocketServerProtocol):
        self.cur.execute("SELECT kde_get_stats('%s')" % self.table)
        tup = self.cur.fetchone()
        stats=tup[0][1:-1].split(",")
-       data = {"error": local_error, "transfers": int(stats[7])+int(stats[8])}
+       data = {"error": local_error, "transfers": int(stats[7])+int(stats[8]), "time" : int(stats[9])}
+       self.dump_file.write("%s\n" % json.dumps(data))
        self.sendMessage(json.dumps(data), False)
 
    def init(self,payload):
@@ -66,26 +70,43 @@ class MyServerProtocol(WebSocketServerProtocol):
             subprocess.call(["bash", "%s" % os.path.join(basepath, "mvtc_id/load-mvtc_id-tables.sh")])
         self.queryfile = "%s.sql" % (self.table)
 
+	df = "%s_%s" % (self.table,self.conf["maintenance"])
+	df = "%s_%s" % (df,self.conf["samplesize"])
         if(self.conf["maintenance"] == "TKR"):
             self.cur.execute("SET kde_sample_maintenance TO TKR;")
+            self.cur.execute("SET kde_sample_maintenance_karma_threshold TO %s;" % self.conf["threshold"])	
+            self.cur.execute("SET kde_sample_maintenance_karma_decay TO %s;" % self.conf["decay"])
+	    df = "%s_%s" % (df,self.conf["threshold"])
+	    df = "%s_%s" % (df,self.conf["decay"])
+        if(self.conf["maintenance"] == "TKRP"):
+            self.cur.execute("SET kde_sample_maintenance TO TKRP;")
             self.cur.execute("SET kde_sample_maintenance_karma_threshold TO %s;" % self.conf["threshold"])
             self.cur.execute("SET kde_sample_maintenance_karma_decay TO %s;" % self.conf["decay"])
+            self.cur.execute("SET kde_sample_maintenance_impact_decay TO %s;" % self.conf["impact_decay"])
+	    df = "%s_%s" % (df,self.conf["threshold"])
+	    df = "%s_%s" % (df,self.conf["decay"])
+	    df = "%s_%s" % (df,self.conf["impact_decay"])
         if(self.conf["maintenance"] == "PKR"):
             self.cur.execute("SET kde_sample_maintenance TO PKR;")
             self.cur.execute("SET kde_sample_maintenance_period  TO %s;" % self.conf["period"] )
             self.cur.execute("SET kde_sample_maintenance_karma_decay TO %s;" % self.conf["decay"])
+	    df = "%s_%s" % (df,self.conf["period"])
+	    df = "%s_%s" % (df,self.conf["decay"])
         if(self.conf["maintenance"] == "CAR"):
             self.cur.execute("SET kde_sample_maintenance TO CAR;")
         if(self.conf["maintenance"] == "PRR"):
             self.cur.execute("SET kde_sample_maintenance TO PRR;")
             self.cur.execute("SET kde_sample_maintenance_period  TO %s;" % self.conf["period"] )  
-            
-        self.f = open(os.path.join(self.querypath, self.queryfile), "r")
+	    df = "%s_%s" % (df,self.conf["period"])
+        st = datetime.datetime.fromtimestamp(time.time()).strftime('%Y-%m-%d-%H:%M:%S')    
+	self.dump_file = open("/tmp/%s_%s" % (df,st), "w")
+        
+	self.f = open(os.path.join(self.querypath, self.queryfile), "r")
         self.queries = len(self.f.readlines())
         self.f.seek(0)  
         
         # Set all required options.
-        self.cur.execute("SET ocl_use_gpu TO false;")
+        self.cur.execute("SET ocl_use_gpu TO true;")
         self.cur.execute("SET kde_estimation_quality_logfile TO '/tmp/error.log';")
         if (errortype == "relative"):
             self.cur.execute("SET kde_error_metric TO SquaredRelative;")
@@ -101,6 +122,10 @@ class MyServerProtocol(WebSocketServerProtocol):
             self.cur.execute("SET kde_enable TO true;")
             self.cur.execute("SET kde_samplesize TO %s;" % self.conf["samplesize"])
         self.cur.execute("SET kde_debug TO false;")
+	self.cur.execute("SELECT pg_backend_pid()")
+	print self.cur.fetchone()
+	sys.stdout.flush()
+	#time.sleep(20)
         
         print "Building estimator ...",
         sys.stdout.flush()
@@ -152,7 +177,7 @@ class MyServerProtocol(WebSocketServerProtocol):
                     break
                 if "SELECT" == line[0:6]:
                     self.extractError()
-                    return
+                    #return
                 else:
                     continue
 
@@ -161,8 +186,9 @@ class MyServerProtocol(WebSocketServerProtocol):
               reactor.callFromThread(reactor.stop)
               
    def onClose(self,wasClean, code, reason):
-        reactor.callFromThread(reactor.stop)
+        #reactor.callFromThread(reactor.stop)
         self.cur.close()
+        self.dump_file.close()
         self.f.close()
         self.conn.close()
         self.ifile.close()
@@ -171,7 +197,7 @@ class MyServerProtocol(WebSocketServerProtocol):
 #from twisted.python import log as l
 #l.startLogging(sys.stdout)
 print "Get factpr"
-factory = WebSocketServerFactory("ws://localhos:9000",debug = False)
+factory = WebSocketServerFactory("ws://localhost:9000",debug = False)
 print "Get protocol"
 factory.protocol = MyServerProtocol
 print "Listen"

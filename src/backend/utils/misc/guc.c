@@ -159,7 +159,7 @@ extern int kde_adaptive_bandwidth_minibatch_size;
 extern double kde_sample_maintenance_threshold;
 /* Determines the threshold for decaying information for the quality metrics */
 extern double kde_sample_maintenance_karma_decay;
-extern double kde_sample_maintenance_contribution_decay;
+extern double kde_sample_maintenance_impact_decay;
 /* Determines the number of queries until the worst sample point is replaced */
 extern int kde_sample_maintenance_period;
 /* Determines the maximum number of buckets in the stholes histogram */
@@ -196,6 +196,7 @@ static const struct config_enum_entry kde_sample_maintenance_options[] = {
   {"PRR", PRR, false},
   {"TKR", TKR, false},
   {"PKR", PKR, false},
+  {"TKRP", TKR, false},
   {NULL, 0, false},
 };
 
@@ -2759,16 +2760,26 @@ static struct config_real ConfigureNamesReal[] =
 	    GUC_NOT_IN_SAMPLE
 	  },
 	  &kde_sample_maintenance_threshold,
-	  -0.2, -1.0, 1.0,
+	  -0.2, -DBL_MAX, DBL_MAX,
 	  NULL, NULL, NULL
 	},
 	{
 	  { "kde_sample_maintenance_karma_decay", PGC_USERSET, DEVELOPER_OPTIONS,
-	    gettext_noop("Value every sample point karma is multiplied by after a query."),
+	    gettext_noop("Value historic karma is multiplied by after a query."),
 	    NULL,
 	    GUC_NOT_IN_SAMPLE
 	  },
 	  &kde_sample_maintenance_karma_decay,
+	  0.9, 0.0, 1.0,
+	  NULL, NULL, NULL
+	},
+	{
+	  { "kde_sample_maintenance_impact_decay", PGC_USERSET, DEVELOPER_OPTIONS,
+	    gettext_noop("Value historic contribution is multiplied by after a query."),
+	    NULL,
+	    GUC_NOT_IN_SAMPLE
+	  },
+	  &kde_sample_maintenance_impact_decay,
 	  0.9, 0.0, 1.0,
 	  NULL, NULL, NULL
 	},

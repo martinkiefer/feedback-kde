@@ -849,6 +849,7 @@ void ocl_pushEntryToSampleBufer(
   ocl_context_t* context = ocl_getContext();
   cl_int err = CL_SUCCESS;
   kde_float_t zero = 0.0;
+  kde_float_t one = 1.0;
   size_t transfer_size = ocl_sizeOfSampleItem(estimator);
   size_t offset = position * transfer_size;
   
@@ -857,10 +858,16 @@ void ocl_pushEntryToSampleBufer(
       offset, transfer_size, data_item, 0, NULL, NULL);
   Assert(err == CL_SUCCESS);
   // Initialize the metrics (both to one, so newly sampled items are not immediately replaced)
-  if(kde_sample_maintenance_option == TKR || kde_sample_maintenance_option == PKR){
+  if(kde_sample_maintenance_option == TKR || kde_sample_maintenance_option == TKRP || kde_sample_maintenance_option == PKR){
     err |= clEnqueueWriteBuffer(
 	context->queue, estimator->sample_optimization->sample_karma_buffer,
 	CL_FALSE, position*sizeof(kde_float_t), sizeof(kde_float_t), &zero,
+	0, NULL, NULL);
+    Assert(err == CL_SUCCESS);
+    
+    err |= clEnqueueWriteBuffer(
+	context->queue, estimator->sample_optimization->sample_impact_buffer,
+	CL_FALSE, position*sizeof(kde_float_t), sizeof(kde_float_t), &one,
 	0, NULL, NULL);
     Assert(err == CL_SUCCESS);
   }
