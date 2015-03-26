@@ -1114,7 +1114,12 @@ Datum ocl_setKDEBandwidth(PG_FUNCTION_ARGS) {
     new_bandwidth[i] = DatumGetFloat8(
         DirectFunctionCall1(
             numeric_float8_no_overflow, bandwidth_datum_array[i]));
+    if (kde_bandwidth_representation == LOG_BW) {
+      new_bandwidth[i] = log(new_bandwidth[i]);
+    }
+    fprintf(stderr, "\t%e", new_bandwidth[i]);
   }
+  fprintf(stderr, "\n");
   // Transfer the bandwidth to the estimator.
   ocl_context_t* context = ocl_getContext();
   cl_int err = CL_SUCCESS;
@@ -1181,7 +1186,11 @@ Datum ocl_getBandwidth(PG_FUNCTION_ARGS) {
   Datum* datum_array = palloc(sizeof(Datum) * estimator->nr_of_dimensions);
   int i = 0;
   for (; i < estimator->nr_of_dimensions; ++i) {
-    datum_array[i] = Float8GetDatum(bandwidth[i]);
+    if (kde_bandwidth_representation == LOG_BW) {
+      datum_array[i] = Float8GetDatum(exp(bandwidth[i]));
+    } else {
+      datum_array[i] = Float8GetDatum(bandwidth[i]);
+    }
   }
   // Clean up.
   free(bandwidth);
