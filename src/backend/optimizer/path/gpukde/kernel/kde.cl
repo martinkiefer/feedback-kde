@@ -55,14 +55,12 @@ __kernel void gauss_kde(
 		T lo = range[2*i] - val;
 		T up = range[2*i + 1] - val;
 		// Now compute the local result.
-#ifndef LOG_BANDWIDTH
-		T local_result = erf(up / (M_SQRT2 * h));
-		local_result -= erf(lo / (M_SQRT2 * h));
-#else
-		T local_result = erf(up / (M_SQRT2 * exp(h)));
-		local_result -= erf(lo / (M_SQRT2 * exp(h)));
+#ifdef LOG_BANDWIDTH
+      h = exp(h);
 #endif
-		res *= local_result;
+      T local_result = erf(up / (M_SQRT2 * h));
+		local_result -= erf(lo / (M_SQRT2 * h));
+		res *= h == 0 ? (sign(up) - sign(lo)) : local_result;
 	}
 	result[get_global_id(0)] = res;
 }
