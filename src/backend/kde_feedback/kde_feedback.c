@@ -9,6 +9,7 @@
 #include "parser/parsetree.h"
 #include "optimizer/clauses.h"
 #include "optimizer/path/gpukde/ocl_estimator_api.h"
+#include "optimizer/path/gpukde/stholes_estimator_api.h"
 #include "catalog/indexing.h"
 #include "catalog/pg_type.h"
 #include "catalog/pg_kdefeedback.h"
@@ -304,7 +305,12 @@ int kde_finish(PlanState *node){
 	
 	if(nodeTag(node) == T_SeqScanState){
 	  if(node->instrument != NULL && node->instrument->kde_rq != NULL){
-	    rtable=node->instrument->kde_rtable;
+	    
+       if(stholes_enabled()) {
+         stholes_process_feedback((PlanState *) node);
+       }
+       
+       rtable=node->instrument->kde_rtable;
 	    rte = rt_fetch(((Scan *) node->plan)->scanrelid, rtable);
 	    
 	    MemSet(new_record, 0, sizeof(new_record));
@@ -313,7 +319,8 @@ int kde_finish(PlanState *node){
 	    unsigned int attribute_bitmap = 0;
 	    bytea* rq_buffer = materialize_rqlist_to_buffer(
 	        node->instrument->kde_rq, &attribute_bitmap);
-      release_rqlist(node->instrument->kde_rq);
+       release_rqlist(node->instrument->kde_rq);
+       node->instrument->kde_rq = NULL;
 	    float8 qual_tuples =
 	        (float8)(node->instrument->tuplecount + node->instrument->ntuples) /
 	        (node->instrument->nloops+1);
