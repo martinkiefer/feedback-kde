@@ -16,8 +16,8 @@ __kernel void epanechnikov_kde(
 	__global const T* const range,
 	__global const T* const bandwidth
 ) {
-	T res = 1.0;
-	for (unsigned int i=0; i<D; ++i) {
+  T res = 1.0;
+  for (unsigned int i=0; i<D; ++i) {
 		// Fetch all required input data.
 		T val = data[D*get_global_id(0) + i];
 		T h = bandwidth[i];
@@ -35,7 +35,7 @@ __kernel void epanechnikov_kde(
 		local_result /= h*h*h;
 		local_result *= (lo < up);
 		// Apply the boundary cases: 
-		res *= is_complete ? (4.0 / 3.0) : local_result;
+		//res *= is_complete ? (4.0 / 3.0) : local_result;
 	}
 	result[get_global_id(0)] = res;
 }
@@ -47,22 +47,24 @@ __kernel void gauss_kde(
 	__global const T* const range,
 	__global const T* const bandwidth
 ) {
+	__local T bw[D];
+  if (get_local_id(0) < D) {
+#ifndef LOG_BANDWIDTH
+    T h = bandwidth[get_local_id(0)];
+#else
+    T h = exp(bandwidth[get_local_id(0)]);
+#endif
+    bw[get_local_id(0)] = 1.0 / (M_SQRT2 * h);
+  }
+  barrier(CLK_LOCAL_MEM_FENCE);
 	T res = 1.0;
 	for (unsigned int i=0; i<D; ++i) {
 		// Fetch all required input data.
 		T val = data[D*get_global_id(0) + i];
-		T h = bandwidth[i];
 		T lo = range[2*i] - val;
 		T up = range[2*i + 1] - val;
 		// Now compute the local result.
-#ifndef LOG_BANDWIDTH
-		T local_result = erf(up / (M_SQRT2 * h));
-		local_result -= erf(lo / (M_SQRT2 * h));
-#else
-		T local_result = erf(up / (M_SQRT2 * exp(h)));
-		local_result -= erf(lo / (M_SQRT2 * exp(h)));
-#endif
-		res *= local_result;
+		res *= erf(up * bw[i]) - erf(lo * bw[i]);
 	}
 	result[get_global_id(0)] = res;
 }
