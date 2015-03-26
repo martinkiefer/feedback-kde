@@ -666,7 +666,7 @@ void ocl_runModelOptimization(ocl_estimator_t* estimator) {
       lower_bounds[i] = 1e-20;    // We never want to be negative.
     }
     for (i=0; i<estimator->nr_of_dimensions; ++i) {
-      upper_bounds[i] = 4 * bandwidth[i];    // We never want to be negative.
+      upper_bounds[i] = 4 * bandwidth[i];
     }    
   }  
   double tmp;
@@ -695,12 +695,12 @@ void ocl_runModelOptimization(ocl_estimator_t* estimator) {
   Assert(nl_err > 0 );
   fprintf(stderr, " done (%i, %f)\n", nl_err, tmp);
   // Prepare the local refinement.
-  /*nlopt_opt local_optimizer = nlopt_create(
+  nlopt_opt local_optimizer = nlopt_create(
       NLOPT_LD_LBFGS, estimator->nr_of_dimensions);
   nlopt_set_lower_bounds(local_optimizer, lower_bounds);
   nlopt_set_min_objective(local_optimizer, computeGradient, &params);
-  nlopt_set_ftol_abs(local_optimizer, 1e-10);
-  nlopt_set_maxeval(local_optimizer, 1000);
+  nlopt_set_ftol_abs(local_optimizer, 1e-20);
+  nlopt_set_maxeval(local_optimizer, 100);
   fprintf(stderr, "> Running local refinement: ");
   err = nlopt_optimize(local_optimizer, bandwidth, &tmp);
   fprintf(stderr, " done (%i, %f)\n", err, tmp);
@@ -714,7 +714,7 @@ void ocl_runModelOptimization(ocl_estimator_t* estimator) {
       fprintf(stderr, "\n");
     }
   }
-  nlopt_destroy(local_optimizer);*/
+  nlopt_destroy(local_optimizer);
   // Transfer the bandwidth to the device.
   for (i=0; i<estimator->nr_of_dimensions; ++i) {
     fbandwidth[i] = bandwidth[i];
