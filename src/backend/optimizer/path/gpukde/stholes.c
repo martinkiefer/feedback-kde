@@ -57,6 +57,7 @@ typedef struct st_head {
   Oid table;
   int32 columns;
   unsigned int* column_order;
+  unsigned int tuples;
   // Information for updating the structure.
   st_hole_t* last_query;
   kde_float_t epsilon;
@@ -1168,7 +1169,7 @@ static int est(
     }
   }
 
-  *selectivity = _est(head, head->root, &ivol);
+  *selectivity = _est(head, head->root, &ivol) / head->tuples;
   return 1;
 } 
 
@@ -1219,8 +1220,9 @@ static void buildAndRefine(st_head_t* model) {
  */
 void stholes_process_feedback(PlanState *node) {
   if (current == NULL) return;
+  if (! current->process_feedback) return;
   if (nodeTag(node) != T_SeqScanState) return;
-  if (node->instrument == NULL || node->instrument->kde_rq == NULL) return;
+  if (node->instrument == NULL) return;
   CREATE_TIMER();
   if (((SeqScanState*) node)->ss_currentRelation->rd_id == current->table &&
       current->process_feedback) {
@@ -1233,6 +1235,7 @@ void stholes_process_feedback(PlanState *node) {
                  node->instrument->nfiltered1 + node->instrument->ntuples) /
         (node->instrument->nloops+1);
     // Update the model.
+    current->tuples = all_tuples;
     buildAndRefine(current);
     // And report the estimation error.
     ocl_reportErrorToLogFile(
