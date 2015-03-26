@@ -209,7 +209,7 @@ __kernel void updateRmspropOnlineEstimate(
     lr = fmax(lr * STEP_DECREASE, STEP_MIN_LIMIT);
 
   //Rmsprop scales the gradient with the square root of the running squared gradient average.
-  T scaled_g = g/sqrt(gs_avg);
+  T scaled_g = gs_avg == 0.0 ? (g == 0.0 ? 0.0 : 1.0) : g / sqrt(gs_avg);
   //Pervent negative bandwidth values by restricting bandwidth decreases
 #ifndef LOG_BANDWIDTH
   bandwidth[i] = fmax(bandwidth[i] - scaled_g*lr,((T)0.5) * bandwidth[i]);
