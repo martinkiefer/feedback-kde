@@ -818,9 +818,6 @@ static void ocl_prepareRmspropOnlineLearningStep(ocl_estimator_t* estimator) {
   }
   err = clReleaseEvent(partial_gradient_event);
   Assert(err == CL_SUCCESS);
-  ocl_printBuffer(
-      " > Gradient at bandwidth:",
-      descriptor->partial_gradient_buffer, estimator->nr_of_dimensions, 1);
 }
 
 static void ocl_runRmspropOnlineLearningStep(
@@ -833,6 +830,9 @@ static void ocl_runRmspropOnlineLearningStep(
   cl_int err = CL_SUCCESS;
   ocl_rmsPropOptimization_t* descriptor =
       estimator->bandwidth_optimization->rmsprop_descriptor;
+  ocl_printBuffer(
+      "\tGradient at bandwidth:",
+      descriptor->gradient_buffer, estimator->nr_of_dimensions, 1);
 
   // Compute the scaling factor for the gradient.
   kde_float_t gradient_factor =
@@ -858,7 +858,7 @@ static void ocl_runRmspropOnlineLearningStep(
       estimator->nr_of_dimensions, 1);
 
   // Ok, we have a new observation, check if we have a full mini-batch:
-  if (descriptor->accumulated_gradients++ % kde_adaptive_bandwidth_minibatch_size == 0) {
+  if (++(descriptor->accumulated_gradients) % kde_adaptive_bandwidth_minibatch_size == 0) {
     // Full mini-batch:
     if (ocl_isDebug()) fprintf(stderr, "\t >> Full minibatch <<\n");
     if (! descriptor->optimization_initialized) {
