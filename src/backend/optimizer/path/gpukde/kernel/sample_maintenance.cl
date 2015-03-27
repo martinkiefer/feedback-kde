@@ -35,7 +35,7 @@ __kernel void update_sample_quality_metrics(
   //  The karma is -1 if improvement < 0
   //  The karma is +1 if improvement > 0
   double local_karma;
-  if (actual_selectivity == 0 && local_contribution > 0.001) {
+  if (actual_selectivity == 0 && local_contribution > 0.5) {
     local_karma = -1;
   } else {
     local_karma = actual_selectivity == 0 && fabs(improvement) < 0.0005 ? 0 : improvement < 0 ? -1 : 1;
