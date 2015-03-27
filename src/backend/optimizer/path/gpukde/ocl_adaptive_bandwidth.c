@@ -919,6 +919,7 @@ void ocl_runOnlineLearningStep(
 
 void ocl_prepareOnlineLearningStep(ocl_estimator_t* estimator) {
   if (!kde_enable_adaptive_bandwidth) return;
+  CREATE_TIMER();
   if(kde_online_optimization_algorithm == VSGD_FD) {
     ocl_prepareVsgdOnlineLearningStep(estimator);
   } else if(kde_online_optimization_algorithm == RMSPROP) {
@@ -928,6 +929,7 @@ void ocl_prepareOnlineLearningStep(ocl_estimator_t* estimator) {
         stderr, "I do not know this optimization algorithm: %i\n",
         kde_online_optimization_algorithm);
   }
+  LOG_TIMER("Model Maintenance");
 }
 
 void ocl_releaseBandwidthOptimizatztionBuffers(ocl_estimator_t* estimator) {
