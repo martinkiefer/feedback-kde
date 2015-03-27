@@ -3,7 +3,7 @@
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 source $DIR/../../conf.sh
 
-DATASETS=(bike covtype genhist_set1 genhist_set2 power protein)
+DATASETS=(bike forest set1 genhist_set2 power protein)
 QUERIES=2500
 
 # Create the scaled datasets and query workloads.
