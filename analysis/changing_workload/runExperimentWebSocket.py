@@ -8,6 +8,7 @@ import subprocess
 import time
 import datetime
 import sys
+import math
 
 #from twisted.python import log
 from twisted.internet import reactor
@@ -17,7 +18,6 @@ from autobahn.twisted.websocket import WebSocketServerFactory
 # Define and parse the command line arguments
 parser = argparse.ArgumentParser()
 parser.add_argument("--dbname", action="store", required=True, help="Database to which the script will connect.")#
-parser.add_argument("--dataset", action="store", choices=["mvt", "mvtc_i","mvtc_id"], required=True, help="Which dataset should be run?")#
 parser.add_argument("--error", action="store", choices=["relative","absolute"], default="relative", help="Which error metric should be optimized / reported?")#
 parser.add_argument("--optimization", action="store", choices=["heuristic", "adaptive", "stholes"], default="heuristic", help="How should the model be optimized?")#
 parser.add_argument("--log", action="store", required=True, help="Where to append the experimental results?")#
@@ -26,7 +26,6 @@ args = parser.parse_args()
 
 # Fetch the arguments.
 dbname = args.dbname
-dataset = args.dataset
 errortype = args.error
 optimization = args.optimization
 log = args.log
@@ -49,27 +48,27 @@ class MyServerProtocol(WebSocketServerProtocol):
    def init(self,payload):
         basepath = os.path.dirname(os.path.abspath(inspect.getfile(inspect.currentframe())))
         self.conn = psycopg2.connect("dbname=%s host=localhost" % dbname)
-        self.cur = self.conn.cursor()
         self.conf = json.loads(payload)
         self.finished_queries = 0
         print "bash %s" % os.path.join(basepath, "mvtc_id/load-mvtc_id-tables.sh")
-        if dataset == "mvt":
-            self.conn.set_session('read uncommitted', autocommit=True)
-            self.querypath = os.path.join(basepath, "mvt/queries")
-            self.table = "mvtc_d%s" % self.conf["dimensions"]
-            subprocess.call(["bash", "%s" % os.path.join(basepath, "mvt/load-mvt-tables.sh")])
-        if dataset == "mvtc_i":
+        if "mvtc_id" in self.conf["workload"]:
+	    spread = self.conf["workload"][8:]
+	    ppc = self.conf["ppc"]
+	    pqr = str(int((10*int(ppc))/(float(self.conf["pqr"])*100)))
+	    
+	    print "%s %s %s" % (spread,ppc,pqr)
             self.conn.set_session(autocommit=True)
-            self.querypath = os.path.join(basepath, "mvtc_i/queries")
-            self.table = "mvtc_i_d%s" % self.conf["dimensions"]
-            subprocess.call(["bash", "%s" % os.path.join(basepath, "mvtc_i/load-mvtc_i-tables.sh")] )
-        if dataset == "mvtc_id":
-            self.conn.set_session(autocommit=True)
-            self.querypath = os.path.join(basepath, "mvtc_id/queries")
+            self.querypath = os.path.join(basepath, "mvtc_id/%s_%s_%s/queries" % (spread,ppc,pqr))
             self.table = "mvtc_id_d%s" % self.conf["dimensions"]
-            subprocess.call(["bash", "%s" % os.path.join(basepath, "mvtc_id/load-mvtc_id-tables.sh")])
-        self.queryfile = "%s.sql" % (self.table)
+            subprocess.call(["bash", "%s" % os.path.join(basepath, "mvtc_id/load-mvtc_id-tables.sh"),spread,ppc,pqr])
+            self.queryfile = "%s.sql" % (self.table)
+        if "bike" in self.conf["workload"]:
+	    self.conn.set_session('read uncommitted', autocommit=True)
+            self.querypath = os.path.join(basepath, "../static/bike/queries")
+            self.queryfile = "bike%sdt.sql" % self.conf["dimensions"]
+            self.table = "bike%s" % self.conf["dimensions"]
 
+        self.cur = self.conn.cursor()
 	df = "%s_%s" % (self.table,self.conf["maintenance"])
 	df = "%s_%s" % (df,self.conf["samplesize"])
         if(self.conf["maintenance"] == "TKR"):
@@ -117,7 +116,7 @@ class MyServerProtocol(WebSocketServerProtocol):
             self.cur.execute("SET kde_enable TO true;")
             self.cur.execute("SET kde_enable_adaptive_bandwidth TO true;")
             self.cur.execute("SET kde_minibatch_size TO 5;")
-            self.cur.execute("SET kde_samplesize TO %i;" % self.conf["samplesize"])
+            self.cur.execute("SET kde_samplesize TO %s;" % self.conf["samplesize"])
         elif (optimization == "heuristic"):
             self.cur.execute("SET kde_enable TO true;")
             self.cur.execute("SET kde_samplesize TO %s;" % self.conf["samplesize"])
@@ -177,7 +176,7 @@ class MyServerProtocol(WebSocketServerProtocol):
                     break
                 if "SELECT" == line[0:6]:
                     self.extractError()
-                    #return
+                    return
                 else:
                     continue
 

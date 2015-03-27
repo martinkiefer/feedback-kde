@@ -2770,7 +2770,7 @@ static struct config_real ConfigureNamesReal[] =
 	    GUC_NOT_IN_SAMPLE
 	  },
 	  &kde_sample_maintenance_karma_decay,
-	  0.9, 0.0, 1.0,
+	  0.9, -DBL_MAX, DBL_MAX,
 	  NULL, NULL, NULL
 	},
 	{
@@ -2780,7 +2780,7 @@ static struct config_real ConfigureNamesReal[] =
 	    GUC_NOT_IN_SAMPLE
 	  },
 	  &kde_sample_maintenance_impact_decay,
-	  0.9, 0.0, 1.0,
+	  0.9, -DBL_MAX, DBL_MAX,
 	  NULL, NULL, NULL
 	},
 #endif /* USE_OPENCL */
@@ -3581,7 +3581,7 @@ static struct config_enum ConfigureNamesEnum[] =
       NULL
     },
     &kde_online_optimization_algorithm,
-    VSGD_FD, kde_online_optimization_options,
+    RMSPROP, kde_online_optimization_options,
     NULL, NULL, NULL
   },
   {
