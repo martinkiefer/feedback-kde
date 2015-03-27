@@ -7,7 +7,6 @@ import os
 import psycopg2
 import random
 import re
-import rpy2
 import sys
 import time
 
@@ -79,10 +78,6 @@ table = "time%i" % args.dimensions
 # Determine the total volume of the given table.
 if not args.reuse:
   cur.execute("DELETE FROM pg_kdemodels;");
-sys.stdout.flush()
-# Also count the number of rows in the table.
-cur.execute("SELECT COUNT(*) FROM %s;" % table)
-nrows = int(cur.fetchone()[0])
 
 # If we run heuristic or optimal KDE, we do not need a training set.
 if (model == "kde_heuristic" or model == "kde_optimal" or model == "none"):
@@ -118,14 +113,12 @@ elif (model == "kde_adaptive"):
 # Run the training queries.
 finished_queries = 0
 if (trainqueries>0):
-   print "\tRunning training queries ... ",
+   print "\tRunning training queries ... "
 while (finished_queries < trainqueries):
    cur.execute(createQuery(table, args.dimensions))
    finished_queries += 1
-   sys.stdout.write("\r\t\tFinished %i of %i training queries." % (finished_queries, trainqueries))
-   sys.stdout.flush()
-if (trainqueries > 0):
-   print "done!"
+if (trainqueries>0):
+  print "done!"
 
 if (model == "kde_batch"):
     cur.execute("SET kde_collect_feedback TO false;") # We don't need further feedback collection.    
@@ -157,15 +150,22 @@ cur = conn.cursor()
 
 query_time = 0
 
-print "\tRunning experiment ... ",
+sys.stdout.write("\tRunning experiment ... ")
+sys.stdout.flush()
 # Reset the error tracking.
 # And run the experiments.
 finished_queries = 0
+total_runtime = 0
 while (finished_queries < queries):
-   cur.execute(createQuery(table, args.dimensions))
+   query = createQuery(table, args.dimensions)
+   ts = time.time()
+   cur.execute(query)
+   te = time.time()
+   total_runtime += (te - ts)
    finished_queries += 1
 print "done!"
 conn.close()
+total_runtime *= 1000
 
 # Now aggregate the measurements.
 construction_time = 0
@@ -189,6 +189,6 @@ f.close()
 
 f = open(log, "a+")
 if os.path.getsize(log) == 0:
-    f.write("Dimensions;Model;GPU;ModelSize;ConstructionTime;EstimationTime;MaintenanceTime\n")
-f.write("%i;%s;%s;%i;%i;%i;%i\n" % (args.dimensions, args.model, args.gpu, args.modelsize, construction_time, estimation_time, maintenance_time))
+    f.write("Dimensions;Model;GPU;ModelSize;ConstructionTime;EstimationTime;MaintenanceTime;TotalRuntime\n")
+f.write("%i;%s;%s;%i;%i;%i;%i;%.2f\n" % (args.dimensions, args.model, args.gpu, args.modelsize, construction_time, estimation_time, maintenance_time, total_runtime))
 f.close()
