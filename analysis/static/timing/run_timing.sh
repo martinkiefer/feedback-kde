@@ -24,13 +24,6 @@ for dimension in "${DIMENSIONS[@]}"; do
       for i in $(seq 1 $REPETITIONS); do
          echo "    Repetition $i of $REPETITIONS:"
             
-         echo "      STHoles:"
-         python $DIR/runTimingExperiment.py                    \
-            --dbname=$PGDATABASE --port=$PGPORT                \
-            --dimensions=$dimension --log=$DIR/result_time.csv \
-            --model=stholes --modelsize=$stholes_modelsize     \
-            --trainqueries=0 --queries=$QUERIES 
-         
          echo "      KDE Heuristic (CPU):"
          python $DIR/runTimingExperiment.py                    \
             --dbname=$PGDATABASE --port=$PGPORT                \
