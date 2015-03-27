@@ -51,23 +51,22 @@ typedef enum error_metrics {
   SQUARED_RELATIVE = 4,
 } ocl_error_metrics_t;
 
-/*
- * Enum definition to select a possible error metric that should be optimized.
- */
-typedef enum sample_maintenance_insert_options {
-  //Insert driven methods
-  NONE_I = 0,
-  RESERVOIR = 1, 	//Plain reservoir sampling
-  RANDOM = 2,		//Replaces the worst sample point with probability 1/number of tuples
-} ocl_sample_maintenance_insert_options_t;
-
-
 typedef enum sample_maintenance_query_options {
   //Query driven methods
   NONE_Q = 0,
   PERIODIC = 1,		//Replace the worst sample point every n elements 
   THRESHOLD = 2, 	//Replace a sample point when it reaches a certain threshold
 } ocl_sample_maintenance_query_options_t;
+
+typedef enum sample_maintenance_options {
+  //Insert driven methods
+  NONE_M = 0,
+  CAR = 1,		//Correlated Acceptance Rejection Sampling
+  PRR = 2,		//Periodic Random Replacement - Replace a random sample point every N changes to the data
+  TKR = 3,		//Triggered Karma Replacement - Replace sample points above a given Karma threshold
+  PKR = 4,		//Periodic Karma Replacement - Replace the sample points with the worst Karma every N queries.
+  TKRP = 5		//Triggered Karma Replacement Plus - TKR + additional heuristics to find deleted points
+} ocl_sample_maintenance_options_t;
 
 typedef enum optimizatin_algorithms{
     VSGD_FD = 0,
@@ -138,7 +137,7 @@ extern void assign_kde_timing_logfile_name(const char *newval, void *extra);
  * Functions for propagating informations to the estimator sample maintenanec..
  */
 extern void ocl_notifySampleMaintenanceOfInsertion(Relation rel, HeapTuple new_tuple);
-extern void ocl_notifySampleMaintenanceOfDeletion(Relation rel);
+extern void ocl_notifySampleMaintenanceOfDeletion(Relation rel, ItemPointer deleted_tuple);
 
 /*
  * Propagate selectivity information to the model maintenance.

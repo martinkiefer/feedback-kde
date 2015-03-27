@@ -6,7 +6,9 @@ Needs an existing estimator and a two-dimensional data set with columns c1 and c
 """
 
 import struct
+import matplotlib
 from matplotlib.patches import Rectangle
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import matplotlib.cm as cm
 import psycopg2
@@ -85,7 +87,7 @@ class SamplePlotter:
         #Plot sample points
         for point,penalty in self.sample_points:
             if(penalty >= 0 ):
-                if(dist_min == 0 ):
+                if(dist_max == 0 ):
                     factor = 0.5
                 else:    
                     factor = 0.5 - 0.5 * (float(penalty) / dist_max)
@@ -115,9 +117,11 @@ parser.add_argument("--resolution", action="store", required=True, type=int, hel
 parser.add_argument("--steps", action="store", required=True, type=int, help="Total number of pictures to create.")
 parser.add_argument("--queries_per_step", action="store", required=True, type=int, help="Queries executed before a picture is taken.")
 parser.add_argument("--folder", action="store", required=True, help="Folder to drop the pictures in.")
-parser.add_argument("--sample_maintenance", action="store", choices=["threshold", "periodic","none"], default="none", help="Desired query based sample maintenance option.")
+parser.add_argument("--sample_maintenance", action="store", choices=["prr","car","tkr", "pkr","none"], default="none", help="Desired query based sample maintenance option.")
 parser.add_argument("--threshold", action="store", type=float, default=1.0, help="Negative karma limit causing a point to be resampled.")
-parser.add_argument("--period", action="store", type=int, default=25, help="Queries until we resample the worst sample point.")
+parser.add_argument("--period", action="store", type=int, default=10, help="Queries until we resample the worst sample point.")
+parser.add_argument("--decay", action="store", type=float, default=0.9, help="Decay for karma options.")
+parser.add_argument("--redraw_sample", action="store_true", help="Draw new sample from dataset after every iteration. (workload includes data manipulations)")
 args = parser.parse_args()
 
 query_file = args.query_file
@@ -130,6 +134,8 @@ queries_per_step = args.queries_per_step
 threshold = args.threshold
 period = args.period
 sample_maintenance = args.sample_maintenance
+decay = args.decay
+redraw_sample = args.redraw_sample
 
 #Grab some queries and shuffle them.    
 f = open(query_file, "r")
@@ -143,23 +149,34 @@ ploti = SamplePlotter()
 conn = psycopg2.connect("dbname=%s host=localhost port=%i" % (args.dbname, args.port))
 
 cur = conn.cursor()
+if(sample_maintenance == "tkr"):
+    cur.execute("SET kde_sample_maintenance TO TKR;")	
+    cur.execute("SET kde_sample_maintenance_karma_threshold TO %s;" % threshold)	
+    cur.execute("SET kde_sample_maintenance_karma_decay TO %s;" % decay)
+if(sample_maintenance == "pkr"):
+    cur.execute("SET kde_sample_maintenance TO PKR;")	
+    cur.execute("SET kde_sample_maintenance_period  TO %s;" % period )	
+    cur.execute("SET kde_sample_maintenance_karma_decay TO %s;" % decay)
+if(sample_maintenance == "car"):
+    print "Switched to CAR"
+    cur.execute("SET kde_sample_maintenance TO CAR;")
+if(sample_maintenance == "prr"):
+    cur.execute("SET kde_sample_maintenance TO PRR;")	
+    cur.execute("SET kde_sample_maintenance_period  TO %s;" % period )	
+cur.execute("set kde_enable to 1;")
 #File to read the sample from
 cur.execute("SELECT pg_kdemodels.sample_file, pg_kdemodels.rowcount_sample FROM pg_kdemodels INNER JOIN pg_class on pg_kdemodels.table = pg_class.oid where pg_class.relname = '%s';" % table_name)
 tup = cur.fetchone()
 sample_file = tup[0] 
 sample_size = tup[1]
-cur.close()
 
 sample_query = "select * from %s order by random() limit %s" % (table_name,data_sample_size)
 
 #Fetch data sample
-cur = conn.cursor()
-cur.execute("select setseed(0.5);");
 cur.execute(sample_query)
 data_points = cur.fetchall()
 for tuple in data_points:
     ploti.addDataPoint(tuple)
-cur.close()
 data_points = None
 
 #Create initial picture with no experiment
@@ -176,7 +193,7 @@ for i in range(0,sample_size):
     
 for i in range(0,sample_size):
     ploti.addSamplePoint(sample_points[i],penalties[i])
-      
+
 f.close();    
  
 ploti.plot(0,image_folder)
@@ -190,9 +207,11 @@ remove_clause = ""
 if delete_constraint != "":
     print "Applying data changes..."
     ploti.clearData();
-
+    
     #Before we execute the actual query, we reduce the sample 
-    cur = conn.cursor()
+    cur.execute("select pg_backend_pid();")
+    x = cur.fetchone()
+    print x[0]
     cur.execute("set SEED to 0.5")
     cur.execute("with sample as ( %s ) select * from sample where not ( %s )" % (sample_query, delete_constraint))
     
@@ -200,9 +219,7 @@ if delete_constraint != "":
     for tuple in data_points:
         ploti.addDataPoint(tuple)
     data_points = None    
-    cur.close()
     
-    cur = conn.cursor()
     cur.execute("delete from %s where %s" % (table_name, delete_constraint))
     cur.close();
     
@@ -216,27 +233,41 @@ offset = 0
 for j in range(1,number_of_pictures):
     print "Executing step %i..." % j
     #We need a new connection every time, as we need the estimator persisted
-    conn = psycopg2.connect("dbname=%s host=localhost" % database_name)
+    conn = psycopg2.connect("dbname=%s host=localhost" % args.dbname)
     cur = conn.cursor()
 
     #Set the gpukde options
-    cur.execute("SET ocl_use_gpu TO false;")
-    if(sample_maintenance == "threshold"):
-        cur.execute("SET kde_sample_maintenance_query_propagation TO Threshold;")	
-        cur.execute("SET kde_sample_maintenance_threshold TO %s;" % threshold)	
-    if(sample_maintenance == "periodic"):
-        cur.execute("SET kde_sample_maintenance_query_propagation TO Periodic;")	
+    cur.execute("SET ocl_use_gpu TO true;")
+    if(sample_maintenance == "tkr"):
+        cur.execute("SET kde_sample_maintenance TO TKR;")	
+        cur.execute("SET kde_sample_maintenance_karma_threshold TO %s;" % threshold)	
+    if(sample_maintenance == "pkr"):
+        cur.execute("SET kde_sample_maintenance TO PKR;")	
+        cur.execute("SET kde_sample_maintenance_period  TO %s;" % period )	
+    if(sample_maintenance == "car"):
+	print "Switched to CAR"
+        cur.execute("SET kde_sample_maintenance TO CAR;")	
+    if(sample_maintenance == "prr"):
+        cur.execute("SET kde_sample_maintenance TO PRR;")	
         cur.execute("SET kde_sample_maintenance_period  TO %s;" % period )	
     cur.execute("SET kde_estimation_quality_logfile TO '/tmp/error.log';")
-    cur.execute("SET kde_debug TO false;")    
+    cur.execute("SET kde_debug TO true;")    
     cur.execute("set kde_enable to 1;")
+    cur.execute("set kde_sample_maintenance_karma_decay to 0.9;")
     
     #Execute queries and tell the plotter about it
     for i in range(0,queries_per_step):
         cur.execute(selected_queries[offset + i])
-        ploti.addQuery(parseRectBoundaries(selected_queries[offset + i]))
+	if "SELECT" in selected_queries[offset + i]:
+            ploti.addQuery(parseRectBoundaries(selected_queries[offset + i]))
     offset += queries_per_step
     
+    if redraw_sample:
+    	cur.execute(sample_query)
+    	data_points = cur.fetchall()
+    	for tuple in data_points:
+            ploti.addDataPoint(tuple)
+
     #Close the connection
     cur.close()
     conn.commit()
@@ -261,10 +292,11 @@ for j in range(1,number_of_pictures):
         
     f.close();    
  
- 
     ploti.plot(j,image_folder)
     ploti.clearQueries()
     ploti.clearSample()
+    if redraw_sample:
+        ploti.clearData()
     print "Done"
 
 

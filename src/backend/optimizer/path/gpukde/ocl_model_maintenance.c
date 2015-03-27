@@ -203,6 +203,7 @@ static unsigned int ocl_prepareFeedback(
       context->queue, *device_ranges, CL_FALSE, 0,
       sizeof(kde_float_t) * 2 * actual_records * estimator->nr_of_dimensions,
       range_buffer, 0, NULL, NULL);
+  estimator->stats->optimization_transfer_to_device++;
   Assert(err == CL_SUCCESS);
   
   *device_selectivities = clCreateBuffer(
@@ -213,6 +214,7 @@ static unsigned int ocl_prepareFeedback(
   err = clEnqueueWriteBuffer(
       context->queue, *device_selectivities, CL_FALSE, 0,
       sizeof(kde_float_t) * actual_records, selectivity_buffer, 0, NULL, NULL);
+  estimator->stats->optimization_transfer_to_device++;
   Assert(err == CL_SUCCESS);
   
   err = clFinish(context->queue);
@@ -285,12 +287,14 @@ static double computeGradient(
         context->queue, estimator->bandwidth_buffer, CL_FALSE,
         0, sizeof(kde_float_t) * estimator->nr_of_dimensions,
         fbandwidth, 0, NULL, &input_transfer_event);
+    estimator->stats->optimization_transfer_to_device++;
     Assert(err == CL_SUCCESS);
   } else {
     err = clEnqueueWriteBuffer(
         context->queue, estimator->bandwidth_buffer, CL_FALSE,
         0, sizeof(kde_float_t) * estimator->nr_of_dimensions,
         bandwidth, 0, NULL, &input_transfer_event);
+    estimator->stats->optimization_transfer_to_device++;
     Assert(err == CL_SUCCESS);
   }
   // Prepare the kernel that computes a gradient for each observation.
@@ -388,6 +392,7 @@ static double computeGradient(
       0, sizeof(kde_float_t) * estimator->nr_of_dimensions,
       tmp_gradient, estimator->nr_of_dimensions + 1,
       summation_events, &(result_events[0]));
+  estimator->stats->optimization_transfer_to_host++;
   Assert(err == CL_SUCCESS);
   
   // As well as the error.
@@ -396,6 +401,7 @@ static double computeGradient(
       context->queue, conf->error_buffer, CL_FALSE,
       0, sizeof(kde_float_t), &error,
       1, &(summation_events[0]),  &(result_events[1]));
+  estimator->stats->optimization_transfer_to_host++;
   Assert(err == CL_SUCCESS);
   
   err = clWaitForEvents(2, result_events);
@@ -580,6 +586,7 @@ void ocl_runModelOptimization(ocl_estimator_t* estimator) {
       context->queue, estimator->bandwidth_buffer, CL_TRUE, 0,
       sizeof(kde_float_t) * estimator->nr_of_dimensions,
       fbandwidth, 0, NULL, NULL);
+  estimator->stats->optimization_transfer_to_host++;
   Assert(err == CL_SUCCESS);
   // Cast to double (nlopt operates on double).
   double* bandwidth = lbfgs_malloc(estimator->nr_of_dimensions);
@@ -723,6 +730,7 @@ void ocl_runModelOptimization(ocl_estimator_t* estimator) {
       context->queue, estimator->bandwidth_buffer, CL_TRUE, 0,
       sizeof(kde_float_t) * estimator->nr_of_dimensions,
       fbandwidth, 0, NULL, NULL);
+  estimator->stats->optimization_transfer_to_device++;
   Assert(err == CL_SUCCESS);
   // Clean up.
   pfree(fbandwidth);

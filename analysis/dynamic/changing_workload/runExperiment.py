@@ -57,9 +57,10 @@ parser.add_argument("--error", action="store", choices=["relative","absolute"], 
 parser.add_argument("--optimization", action="store", choices=["heuristic", "adaptive", "stholes"], default="heuristic", help="How should the model be optimized?")
 parser.add_argument("--trainqueries", action="store", type=int, default=500, help="How many queries should be used to train the model?")
 parser.add_argument("--log", action="store", required=True, help="Where to append the experimental results?")
-parser.add_argument("--sample_maintenance", action="store", choices=["threshold", "periodic","none"], default="none", help="Desired query based sample maintenance option.")
+parser.add_argument("--sample_maintenance", action="store", choices=["prr","car","tkr", "pkr","none"], default="none", help="Desired query based sample maintenance option.")
 parser.add_argument("--threshold", action="store", type=float, default=0.01, help="Negative karma limit causing a point to be resampled.")
 parser.add_argument("--period", action="store", type=int, default=5, help="Queries until we resample the worst sample point.")
+parser.add_argument("--decay", action="store", type=float, default=0.9, help="Decay for karma options.")
 args = parser.parse_args()
 
 # Fetch the arguments.
@@ -75,6 +76,7 @@ period = args.period
 sample_maintenance = args.sample_maintenance
 threshold = args.threshold
 log = args.log
+decay = args.decay
 
 # Open a connection to postgres.
 conn = psycopg2.connect("dbname=%s host=localhost" % dbname)
@@ -130,25 +132,20 @@ cur.execute("SELECT pg_backend_pid();")
 print cur.fetchone()[0]
 # Now open the query file and select a random query set.
 f = open(os.path.join(querypath, queryfile), "r")
-#for linecount, _ in enumerate(f):
-#    pass
-#f.seek(0)
-#linecount += 1
-#selected_queries = range(1,linecount)
-#random.shuffle(selected_queries)
-#selected_queries = set(selected_queries[0:queries])
 
-if(sample_maintenance == "threshold"):
-    cur.execute("SET kde_sample_maintenance_query_propagation TO Threshold;")	
-    cur.execute("SET kde_sample_maintenance_threshold TO %s;" % threshold)	
-if(sample_maintenance == "periodic"):
-    cur.execute("SET kde_sample_maintenance_insert_propagation TO Reservoir;")
-    #cur.execute("SET kde_sample_maintenance_query_propagation TO Periodic;")	
-    #cur.execute("SET kde_sample_maintenance_period TO %s;" % period )
-    #cur.execute("SET kde_sample_maintenance_track_impact TO true;")
-    #cur.execute("SET kde_sample_maintenance_track_karma TO true;")
-    #cur.execute("SET kde_sample_maintenance_contribution_decay TO 0.95;")
-    #cur.execute("SET kde_sample_maintenance_karma_decay TO 0.95;")
+if(sample_maintenance == "tkr"):
+    cur.execute("SET kde_sample_maintenance TO TKR;")
+    cur.execute("SET kde_sample_maintenance_karma_threshold TO %s;" % threshold)
+    cur.execute("SET kde_sample_maintenance_karma_decay TO %s;" % decay)
+if(sample_maintenance == "pkr"):
+    cur.execute("SET kde_sample_maintenance TO PKR;")
+    cur.execute("SET kde_sample_maintenance_period  TO %s;" % period )
+    cur.execute("SET kde_sample_maintenance_karma_decay TO %s;" % decay)
+if(sample_maintenance == "car"):
+    cur.execute("SET kde_sample_maintenance TO CAR;")
+if(sample_maintenance == "prr"):
+    cur.execute("SET kde_sample_maintenance TO PRR;")
+    cur.execute("SET kde_sample_maintenance_period  TO %s;" % period )    
 
 # Set all required options.
 cur.execute("SET ocl_use_gpu TO false;")

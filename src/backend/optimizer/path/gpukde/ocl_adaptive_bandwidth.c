@@ -387,6 +387,7 @@ static void ocl_runVsgdOnlineLearningStep(
       context->queue, descriptor->temp_shifted_result_buffer, CL_TRUE,
       0, sizeof(kde_float_t), &shifted_estimate, 1,
       &(descriptor->optimization_event), NULL);
+  estimator->stats->optimization_transfer_to_host++;
   Assert(err == CL_SUCCESS);
   err = clReleaseEvent(descriptor->optimization_event);
   Assert(err == CL_SUCCESS);
