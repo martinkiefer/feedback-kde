@@ -161,7 +161,7 @@ FILE* kde_getTimingFile();
    fflush(__f);                                              \
 }
 #define LOG_TIMER(text) if (kde_getTimingFile()) {           \
-   long long ___time;                                        \
+   long long ___time = 0;                                    \
    READ_TIMER(___time);                                      \
    LOG_TIME(text, ___time);                                  \
 }
