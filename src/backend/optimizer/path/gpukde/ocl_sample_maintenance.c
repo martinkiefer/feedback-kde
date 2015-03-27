@@ -408,6 +408,11 @@ void ocl_notifySampleMaintenanceOfSelectivity(
 
   estimator->nr_of_estimations++;
 
+  if (kde_sample_maintenance_query_option != THRESHOLD &&
+      kde_sample_maintenance_query_option != PERIODIC) {
+    return;
+  }
+
   size_t global_size = estimator->rows_in_sample;
   cl_event quality_update_event;
 
