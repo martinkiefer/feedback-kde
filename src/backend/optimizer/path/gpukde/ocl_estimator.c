@@ -697,7 +697,8 @@ int ocl_estimateSelectivity(const ocl_estimator_request_t* request,
   }
   if ((estimator->columns | request_columns) != estimator->columns) return 0;
   // Extract the query bounds to prepare an estimation request.
-  kde_float_t* row_ranges = (kde_float_t*) malloc(
+  kde_float_t* row_ranges; 
+  posix_memalign(&row_ranges, 128,
       2 * sizeof(kde_float_t) * estimator->nr_of_dimensions);
   for (i = 0; i < estimator->nr_of_dimensions; ++i) {
     row_ranges[2 * i] = -1.0 * INFINITY;
