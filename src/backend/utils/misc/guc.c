@@ -1603,26 +1603,6 @@ static struct config_bool ConfigureNamesBool[] =
     true,
     NULL, assign_ocl_use_gpu, NULL
   },
-  {
-    {"kde_sample_maintenance_track_impact", PGC_USERSET, DEVELOPER_OPTIONS,
-      gettext_noop("Use impact tracking to maintain the sample."),
-      NULL,
-      GUC_NOT_IN_SAMPLE
-    },
-    &kde_sample_maintenance_track_impact,
-    false,
-    NULL, NULL, NULL
-  },
-  {
-   {"kde_sample_maintenance_track_karma", PGC_USERSET, DEVELOPER_OPTIONS,
-     gettext_noop("Use karma tracking to maintain the sample."),
-     NULL,
-     GUC_NOT_IN_SAMPLE
-   },
-   &kde_sample_maintenance_track_karma,
-   false,
-   NULL, NULL, NULL
-  },
 #endif
 
 	/* End-of-list marker */

@@ -257,7 +257,8 @@ void ocl_notifySampleMaintenanceOfInsertion(Relation rel, HeapTuple new_tuple) {
     if (replacements > 0) {
       kde_float_t* item = palloc(ocl_sizeOfSampleItem(estimator));
       ocl_extractSampleTuple(estimator, rel, new_tuple, item);
-      for (i=0; i < replacements; i++) {
+      unsigned int i=0;
+      for (; i < replacements; i++) {
          insert_position = random() % estimator->rows_in_sample;
          gettimeofday(&tvBegin,NULL);
          ocl_pushEntryToSampleBufer(estimator, insert_position, item);
