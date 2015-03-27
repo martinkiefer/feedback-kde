@@ -2,7 +2,7 @@
 
 BASEDIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 
-source $BASEDIR/../../conf.sh
+source $BASEDIR/../../../conf.sh
 
 mkdir -p $BASEDIR/queries
 mkdir -p $BASEDIR/tables
