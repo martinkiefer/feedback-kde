@@ -110,5 +110,8 @@ void ocl_extractSampleTuple(ocl_estimator_t* estimator, Relation rel,
 void ocl_pushEntryToSampleBufer(ocl_estimator_t* estimator, int position,
                                 kde_float_t* data_item);
 
+// Forward declaration for the bandwidth representation.
+extern int kde_bandwidth_representation;
+
 #endif /* USE_OPENCL */
 #endif /* ESTIMATOR_H_ */

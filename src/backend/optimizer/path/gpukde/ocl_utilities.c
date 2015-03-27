@@ -666,7 +666,7 @@ cl_event minOfArray(
 static FILE* timing_file = NULL;
 char* kde_timing_logfile_name;
 
-FILE* kde_getTimingFile() { return timing_file; }
+FILE* kde_getTimingFile(void) { return timing_file; }
 
 void assign_kde_timing_logfile_name(const char *newval, void *extra) {
   if (timing_file != NULL) fclose(timing_file);

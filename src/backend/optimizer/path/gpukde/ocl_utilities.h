@@ -144,7 +144,7 @@ cl_event minOfArray(
     unsigned int result_buffer_offset, cl_event external_event);
 
 // Macros for timing operations.
-FILE* kde_getTimingFile();
+FILE* kde_getTimingFile(void);
 
 #define CREATE_TIMER() struct timeval __start; gettimeofday(&__start, NULL);
 #define RESET_TIMER() gettimeofday(&__start, NULL);
