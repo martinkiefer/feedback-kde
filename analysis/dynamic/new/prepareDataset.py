@@ -60,11 +60,7 @@ if args.equalize:
   set2_rows = cur.fetchone()[0]
 
 # Create the new table name.
-if (dataset1 < dataset2):
-  table_name = dataset1 + "_" + dataset2
-else:
-  table_name = dataset2 + "_" + dataset1
-table_name = table_name.replace("normalized", "")
+table_name = "merged_test"
 # Ensure that the table is deleted.
 try:
   cur.execute("DROP TABLE %s" % table_name)
@@ -76,7 +72,7 @@ sep = args.separation / (2 * math.sqrt(set1_cols))
 
 # Prepare the SQL statement to transition the first dataset into the new table.
 query = "SELECT "
-for i in range(1,set1_cols+1):
+for i in range(1, set1_cols+1):
   if i > 1:
     query += ", "
   query += "c%i + %f AS c%i" % (i, sep, i)
@@ -120,15 +116,15 @@ def transformQuery(query, offset, table):
 
 # Finally, we need to transition the queries as well
 fin = open(args.queryfile1, "r")
-fout = open("set1.sql", "w")
+fout = open("/tmp/set1_%s.sql" % args.dbname, "w")
 for q in fin:
   fout.write(transformQuery(q, sep, table_name))
 fout.close()
 fin.close()
 
 # Finally, we need to transition the queries as well
-fin = open(args.queryfile1, "r")
-fout = open("set2.sql", "w")
+fin = open(args.queryfile2, "r")
+fout = open("/tmp/set2_%s.sql" % args.dbname, "w")
 for q in fin:
   fout.write(transformQuery(q, -sep, table_name))
 fout.close()

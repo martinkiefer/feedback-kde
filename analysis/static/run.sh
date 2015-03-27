@@ -4,61 +4,76 @@ DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 source $DIR/../conf.sh
 
 # Some general parameters.
-REPETITIONS=50
+REPETITIONS=10
 TRAINQUERIES=100
 QUERIES=300
 STHOLES_MODELSIZE=512
 KDE_MODELSIZE=1024
+ERROR=absolute
+LOGFILE=$DIR/result_new.csv
 
 # Prepare a new result file.
-echo > $DIR/result.csv
+echo > $LOGFILE
 
 for dataset in $DIR/datasets/*; do
     [ -d "${dataset}" ] || continue # if not a directory, skip
-    datset_name=`basename $dataset`
-    echo "Running experiments for $datset_name:"
+    dataset_name=`basename $dataset`
+    echo "Running experiments for $dataset_name:"
     for query in $dataset/queries/*; do
         [ -f "${query}" ] || continue
         query_file=`basename $query`
-        echo -e "\tRunning query $query_file."
+        echo "  Running query $query_file:"
         # Reinitialize postgres (just to be safe)
-        postgres -D $PGDATAFOLDER -p $PGPORT > /dev/null 2>&1 &
+        postgres -D $PGDATAFOLDER -p $PGPORT > postgres.log 2>&1 &
         PGPID=$!
         sleep 2
-        
         for i in $(seq 1 $REPETITIONS); do
+           echo "    Repetition $i:"
+
            # Pick a new experiment (and run batch).
+           echo "      KDE batch:"
            python $DIR/runExperiment.py                        \
               --dbname=$PGDATABASE --port=$PGPORT              \
-              --queryfile=$query --log=$DIR/result.csv         \
+              --queryfile=$query --log=$LOGFILE                \
               --model=kde_batch --modelsize=$KDE_MODELSIZE     \
               --trainqueries=$TRAINQUERIES --queries=$QUERIES  \
-              --error=relative --record
+              --error=$ERROR --record
 
-            # Run stholes: 
-            python $DIR/replayExperiment.py                    \
+           # Run stholes:  
+           echo "      STHoles:"
+           python $DIR/replayExperiment.py                     \
               --dbname=$PGDATABASE --port=$PGPORT              \
               --model=stholes --modelsize=$STHOLES_MODELSIZE   \
-              --error=relative --log=$DIR/result.csv
+              --error=$ERROR --log=$LOGFILE
             
-            # Run KDE heuristic: 
-            python $DIR/replayExperiment.py                    \
+           # Run KDE heuristic: 
+           echo "      KDE heuristic:"
+           python $DIR/replayExperiment.py                     \
               --dbname=$PGDATABASE --port=$PGPORT              \
               --model=kde_heuristic                            \
-              --error=relative --log=$DIR/result.csv
+              --error=$ERROR --log=$LOGFILE
             
-            # Run KDE optimal: 
-            python $DIR/replayExperiment.py                    \
+           # Run KDE optimal: 
+           echo "      KDE optimal:"
+           python $DIR/replayExperiment.py                     \
               --dbname=$PGDATABASE --port=$PGPORT              \
               --model=kde_optimal                              \
-              --error=relative --log=$DIR/result.csv
+              --error=$ERROR --log=$LOGFILE
             
-            # Run KDE adpative: 
-            python $DIR/replayExperiment.py                    \
+           # Run KDE adpative: 
+           echo "      KDE adaptive:"
+           python $DIR/replayExperiment.py                     \
               --dbname=$PGDATABASE --port=$PGPORT              \
               --model=kde_adaptive_rmsprop                     \
-              --error=relative --log=$DIR/result.csv
-            
+              --error=$ERROR --log=$LOGFILE
+           
+           # Run KDE adpative (log-scaled): 
+           echo "      KDE adaptive (log-scaled):"
+           python $DIR/replayExperiment.py                     \
+              --dbname=$PGDATABASE --port=$PGPORT              \
+              --model=kde_adaptive_rmsprop --logbw             \
+              --error=$ERROR --log=$LOGFILE
+           
         done
         kill -9 $PGPID
         sleep 2

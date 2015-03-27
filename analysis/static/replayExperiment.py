@@ -11,38 +11,12 @@ import rpy2
 import sys
 import time
 
-
 from rpy2.robjects.packages import importr
 from rpy2 import robjects
 
-#Extracts the hyperrectangle size from a query string
-#This function relies on a fixed query format:
-# - Upper bound and lower bound for every dimension are specified
-# - The upper bound clause for a dimension follows immediately on its lower bound clause
-def getRectVolume(query):
-    first = -1
-    last = -1
-    lower_bound = -1
-    
-    vol = 1
-    
-    for n,c in enumerate(query):
-        if(c == '<' or c == '>'):
-            first = n
-        elif(c == ' '):
-            last = n
-            if(first != -1):
-                query[first+1:last+1]
-                if(lower_bound == -1):
-                    lower_bound = float(query[first+1:last+1])
-                else:
-                    vol *= float(query[first+1:last+1]) - lower_bound
-                    lower_bound = -1
-                first=-1
-                last=-1
-    return vol
-
 def createModel(table, dimensions, samplefile):
+  sys.stdout.write("\tRebuilding estimator ... ")
+  sys.stdout.flush()
   # Build the initial model.
   query = "ANALYZE %s(" % table
   for i in range(1, dimensions + 1):
@@ -56,9 +30,7 @@ def createModel(table, dimensions, samplefile):
     # Update the sample and reset the bandwidth.
     cur.execute("SELECT kde_import_sample('%s', '%s');" % (table, samplefile))
     cur.execute("SELECT kde_reset_bandwidth('%s');" % table)
-  # Print the bandwidth.
-  cur.execute("SELECT kde_get_bandwidth('%s');" % table)
-  print "\tInitialized with bandwidth %s." % cur.fetchone()  
+  print "done!"
 
 # Define and parse the command line arguments
 parser = argparse.ArgumentParser()
@@ -66,7 +38,7 @@ parser.add_argument("--dbname", action="store", required=True, help="Database to
 parser.add_argument("--port", action="store", type=int, default=5432, help="Port of the postmaster.")
 parser.add_argument("--model", action="store", choices=["stholes", "kde_heuristic", "kde_adaptive_rmsprop","kde_adaptive_vsgd","kde_batch", "kde_optimal"], default="none", help="Which model should be used?")
 parser.add_argument("--modelsize", action="store", type=int, help="How many rows should the generated model sample?")
-parser.add_argument("--error", action="store", choices=["absolute", "relative", "normalized"], default="absolute", help="Which error metric should be optimized / reported?")
+parser.add_argument("--error", action="store", choices=["absolute", "relative"], default="absolute", help="Which error metric should be optimized / reported?")
 parser.add_argument("--samplefile", action="store", help="Which samplefile should be used?")
 parser.add_argument("--train_workload", action="store", help="File containing the training queries")
 parser.add_argument("--test_workload", action="store", help="File containing the test queries")
@@ -76,7 +48,8 @@ parser.add_argument("--log", action="store", help="Where to append the experimen
 parser.add_argument("--logbw", action="store_true", help="Use logarithmic bandwidth representation.")
 args = parser.parse_args()
 
-# Set the input file names.
+
+# If not specified, use default filenames.
 if args.samplefile:
   sample_filename = args.samplefile
 else:
@@ -98,6 +71,7 @@ conn = psycopg2.connect("dbname=%s host=localhost port=%i" % (args.dbname, args.
 conn.set_session('read uncommitted', autocommit=True)
 cur = conn.cursor()
 
+
 if not args.debug:
   cur.execute("SET kde_debug TO false;")
 
@@ -116,24 +90,17 @@ else:
    with open(sample_filename) as myfile:
       modelsize = sum(1 for line in myfile)
 
-# Determine the total volume of the given table.
+# Remove all traces of previous experiments. 
 cur.execute("DELETE FROM pg_kdemodels;");
 cur.execute("DELETE FROM pg_kdefeedback;");
-sys.stdout.flush()
-total_volume = 1
-for i in range(0, dimensions):    
-    cur.execute("SELECT MIN(c%i), MAX(c%i) FROM %s" % (i+1, i+1, table))
-    result = cur.fetchone()
-    total_volume *= result[1]-result[0]
 # Also count the number of rows in the table.
 cur.execute("SELECT COUNT(*) FROM %s;" % table)
 nrows = int(cur.fetchone()[0])
 
-print "Initializing model ..."
 # Set the requested error metric.
 if (args.error == "relative"):
     cur.execute("SET kde_error_metric TO SquaredRelative;")
-elif (args.error == "absolute" or args.error == "normalized"):
+elif (args.error == "absolute"):
     cur.execute("SET kde_error_metric TO Quadratic;")
 # Set STHoles specific parameters.
 if (args.model == "stholes"):
@@ -153,7 +120,6 @@ if args.logbw:
 # Initialize the training phase.
 if (args.model == "kde_batch"):
     # Drop all existing feedback and start feedback collection.
-    cur.execute("DELETE FROM pg_kdefeedback;")
     cur.execute("SET kde_collect_feedback TO true;")
 elif (args.model == "kde_adaptive_rmsprop"):
     # Build an initial model that is being trained.
@@ -170,17 +136,15 @@ elif (args.model == "kde_adaptive_vsgd"):
 
 # Run the training workload.
 trainqueries = 0
-if (args.model == "kde_batch" or args.model == "kde_adaptive_vsgd" or args.model == "kde_adaptive_rmsprop"):
-  with open(trainworkload_filename) as myfile:
-    trainqueries = sum(1 for line in myfile)
+if (args.model == "kde_batch" or args.model == "stholes" or args.model == "kde_adaptive_vsgd" or args.model == "kde_adaptive_rmsprop"):
+  sys.stdout.write("\tRunning training queries ... ")
+  sys.stdout.flush()
   f = open(trainworkload_filename)
   finished_queries = 0
   for query in f:
+    trainqueries += 1
     cur.execute(query)
-    finished_queries += 1
-    sys.stdout.write("\r\tFinished %i of %i training queries." % (finished_queries, trainqueries))
-    sys.stdout.flush()
-  print ""
+  print "done"
 
 if (args.model == "kde_batch"):
     cur.execute("SET kde_collect_feedback TO false;") # We don't need further feedback collection.    
@@ -190,9 +154,11 @@ if (args.model != "kde_adaptive_rmsprop" and args.model != "kde_adaptive_vsgd" a
     createModel(table, dimensions, sample_filename)
 # If this is the optimal estimator, we need to compute the PI bandwidth estimate.
 if (args.model == "kde_optimal"):
-  print "Importing the sample into R ..."
+  sys.stdout.write("\tImporting data sample into R ... ")
+  sys.stdout.flush()
   m = robjects.r['read.csv']('%s' % sample_filename)
-  print "Calling SCV bandwidth estimator ..."
+  sys.stdout.write("done!\n\tCalling SCV bandwidth estimator ... ")
+  sys.stdout.flush()
   ks = importr("ks")
   bw = robjects.r['diag'](robjects.r('Hscv.diag')(m))
   bw_array = 'ARRAY[%f' % bw[0]
@@ -200,83 +166,34 @@ if (args.model == "kde_optimal"):
     bw_array += ',%f' % v
   bw_array += ']'
   cur.execute("SELECT kde_set_bandwidth('%s',%s);" % (table, bw_array))
+  print "done!"
 
-print "Running experiment ... "
+sys.stdout.write("\tRunning experiment ... ")
+sys.stdout.flush()
 
-# Reset the error tracking.
-cur.execute("SET kde_estimation_quality_logfile TO '%s';" % error_log)
 # Count the number of queries
 with open(testworkload_filename) as myfile:
    queries = sum(1 for line in myfile)
 
+if args.logbw:
+   args.model += "_log"
+
 # And run the experiments.
 f = open(testworkload_filename)
-executed_queries = []
-output_cardinalities = []
 finished_queries = 0
 allrows = 0
+flog = open(args.log, "a+")
 for linenr, line in enumerate(f):
-  cur.execute(line)
-  if (args.error == "normalized"): 
-    card = cur.fetchone()[0]
-    executed_queries.append(line)
-    output_cardinalities.append(card)
-  finished_queries += 1
-  sys.stdout.write("\r\tFinished %i of %i queries." % (finished_queries, queries))
-  sys.stdout.flush()
-print ""
+  cur.execute("EXPLAIN ANALYZE %s" % line)
+  for row in cur:
+    text = row[0]
+    if "Seq Scan" in text:
+      m = re.match(".+rows=([0-9]+).+rows=([0-9]+).+", text)              
+      if not m:
+         continue
+      error = abs(int(m.group(1)) - int(m.group(2)))                      
+      flog.write("_;_;_;%s;%i;%i\n" % (args.model, modelsize, error))
+print "done!"
 f.close()
+flog.close()
 conn.close()
-
-# Extract the error from the error file.
-ifile  = open(error_log, "rb")
-reader = csv.reader(ifile, delimiter=";")
-header = True
-selected_col = 0
-sum = 0.0
-row_count = 0
-error_uniform = 0
-
-if (args.error == "normalized"):
-    col_errortype = "absolute"
-else:
-    col_errortype = args.error
-
-for row in reader:
-    if header:
-        for col in row:
-            if (col.strip().lower() != col_errortype):
-                selected_col += 1
-            else:
-                break
-        if (selected_col == len(row)):
-            print "Error-type %s not present in given file!" % col_errortype
-            sys.exit()
-        header = False
-    else:
-        sum += float(row[selected_col])
-        if( args.error == "normalized"): 
-            error_uniform += abs((getRectVolume(executed_queries.pop(0))/total_volume * nrows) - output_cardinalities.pop(0))
-        row_count += 1
-        
-if(len(executed_queries) != 0 and args.error == "normalized"):
-    raise Exception("We have fewer error log lines than executed queries. This is most likely the case because one or more queries contained a hyperrectangle with no volume.")
-             
-if args.error == "absolute":
-    error = nrows * sum / row_count
-if args.error == "relative":
-    error = 100 * sum / row_count
-if args.error == "normalized":
-    error_abs = nrows * sum / row_count
-    error_uniform /= row_count
-    error = error_abs / error_uniform
-
-# Print the result.
-if args.log:
-   f = open(args.log, "a+")
-   if os.path.getsize(args.log) == 0:
-       f.write("Dataset;Dimension;Workload;Selectivity;Model;ModelSize;Trainingsize;Errortype;Error\n")
-   f.write("%s;%s;%s;%s;%s;%i;%i;%s;%f\n" % ('"', '"', '"', '"', args.model, modelsize, trainqueries, col_errortype, error))
-   f.close()
-else:
-   print "Measured error: %f" % error 
