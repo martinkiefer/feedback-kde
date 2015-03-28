@@ -21,7 +21,7 @@ done
 $BASEDIR/drop-mvtc_id-tables.sh
 
 # PSQL command
-$PSQL $PGDATABASE $USER << EOF
+psql -p$PGPORT $PGDATABASE $USER << EOF
 	CREATE TABLE mvtc_id_d3(
 		CL integer,
 		c1 double precision,
