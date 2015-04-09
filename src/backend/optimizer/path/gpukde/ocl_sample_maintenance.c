@@ -30,6 +30,7 @@
 #ifdef USE_OPENCL
 
 extern ocl_kernel_type_t global_kernel_type;
+
 #define CHECK_BIT(var,pos) ((var) & (1<<(pos)))
 #define SET_BIT(var,pos) (var |= (1<<(pos)))
 
@@ -100,8 +101,7 @@ void ocl_releaseSampleMaintenanceBuffers(ocl_estimator_t* estimator) {
 
 // GUC configuration variable.
 double kde_sample_maintenance_threshold;
-double kde_sample_maintenance_karma_decay;
-double kde_sample_maintenance_impact_decay;
+double kde_sample_maintenance_karma_limit;
 
 int kde_sample_maintenance_period;
 int kde_sample_maintenance_option;
@@ -623,7 +623,7 @@ void ocl_notifySampleMaintenanceOfSelectivity(
   err |= clSetKernelArg(
       kernel, 5, sizeof(double), &(actual_selectivity));
   err |= clSetKernelArg(
-      kernel, 6, sizeof(double), &(kde_sample_maintenance_karma_decay));
+      kernel, 6, sizeof(double), &(kde_sample_maintenance_karma_limit));
   Assert(err == CL_SUCCESS);
   
   

@@ -74,21 +74,13 @@ class MyServerProtocol(WebSocketServerProtocol):
         if(self.conf["maintenance"] == "TKR"):
             self.cur.execute("SET kde_sample_maintenance TO TKR;")
             self.cur.execute("SET kde_sample_maintenance_karma_threshold TO %s;" % self.conf["threshold"])	
-            self.cur.execute("SET kde_sample_maintenance_karma_decay TO %s;" % self.conf["decay"])
+            self.cur.execute("SET kde_sample_maintenance_karma_limit TO %s;" % self.conf["decay"])
 	    df = "%s_%s" % (df,self.conf["threshold"])
 	    df = "%s_%s" % (df,self.conf["decay"])
-        if(self.conf["maintenance"] == "TKRP"):
-            self.cur.execute("SET kde_sample_maintenance TO TKRP;")
-            self.cur.execute("SET kde_sample_maintenance_karma_threshold TO %s;" % self.conf["threshold"])
-            self.cur.execute("SET kde_sample_maintenance_karma_decay TO %s;" % self.conf["decay"])
-            self.cur.execute("SET kde_sample_maintenance_impact_decay TO %s;" % self.conf["impact_decay"])
-	    df = "%s_%s" % (df,self.conf["threshold"])
-	    df = "%s_%s" % (df,self.conf["decay"])
-	    df = "%s_%s" % (df,self.conf["impact_decay"])
         if(self.conf["maintenance"] == "PKR"):
             self.cur.execute("SET kde_sample_maintenance TO PKR;")
             self.cur.execute("SET kde_sample_maintenance_period  TO %s;" % self.conf["period"] )
-            self.cur.execute("SET kde_sample_maintenance_karma_decay TO %s;" % self.conf["decay"])
+            self.cur.execute("SET kde_sample_maintenance_karma_limit TO %s;" % self.conf["decay"])
 	    df = "%s_%s" % (df,self.conf["period"])
 	    df = "%s_%s" % (df,self.conf["decay"])
         if(self.conf["maintenance"] == "CAR"):

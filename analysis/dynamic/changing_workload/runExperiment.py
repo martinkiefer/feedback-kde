@@ -60,7 +60,7 @@ parser.add_argument("--log", action="store", required=True, help="Where to appen
 parser.add_argument("--sample_maintenance", action="store", choices=["prr","car","tkr", "pkr","none"], default="none", help="Desired query based sample maintenance option.")
 parser.add_argument("--threshold", action="store", type=float, default=0.01, help="Negative karma limit causing a point to be resampled.")
 parser.add_argument("--period", action="store", type=int, default=5, help="Queries until we resample the worst sample point.")
-parser.add_argument("--decay", action="store", type=float, default=0.9, help="Decay for karma options.")
+parser.add_argument("--limit", action="store", type=float, default=0.9, help="Decay for karma options.")
 args = parser.parse_args()
 
 # Fetch the arguments.
@@ -76,7 +76,7 @@ period = args.period
 sample_maintenance = args.sample_maintenance
 threshold = args.threshold
 log = args.log
-decay = args.decay
+limit = args.limit
 
 # Open a connection to postgres.
 conn = psycopg2.connect("dbname=%s host=localhost" % dbname)
@@ -136,11 +136,11 @@ f = open(os.path.join(querypath, queryfile), "r")
 if(sample_maintenance == "tkr"):
     cur.execute("SET kde_sample_maintenance TO TKR;")
     cur.execute("SET kde_sample_maintenance_karma_threshold TO %s;" % threshold)
-    cur.execute("SET kde_sample_maintenance_karma_decay TO %s;" % decay)
+    cur.execute("SET kde_sample_maintenance_karma_limit TO %s;" % limit)
 if(sample_maintenance == "pkr"):
     cur.execute("SET kde_sample_maintenance TO PKR;")
     cur.execute("SET kde_sample_maintenance_period  TO %s;" % period )
-    cur.execute("SET kde_sample_maintenance_karma_decay TO %s;" % decay)
+    cur.execute("SET kde_sample_maintenance_karma_limit TO %s;" % limit)
 if(sample_maintenance == "car"):
     cur.execute("SET kde_sample_maintenance TO CAR;")
 if(sample_maintenance == "prr"):
