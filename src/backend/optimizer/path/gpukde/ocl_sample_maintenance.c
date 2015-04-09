@@ -30,6 +30,8 @@
 #ifdef USE_OPENCL
 
 extern ocl_kernel_type_t global_kernel_type;
+#define CHECK_BIT(var,pos) ((var) & (1<<(pos)))
+#define SET_BIT(var,pos) (var |= (1<<(pos)))
 
 void ocl_allocateSampleMaintenanceBuffers(ocl_estimator_t* estimator) {
   ocl_context_t* context = ocl_getContext();
@@ -201,6 +203,24 @@ static int getBinomial(int n, double p) {
    }
 }
 
+//Efficient implementation of drawing n random array indices without replacements
+//n: maximum array index + 1
+//m: Number of elements to be sampled
+//returns: Bitmask with bits at drawn index sets
+static unsigned char* floydSampling(unsigned char* map, int n, int m){
+  int j = (n - m + 1);
+  for(; j < n; j++){
+    int t = (random() % j) + 1;    
+    if(CHECK_BIT(map[(t-1) / 8], (t-1) % 8)){
+      SET_BIT(map[(j-1) / 8],(j-1) % 8);
+    }
+    else {
+      SET_BIT(map[(t-1) / 8],(t-1) % 8);
+    }
+  }
+  return map;
+}  
+
 static void trigger_periodic_random_replacement(ocl_estimator_t* estimator){
   if (kde_sample_maintenance_option == PRR &&
       (estimator->stats->nr_of_estimations % kde_sample_maintenance_period) == 0 ){
@@ -247,7 +267,6 @@ void ocl_notifySampleMaintenanceOfInsertion(Relation rel, HeapTuple new_tuple) {
   estimator->stats->nr_of_insertions++;
   
   if (kde_sample_maintenance_option != CAR) return;
-  int insert_position = -1;
   struct timeval tvBegin, tvEnd;
 
   // First, check whether we still have size in the sample.
@@ -255,19 +274,31 @@ void ocl_notifySampleMaintenanceOfInsertion(Relation rel, HeapTuple new_tuple) {
     // The sample is full, use CAR.
     int replacements = getBinomial(estimator->rows_in_sample, 1.0 / estimator->rows_in_table);
     if (replacements > 0) {
+      size_t map_size = sizeof(unsigned char)*((estimator->rows_in_sample+8-1)/8);
       kde_float_t* item = palloc(ocl_sizeOfSampleItem(estimator));
+      unsigned char* index_map = (unsigned char*) palloc0(map_size);
+      
       ocl_extractSampleTuple(estimator, rel, new_tuple, item);
-      unsigned int i=0;
-      for (; i < replacements; i++) {
-         insert_position = random() % estimator->rows_in_sample;
-         gettimeofday(&tvBegin,NULL);
-         ocl_pushEntryToSampleBufer(estimator, insert_position, item);
-         gettimeofday(&tvEnd,NULL);
-         estimator->stats->maintenance_transfer_time += (tvEnd.tv_sec - tvBegin.tv_sec) * 1000 * 1000;
-         estimator->stats->maintenance_transfer_time += (tvEnd.tv_usec - tvBegin.tv_usec);
-         estimator->stats->maintenance_transfer_to_device++;
+     
+      index_map = floydSampling(index_map,estimator->rows_in_sample, replacements);
+      int i = 0;
+      for (; i < map_size; i++) {
+	int j = 0;
+	while(index_map[i]){
+	  if(index_map[i] & 1){
+	    gettimeofday(&tvBegin,NULL);
+	    ocl_pushEntryToSampleBufer(estimator, i * 8 + j, item);
+	    gettimeofday(&tvEnd,NULL);
+	    estimator->stats->maintenance_transfer_time += (tvEnd.tv_sec - tvBegin.tv_sec) * 1000 * 1000;
+	    estimator->stats->maintenance_transfer_time += (tvEnd.tv_usec - tvBegin.tv_usec);
+	    estimator->stats->maintenance_transfer_to_device++;
+	  }
+	  index_map[i] = index_map[i] >> 1;
+	  j++;
+	}
       }
       pfree(item);
+      pfree(index_map);
     }
   }
 }
