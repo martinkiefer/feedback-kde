@@ -14,17 +14,15 @@ graphics cards.
 
 In order to activate this feature, you will need two things:
 1) An OpenCL-compatible device and a respective driver SDK.
-   Here are some pointers where you can find one foru your device:
-   - NVIDIA: Install the latest graphics driver and the CUDA SDK from:         
+   Here are some pointers where you can find one for your device:
+   - NVIDIA: Install both the latest graphics driver and the CUDA SDK from:         
+     www.nvidia.com/Download/index.aspx
      www.nvidia.com/object/cuda_home_new.html
    - AMD: Install the latest graphics driver and the APP SDK from:
+     http://support.amd.com/
      http://developer.amd.com/tools-and-sdks/heterogeneous-computing/amd-accelerated-parallel-processing-app-sdk/
    - Intel: Install the latest Intel OpenCL SDK from:                          
-     http://software.intel.com/en-us/vcsource/tools/opencl-sdk
-   If you use Linux, you have to use the XE SDK from:
-     http://software.intel.com/en-us/vcsource/tools/opencl-sdk-xe
-   - IBM Power: Install the latest SDK from:                                   
-     https://www.ibm.com/developerworks/community/wikis/home?lang=en#!/wiki/Wbf059a58a9b9_459d_aca4_493655c96370/page/OpenCL%20Downloads
+     https://software.intel.com/en-us/articles/opencl-drivers
 
 2) The NLOpt library (http://ab-initio.mit.edu/wiki/index.php/NLopt)
 
@@ -110,9 +108,6 @@ In particular:
 > kde_enable_adaptive_bandwidth (boolean, default: false)
    Controls wheter the bandwidth should be optimzed adaptively
    based on incoming queries.
-> kde_online_optimization_algorithm (default: rmsprop)
-   Specifies the online optimization algorithm used.
-   Possible values are: rmsprop, vSGDfd
 > kde_minibatch_size (integer, default: 5)
    Controls how large (in queries) the mini-batches are that are
    used in the adaptive bandwidth optimization.
