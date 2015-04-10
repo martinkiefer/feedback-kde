@@ -74,7 +74,8 @@ In particular:
 					   Karma threshold
     PKR (Periodic Karma Replacement):      Resample the tuple with the worst Karma
 				           periodically
-    PRR (Periodic Random Replacement): 	   Resample a random sample point periodically
+    PRR (Periodic Random Replacement): 	   Resample a random sample point
+                                                                           periodically
     None: 				   No sample maintenance at all
 
 ####  KDE-model specific paramters  ####
