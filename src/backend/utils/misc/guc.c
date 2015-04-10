@@ -160,9 +160,8 @@ extern bool kde_enable_adaptive_bandwidth;
 extern int kde_adaptive_bandwidth_minibatch_size;
 /* Determines the threshold for removing elements for the threshold option */ 
 extern double kde_sample_maintenance_threshold;
-/* Determines the threshold for decaying information for the quality metrics */
-extern double kde_sample_maintenance_karma_decay;
-extern double kde_sample_maintenance_impact_decay;
+/* Determines the threshold for limiting information for the quality metrics */
+extern double kde_sample_maintenance_karma_limit;
 /* Determines the number of queries until the worst sample point is replaced */
 extern int kde_sample_maintenance_period;
 /* Determines the maximum number of buckets in the stholes histogram */
@@ -199,7 +198,6 @@ static const struct config_enum_entry kde_sample_maintenance_options[] = {
   {"PRR", PRR, false},
   {"TKR", TKR, false},
   {"PKR", PKR, false},
-  {"TKRP", TKR, false},
   {NULL, 0, false},
 };
 
@@ -2763,27 +2761,17 @@ static struct config_real ConfigureNamesReal[] =
 	    GUC_NOT_IN_SAMPLE
 	  },
 	  &kde_sample_maintenance_threshold,
-	  -0.2, -DBL_MAX, DBL_MAX,
+	  -2, -DBL_MAX, DBL_MAX,
 	  NULL, NULL, NULL
 	},
 	{
-	  { "kde_sample_maintenance_karma_decay", PGC_USERSET, DEVELOPER_OPTIONS,
+	  { "kde_sample_maintenance_karma_limit", PGC_USERSET, DEVELOPER_OPTIONS,
 	    gettext_noop("Value historic karma is multiplied by after a query."),
 	    NULL,
 	    GUC_NOT_IN_SAMPLE
 	  },
-	  &kde_sample_maintenance_karma_decay,
-	  0.9, -DBL_MAX, DBL_MAX,
-	  NULL, NULL, NULL
-	},
-	{
-	  { "kde_sample_maintenance_impact_decay", PGC_USERSET, DEVELOPER_OPTIONS,
-	    gettext_noop("Value historic contribution is multiplied by after a query."),
-	    NULL,
-	    GUC_NOT_IN_SAMPLE
-	  },
-	  &kde_sample_maintenance_impact_decay,
-	  0.9, -DBL_MAX, DBL_MAX,
+	  &kde_sample_maintenance_karma_limit,
+	  4, -DBL_MAX, DBL_MAX,
 	  NULL, NULL, NULL
 	},
 #endif /* USE_OPENCL */
@@ -3612,7 +3600,7 @@ static struct config_enum ConfigureNamesEnum[] =
       NULL
     },
     &kde_sample_maintenance_option,
-    NONE_M, kde_sample_maintenance_options,
+    CAR, kde_sample_maintenance_options,
     NULL, NULL, NULL
   },
 #endif
