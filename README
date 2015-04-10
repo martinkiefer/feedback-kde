@@ -60,12 +60,22 @@ In particular:
 ####  General parameters  ####
 > ocl_use_gpu (boolean, default: true)
    Controls whether the GPU (true) or CPU (false) is used for the
-   estimator.
+   KDE estimator.
 > kde_debug (boolean, default: false)
    If enabled, additional debug information are written to stdout.
 > kde_estimation_quality_logfile (string)
    If set, the estimation errors for all KDE estimates are logged
-   to this file.
+   to this file.   
+> kde_sample_maintenance(default: CAR)
+   Specifies the algorithm to maintain the sample under changes.
+   Possible values:	
+    CAR (Correlated Acceptance/Rejection): Correlated Acceptance/Rejection
+    TKR (Triggered Karma Replacement):     Resample tuples exceeding a specified
+					   Karma threshold
+    PKR (Periodic Karma Replacement):      Resample the tuple with the worst Karma
+				           periodically
+    PRR (Periodic Random Replacement): 	   Resample a random sample point periodically
+    None: 				   No sample maintenance at all
 
 ####  KDE-model specific paramters  ####
 > kde_enable (boolean, default: false)
@@ -73,11 +83,15 @@ In particular:
 > kde_samplesize (integer, default: 4300)
    Controls the model size (in rows) that is used for a KDE estimator.
 
-####  Generic optimization parameter  ####
+####  Generic optimization parameters  ####
 > kde_error_metric (default: RELATIVE)
    Specifies which error metric is optimized by the estimator.
    Possible values are: ABSOLUTE, RELATIVE, QUADRATIC,
                         SQUARED_Q, SQUARED_RELATIVE
+> kde_bandwidth_representation (default: Plain)
+   Controls whether the bandwidth is storend and optimized in plain or 
+   logarithmized representation.
+   Possible values are: Plain, Log
 
 ####  Parameters specific to bandwidth optimization  ####
 > kde_collect_feedback (boolean, default: false)
@@ -95,10 +109,24 @@ In particular:
 > kde_enable_adaptive_bandwidth (boolean, default: false)
    Controls wheter the bandwidth should be optimzed adaptively
    based on incoming queries.
+> kde_online_optimization_algorithm (default: rmsprop)
+   Specifies the online optimization algorithm used.
+   Possible values are: rmsprop, vSGDfd
 > kde_minibatch_size (integer, default: 5)
    Controls how large (in queries) the mini-batches are that are
    used in the adaptive bandwidth optimization.
 
+#### Parameters specific to Karma-based sample maintenance algorithms ####
+> kde_sample_maintenance_karma_limit (float, default: 4.0)
+   Controls the upper bound on the Karma a tuple in the sample 
+   can aggregate.
+> kde_sample_maintenance_karma_threshold (float, default: -2.0)
+   Controls the lower bound on the Karma of tuples in the sample
+   triggering resampling (TKR only).
+    
+####  Parameters specific to periodic sample maintenance algorithms ####
+> kde_sample_maintenance_period (integer, default: 1)
+   Controls the number of queries considered a period.
 
 In order to build a KDE-based estimator, you have to set the
 coresponding configuration variables and then issue:
@@ -113,7 +141,7 @@ corresponding row from the system table pg_kdemodels.
 ## Code location.                          
 ####################################################
 
-The majority of the code resides in the following two foldes:
+The majority of the code resides in the following two folders:
 > src/backend/kde_feedback
    Contains the feedback collection framework.
 > src/backend/optimizer/path/gpukde
