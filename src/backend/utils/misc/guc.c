@@ -2598,7 +2598,7 @@ static struct config_int ConfigureNamesInt[] =
       GUC_NOT_IN_SAMPLE
     },
     &kde_sample_maintenance_period,
-    64, 1, INT_MAX,
+    1, 1, INT_MAX,
     NULL, NULL, NULL
   },
   {
