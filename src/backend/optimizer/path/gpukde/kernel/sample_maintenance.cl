@@ -64,24 +64,36 @@ __kernel void get_point_deletion_hitmap(
 __kernel void get_point_deletion_bitmap(
     __global const T* const data,
     __constant const T* const point,
+    __local T* lp,
+    __local int* hit,
     __global unsigned char* const hitmap
   ) {
   unsigned char result = 0;
+
+  if(get_local_id(0) < D){
+    lp[get_local_id(0)] = point[get_local_id(0)];
+  }
+  barrier(CLK_LOCAL_MEM_FENCE);
   
-  size_t id = get_global_id(0); 
-  for(unsigned int j = 0; j < 8; j++){ 
-    char hit = 1;
-    for(unsigned int i = 0; i < D; i++){
-      if(data[8*id*D+j*D+i] != point[i]){
-	hit = 0;
-      }
-    }
-    if(hit){
-      result |= 1 << j;
+  hit[get_local_id(0)] = 1;
+  for(unsigned int i = 0; i < D; i++){
+    if(data[D*get_global_id(0) +i] != lp[i]){
+      hit[get_local_id(0)] = 0;
     }
   }
   
-  hitmap[get_global_id(0)] = result;
+  barrier(CLK_LOCAL_MEM_FENCE);
+  
+  if(get_local_id(0) < get_local_size(0)/8){
+    char result = 0;
+    for(unsigned int i = 0; i < 8; i++){
+      if(hit[get_local_id(0)*8+i]){
+	result |= 1 << i;
+      }
+    }
+    hitmap[get_group_id(0) * get_local_size(0)/8 + get_local_id(0)] = result;
+  }
+  
 }
 
 __kernel void get_karma_threshold_hitmap(

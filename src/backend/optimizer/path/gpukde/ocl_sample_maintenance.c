@@ -34,6 +34,56 @@ extern ocl_kernel_type_t global_kernel_type;
 #define CHECK_BIT(var,pos) ((var) & (1<<(pos)))
 #define SET_BIT(var,pos) (var |= (1<<(pos)))
 
+static void ocl_prepareDeletionDescriptor(ocl_estimator_t* estimator, ocl_sample_optimization_t* sample_optimization){  
+  ocl_deletion_descriptor_t * desc = calloc(1, sizeof(ocl_deletion_descriptor_t));
+  ocl_context_t* ctxt = ocl_getContext();
+  
+  int err = 0;
+  size_t global_size = estimator->rows_in_sample;
+  
+  desc->deletion_kernel = ocl_getKernel(
+    "get_point_deletion_bitmap", estimator->nr_of_dimensions);
+  
+  size_t max_size;
+  err |= clGetKernelWorkGroupInfo(
+        desc->deletion_kernel, ctxt->device, CL_KERNEL_PREFERRED_WORK_GROUP_SIZE_MULTIPLE,
+        sizeof(size_t), &(desc->local_size), NULL);
+  Assert(err == CL_SUCCESS);
+  err |= clGetKernelWorkGroupInfo(
+        desc->deletion_kernel, ctxt->device, CL_KERNEL_WORK_GROUP_SIZE,
+        sizeof(size_t), &(max_size), NULL);
+  Assert(err == CL_SUCCESS);
+
+  //Workgroup size has to be at least and a multiple of 8
+  if(global_size % desc->local_size != 0 || desc->local_size < 8){
+	desc->local_size = 8;
+  }
+
+  err |= clSetKernelArg(
+    desc->deletion_kernel, 0, sizeof(cl_mem), &(estimator->sample_buffer));
+  err |= clSetKernelArg(
+    desc->deletion_kernel, 1, sizeof(cl_mem), &(sample_optimization->deleted_point));
+  err |= clSetKernelArg(
+    desc->deletion_kernel, 2, sizeof(kde_float_t)*estimator->nr_of_dimensions, NULL);
+  err |= clSetKernelArg(
+    desc->deletion_kernel, 3, sizeof(int)*desc->local_size, NULL);  
+  err |= clSetKernelArg(
+    desc->deletion_kernel, 4, sizeof(cl_mem), &(sample_optimization->sample_hitmap));   
+  
+  Assert(err == CL_SUCCESS);
+
+  sample_optimization->del_desc = desc;
+}
+
+static void ocl_releaseDeletionDescriptor(ocl_deletion_descriptor_t* del_desc){
+  cl_int err = 0;  
+  
+  err = clReleaseKernel(del_desc->deletion_kernel);
+  Assert(err == CL_SUCCESS);
+  
+  free(del_desc);
+}
+
 void ocl_allocateSampleMaintenanceBuffers(ocl_estimator_t* estimator) {
   ocl_context_t* context = ocl_getContext();
   cl_int err = CL_SUCCESS;
@@ -66,6 +116,8 @@ void ocl_allocateSampleMaintenanceBuffers(ocl_estimator_t* estimator) {
           sizeof(kde_float_t), NULL, &err);
   Assert(err == CL_SUCCESS);
   
+  ocl_prepareDeletionDescriptor(estimator, descriptor);
+  
   // Register the descriptor in the estimator.
   estimator->sample_optimization = descriptor;
 }
@@ -95,6 +147,7 @@ void ocl_releaseSampleMaintenanceBuffers(ocl_estimator_t* estimator) {
       Assert(err == CL_SUCCESS);
     }    
     
+    ocl_releaseDeletionDescriptor(descriptor->del_desc);
     free(estimator->sample_optimization);
   }
 }
@@ -314,6 +367,8 @@ void ocl_notifySampleMaintenanceOfDeletion(Relation rel, ItemPointer tupleid) {
 
   if(kde_sample_maintenance_option == CAR){
     ocl_context_t* ctxt = ocl_getContext();
+    size_t global_size = estimator->rows_in_sample;
+    size_t bitmap_size = estimator->rows_in_sample / 8;
     HeapTupleData deltuple;
     deltuple.t_self = *tupleid;
     Buffer		delbuffer;
@@ -328,8 +383,9 @@ void ocl_notifySampleMaintenanceOfDeletion(Relation rel, ItemPointer tupleid) {
      
     unsigned int i = 0;
     cl_event hitmap_event;
-    size_t global_size = estimator->rows_in_sample/8;
-    unsigned char* hitmap = (unsigned char*) palloc(global_size*sizeof(unsigned char));
+    
+    
+    unsigned char* hitmap = (unsigned char*) palloc(bitmap_size*sizeof(unsigned char));
     
     gettimeofday(&tvBegin,NULL);
     err |= clEnqueueWriteBuffer(
@@ -342,26 +398,16 @@ void ocl_notifySampleMaintenanceOfDeletion(Relation rel, ItemPointer tupleid) {
     estimator->stats->maintenance_transfer_to_device++;
     Assert(err == CL_SUCCESS);
     
-    cl_kernel kernel = ocl_getKernel(
-      "get_point_deletion_bitmap", estimator->nr_of_dimensions);
-    err |= clSetKernelArg(
-      kernel, 0, sizeof(cl_mem), &(estimator->sample_buffer));
-    err |= clSetKernelArg(
-      kernel, 1, sizeof(cl_mem), &(estimator->sample_optimization->deleted_point));
-    err |= clSetKernelArg(
-      kernel, 2, sizeof(cl_mem), &(estimator->sample_optimization->sample_hitmap));   
-    Assert(err == CL_SUCCESS);
-    
     err = clEnqueueNDRangeKernel(
-      ctxt->queue, kernel, 1, NULL, &global_size,
-      NULL, 0, NULL, &hitmap_event);
+      ctxt->queue, estimator->sample_optimization->del_desc->deletion_kernel, 1, NULL, &global_size,
+      &(estimator->sample_optimization->del_desc->local_size), 0, NULL, &hitmap_event);
     Assert(err == CL_SUCCESS);
     
     err = clWaitForEvents(1,&hitmap_event);
     Assert(err == CL_SUCCESS);
     gettimeofday(&tvBegin,NULL);
     err = clEnqueueReadBuffer(
-      ctxt->queue, estimator->sample_optimization->sample_hitmap, CL_TRUE, 0, sizeof(char) * global_size,
+      ctxt->queue, estimator->sample_optimization->sample_hitmap, CL_TRUE, 0, sizeof(char) * bitmap_size,
       hitmap, 1, &hitmap_event, NULL);
     gettimeofday(&tvEnd,NULL);
     estimator->stats->maintenance_transfer_time += (tvEnd.tv_sec - tvBegin.tv_sec) * 1000 * 1000;
@@ -379,7 +425,7 @@ void ocl_notifySampleMaintenanceOfDeletion(Relation rel, ItemPointer tupleid) {
 
     double total_rows;
     
-    for(i=0; i < global_size; i++){
+    for(i=0; i < bitmap_size; i++){
       int j=0;
       while(hitmap[i]){
 	if(hitmap[i] & 1){
