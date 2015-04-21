@@ -85,6 +85,8 @@ class MyServerProtocol(WebSocketServerProtocol):
 	    df = "%s_%s" % (df,self.conf["decay"])
         if(self.conf["maintenance"] == "CAR"):
             self.cur.execute("SET kde_sample_maintenance TO CAR;")
+        if(self.conf["maintenance"] == "None"):
+            self.cur.execute("SET kde_sample_maintenance TO NONE;")
         if(self.conf["maintenance"] == "PRR"):
             self.cur.execute("SET kde_sample_maintenance TO PRR;")
             self.cur.execute("SET kde_sample_maintenance_period  TO %s;" % self.conf["period"] )  
