@@ -209,7 +209,7 @@ static int getBinomial(int n, double p) {
 //returns: Bitmask with bits at drawn index sets
 static unsigned char* floydSampling(unsigned char* map, int n, int m){
   int j = (n - m + 1);
-  for(; j < n; j++){
+  for(; j <= n; j++){
     int t = (random() % j) + 1;    
     if(CHECK_BIT(map[(t-1) / 8], (t-1) % 8)){
       SET_BIT(map[(j-1) / 8],(j-1) % 8);
