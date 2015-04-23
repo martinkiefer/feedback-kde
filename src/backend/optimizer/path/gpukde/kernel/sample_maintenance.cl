@@ -44,28 +44,11 @@ __kernel void update_sample_quality_metrics(
   karma[get_global_id(0)] = fmin(karma[get_global_id(0)], karma_limit);   
 }
 
-__kernel void get_point_deletion_hitmap(
-    __global const T* const data,
-    __constant const T* const point,
-    __global char* const hitmap
-  ) {
-  char hit = 1;
-  size_t id = get_global_id(0); 
-  
-  for(unsigned int i = 0; i < D; i++){
-    if(data[id*D+i] != point[i]){
-      hit = 0;
-    }
-  }
-  
-  hitmap[get_global_id(0)] = hit;
-}
-
 __kernel void get_point_deletion_bitmap(
     __global const T* const data,
     __constant const T* const point,
     __local T* lp,
-    __local int* hit,
+    __local unsigned int* hit,
     __global unsigned char* const hitmap
   ) {
   unsigned char result = 0;
@@ -75,71 +58,89 @@ __kernel void get_point_deletion_bitmap(
   }
   barrier(CLK_LOCAL_MEM_FENCE);
   
-  hit[get_local_id(0)] = 1;
+  
+  unsigned int temp = 1;
   for(unsigned int i = 0; i < D; i++){
     if(data[D*get_global_id(0) +i] != lp[i]){
-      hit[get_local_id(0)] = 0;
+      temp = 0;
     }
   }
+  hit[get_local_id(0)] = temp << get_local_id(0) % 8;
   
   barrier(CLK_LOCAL_MEM_FENCE);
   
-  if(get_local_id(0) < get_local_size(0)/8){
-    char result = 0;
-    for(unsigned int i = 0; i < 8; i++){
-      if(hit[get_local_id(0)*8+i]){
-	result |= 1 << i;
-      }
-    }
-    hitmap[get_group_id(0) * get_local_size(0)/8 + get_local_id(0)] = result;
+  if(get_local_id(0) % 8 < 4){
+    hit[get_local_id(0)] |= hit[get_local_id(0)+4];
   }
-  
-}
 
-__kernel void get_karma_threshold_hitmap(
-    __global const T* const karma,
-    __global const T* const local_results,
-    T threshold,
-    double actual_selectivity,
-    __global char* const hitmap
-  ) {
-  // If we are below threshold, we always want to resample
-  T local_karma = karma[get_global_id(0)];
-  char hit = local_karma < threshold;
+  barrier(CLK_LOCAL_MEM_FENCE);
   
-  if(actual_selectivity == 0.0){
-    T local_contribution = local_results[get_global_id(0)];
-    //Every sample point with a local contribution > 0.5 is in the query region
-    //These points were certainly deleted 
-    hit = (local_contribution > 0.5) || hit;
+  if(get_local_id(0) % 8 < 2){
+    hit[get_local_id(0)] |= hit[get_local_id(0)+2];
   }
+
+  barrier(CLK_LOCAL_MEM_FENCE);
   
-  hitmap[get_global_id(0)] = hit;
+  if(get_local_id(0) % 8 < 1){
+    hitmap[get_group_id(0)*get_local_size(0)/8 + get_local_id(0) / 8] = (hit[get_local_id(0)] | hit[get_local_id(0)+1]) & 0xFF;
+  }
 }
 
 __kernel void get_karma_threshold_bitmap(
     __global const T* const karma,
     __global const T* const local_results,
+    __global const T* const query,
+    __global const T* const bandwidth,
+    __local unsigned int* hit,
     T threshold,
     double actual_selectivity,
-    __global char* const hitmap
+    __global unsigned char* const hitmap
   ) {
   unsigned char result = 0;
-  for(unsigned int i = 0; i < 8; i++){
-  // If we are below threshold, we always want to resample
-    T local_karma = karma[get_global_id(0)*8+i];
-    char hit = local_karma < threshold;
- 
-    if(actual_selectivity == 0.0){
-      T local_contribution = local_results[get_global_id(0)*8+i];
-      //Every sample point with a local contribution > 0.5 is in the query region
-      //These points were certainly deleted 
-      hit = (local_contribution > 0.5) || hit;
+  T local_karma = karma[get_global_id(0)];
+  hit[get_local_id(0)] = (local_karma < threshold) << (get_local_id(0) % 8);
+  
+  if(actual_selectivity == 0.0){
+    __local T n[D];
+    __local T d[D];
+    
+    //Calculate the ingredients for the formula
+    if(get_local_id(0) < D){
+      T factor1 = (query[get_local_id(0)*2+1]-query[get_local_id(0)*2])/(bandwidth[get_local_id(0)]*M_SQRT2);
+      n[get_local_id(0)] = erf(factor1);
+      d[get_local_id(0)] = erf(factor1/2);
     }
-    if(hit){
-      result |= 1 << i;
+    
+    barrier(CLK_LOCAL_MEM_FENCE);
+    
+    T pmax = 1;
+    T max_frac = 0;
+
+    for(int i = 0; i < D; i++){
+      pmax *= n[i];
+      max_frac = max(max_frac,n[i]/d[i]);
     }
+    pmax *= max_frac;
+    
+    T local_contribution = local_results[get_global_id(0)]; 
+    hit[get_local_id(0)] |= (local_contribution > pmax) << (get_local_id(0) % 8);
   }
   
-  hitmap[get_global_id(0)] = result;
+  barrier(CLK_LOCAL_MEM_FENCE);
+  
+  if(get_local_id(0) % 8 < 4){
+    hit[get_local_id(0)] |= hit[get_local_id(0)+4];
+  }
+
+  barrier(CLK_LOCAL_MEM_FENCE);
+  
+  if(get_local_id(0) % 8 < 2){
+    hit[get_local_id(0)] |= hit[get_local_id(0)+2];
+  }
+
+  barrier(CLK_LOCAL_MEM_FENCE);
+  
+  if(get_local_id(0) % 8 < 1){
+    hitmap[get_group_id(0)*get_local_size(0)/8 + get_local_id(0) / 8] = (hit[get_local_id(0)] | hit[get_local_id(0)+1]) & 0xFF;
+  }
 }

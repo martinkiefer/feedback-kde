@@ -13,6 +13,11 @@ typedef struct ocl_deletion_descriptor {
     cl_kernel deletion_kernel;
 } ocl_deletion_descriptor_t; 
 
+typedef struct ocl_tkr_descriptor {
+    size_t local_size;
+    cl_kernel tkr_kernel;
+} ocl_tkr_descriptor_t; 
+
 typedef struct ocl_sample_optimization {
   cl_mem sample_karma_buffer;     // Buffer to track the karma of the sample points.
   cl_mem sample_hitmap;		  //Working memory to identify qualifying sample points
@@ -21,6 +26,7 @@ typedef struct ocl_sample_optimization {
   cl_mem min_idx;		  //Working memory to store the index of a minimum value
   
   ocl_deletion_descriptor_t* del_desc; // Deletion descriptor
+  ocl_tkr_descriptor_t* tkr_desc; // Deletion descriptor
 } ocl_sample_optimization_t;
 
 void ocl_allocateSampleMaintenanceBuffers(ocl_estimator_t* estimator);

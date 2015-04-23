@@ -34,6 +34,13 @@ extern ocl_kernel_type_t global_kernel_type;
 #define CHECK_BIT(var,pos) ((var) & (1<<(pos)))
 #define SET_BIT(var,pos) (var |= (1<<(pos)))
 
+// GUC configuration variable.
+double kde_sample_maintenance_threshold;
+double kde_sample_maintenance_karma_limit;
+
+int kde_sample_maintenance_period;
+int kde_sample_maintenance_option;
+
 static void ocl_prepareDeletionDescriptor(ocl_estimator_t* estimator, ocl_sample_optimization_t* sample_optimization){  
   ocl_deletion_descriptor_t * desc = calloc(1, sizeof(ocl_deletion_descriptor_t));
   ocl_context_t* ctxt = ocl_getContext();
@@ -66,7 +73,7 @@ static void ocl_prepareDeletionDescriptor(ocl_estimator_t* estimator, ocl_sample
   err |= clSetKernelArg(
     desc->deletion_kernel, 2, sizeof(kde_float_t)*estimator->nr_of_dimensions, NULL);
   err |= clSetKernelArg(
-    desc->deletion_kernel, 3, sizeof(int)*desc->local_size, NULL);  
+    desc->deletion_kernel, 3, sizeof(unsigned int)*desc->local_size, NULL);  
   err |= clSetKernelArg(
     desc->deletion_kernel, 4, sizeof(cl_mem), &(sample_optimization->sample_hitmap));   
   
@@ -82,6 +89,67 @@ static void ocl_releaseDeletionDescriptor(ocl_deletion_descriptor_t* del_desc){
   Assert(err == CL_SUCCESS);
   
   free(del_desc);
+}
+
+static void ocl_prepareTkrDescriptor(ocl_estimator_t* estimator, ocl_sample_optimization_t* sample_optimization){  
+  ocl_tkr_descriptor_t * desc = calloc(1, sizeof(ocl_tkr_descriptor_t));
+  ocl_context_t* ctxt = ocl_getContext();
+  
+  cl_int err = 0;
+  size_t global_size = estimator->rows_in_sample;
+  
+  desc->tkr_kernel = ocl_getKernel(
+    "get_karma_threshold_bitmap", estimator->nr_of_dimensions);
+  
+  size_t max_size;
+  err |= clGetKernelWorkGroupInfo(
+        desc->tkr_kernel, ctxt->device, CL_KERNEL_PREFERRED_WORK_GROUP_SIZE_MULTIPLE,
+        sizeof(size_t), &(desc->local_size), NULL);
+  Assert(err == CL_SUCCESS);
+  err |= clGetKernelWorkGroupInfo(
+        desc->tkr_kernel, ctxt->device, CL_KERNEL_WORK_GROUP_SIZE,
+        sizeof(size_t), &(max_size), NULL);
+  Assert(err == CL_SUCCESS);
+
+  //Workgroup size has to be at least and a multiple of 8
+  if(global_size % desc->local_size != 0 || desc->local_size < 8){
+	desc->local_size = 8;
+  }
+
+  err |= clSetKernelArg(
+    desc->tkr_kernel, 0, sizeof(cl_mem), &(sample_optimization->sample_karma_buffer));
+  err |= clSetKernelArg(
+    desc->tkr_kernel, 1, sizeof(cl_mem), &(estimator->local_results_buffer));
+  err |= clSetKernelArg(
+    desc->tkr_kernel, 2, sizeof(cl_mem), &(estimator->input_buffer));
+  err |= clSetKernelArg(
+    desc->tkr_kernel, 3, sizeof(cl_mem), &(estimator->bandwidth_buffer));
+    err |= clSetKernelArg(
+    desc->tkr_kernel, 4, sizeof(unsigned int)*desc->local_size, NULL);
+  err |= clSetKernelArg(
+    desc->tkr_kernel, 5, sizeof(kde_float_t), &kde_sample_maintenance_threshold);
+  err |= clSetKernelArg(
+    desc->tkr_kernel, 7, sizeof(cl_mem), &(sample_optimization->sample_hitmap));
+  
+  Assert(err == CL_SUCCESS);
+
+  sample_optimization->tkr_desc = desc;
+}
+
+static void ocl_releaseTkrDescriptor(ocl_tkr_descriptor_t* desc){
+  cl_int err = 0;  
+  
+  err = clReleaseKernel(desc->tkr_kernel);
+  Assert(err == CL_SUCCESS);
+  
+  free(desc);
+}
+
+static void setActualSelectivity(ocl_tkr_descriptor_t * desc, double actual_selectivity){
+  cl_int err = 0;
+  err = clSetKernelArg(
+    desc->tkr_kernel, 6, sizeof(kde_float_t), &actual_selectivity);
+  Assert(err == CL_SUCCESS);
 }
 
 void ocl_allocateSampleMaintenanceBuffers(ocl_estimator_t* estimator) {
@@ -116,7 +184,12 @@ void ocl_allocateSampleMaintenanceBuffers(ocl_estimator_t* estimator) {
           sizeof(kde_float_t), NULL, &err);
   Assert(err == CL_SUCCESS);
   
-  ocl_prepareDeletionDescriptor(estimator, descriptor);
+  if(kde_sample_maintenance_option == CAR){
+    ocl_prepareDeletionDescriptor(estimator, descriptor);
+  }
+  else if(kde_sample_maintenance_option == TKR) {
+    ocl_prepareTkrDescriptor(estimator, descriptor);
+  }
   
   // Register the descriptor in the estimator.
   estimator->sample_optimization = descriptor;
@@ -146,18 +219,15 @@ void ocl_releaseSampleMaintenanceBuffers(ocl_estimator_t* estimator) {
       err = clReleaseMemObject(descriptor->min_val);
       Assert(err == CL_SUCCESS);
     }    
-    
-    ocl_releaseDeletionDescriptor(descriptor->del_desc);
+    if(descriptor->del_desc){ 
+      ocl_releaseDeletionDescriptor(descriptor->del_desc);
+    }
+    if(descriptor->tkr_desc){ 
+      ocl_releaseTkrDescriptor(descriptor->tkr_desc);
+    }
     free(estimator->sample_optimization);
   }
 }
-
-// GUC configuration variable.
-double kde_sample_maintenance_threshold;
-double kde_sample_maintenance_karma_limit;
-
-int kde_sample_maintenance_period;
-int kde_sample_maintenance_option;
 
 //Convenience method for retrieving the index of the smallest element
 static int getMinPenaltyIndex(
@@ -417,8 +487,6 @@ void ocl_notifySampleMaintenanceOfDeletion(Relation rel, ItemPointer tupleid) {
     err = clReleaseEvent(hitmap_event);
     Assert(err == CL_SUCCESS);
 
-    
-    //clReleaseEvent(write_event);
     //We have got work todo. Get structures to obtain random rows.
     kde_float_t* item = palloc(ocl_sizeOfSampleItem(estimator));
     HeapTuple sample_point;
@@ -683,34 +751,26 @@ void ocl_notifySampleMaintenanceOfSelectivity(
     //and then create a random sample with sufficient size. Maybe later.
     unsigned int i = 0;
     cl_event hitmap_event;
-    unsigned char* hitmap = (unsigned char*) palloc(global_size*sizeof(unsigned char));
-    global_size = global_size / 8;
-    cl_kernel kernel = ocl_getKernel(
-      "get_karma_threshold_bitmap", estimator->nr_of_dimensions);
-    err |= clSetKernelArg(
-      kernel, 0, sizeof(cl_mem), &(estimator->sample_optimization->sample_karma_buffer));
-    err |= clSetKernelArg(
-      kernel, 1, sizeof(cl_mem), &(estimator->local_results_buffer));
-    err |= clSetKernelArg(
-      kernel, 2, sizeof(kde_float_t), &kde_sample_maintenance_threshold);
-    err |= clSetKernelArg(
-      kernel, 3, sizeof(double), &(actual_selectivity));
-    err |= clSetKernelArg(
-      kernel, 4, sizeof(cl_mem), &(estimator->sample_optimization->sample_hitmap));    
+    int bitmap_size = global_size / 8;
+    unsigned char* hitmap = (unsigned char*) palloc(bitmap_size*sizeof(unsigned char));
+    
+    setActualSelectivity(estimator->sample_optimization->tkr_desc,actual_selectivity);
     err = clEnqueueNDRangeKernel(
-      ctxt->queue, kernel, 1, NULL, &global_size,
-      NULL, 1, &quality_update_event, &hitmap_event);
+      ctxt->queue, estimator->sample_optimization->tkr_desc->tkr_kernel, 1, NULL, &global_size,
+      &(estimator->sample_optimization->tkr_desc->local_size), 1, &quality_update_event, &hitmap_event);
     Assert(err == CL_SUCCESS);
     
     err = clWaitForEvents(1,&hitmap_event);
+    Assert(err == CL_SUCCESS);
     gettimeofday(&tvBegin,NULL);
     err |= clEnqueueReadBuffer(
-      ctxt->queue, estimator->sample_optimization->sample_hitmap, CL_TRUE, 0, sizeof(char) * global_size,
+      ctxt->queue, estimator->sample_optimization->sample_hitmap, CL_TRUE, 0, sizeof(char) * bitmap_size,
       hitmap, 1, &hitmap_event, NULL);
     gettimeofday(&tvEnd,NULL);
     estimator->stats->maintenance_transfer_time += (tvEnd.tv_sec - tvBegin.tv_sec) * 1000 * 1000;
     estimator->stats->maintenance_transfer_time += (tvEnd.tv_usec - tvBegin.tv_usec);
     estimator->stats->maintenance_transfer_to_host++;
+    Assert(err == CL_SUCCESS);
     err = clReleaseEvent(hitmap_event);
     Assert(err == CL_SUCCESS);
     err = clReleaseEvent(quality_update_event);
@@ -723,7 +783,7 @@ void ocl_notifySampleMaintenanceOfSelectivity(
     double total_rows;
     Relation rel = try_relation_open(estimator->table, ShareUpdateExclusiveLock);
     
-    for(i=0; i < global_size; i++){
+    for(i=0; i < bitmap_size; i++){
       int j=0;
       while(hitmap[i]){
 	if(hitmap[i] & 1){
