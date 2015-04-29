@@ -5,6 +5,9 @@ PGPORT=""
 PGDATAFOLDER=""
 PGDATABASE=""
 
+#Location of Python2.7 interpreter
+PYTHON=""
+
 if [ -z "$PGDATAFOLDER" ]; then
   echo 'Please provide a $PGDATAFOLDER in conf.sh.'
   exit
@@ -17,3 +20,5 @@ fi
 if [ -z "$PGDATABASE" ]; then
   PGDATABASE=`whoami`
 fi
+
+PSQL="$PGDATAFOLDER/bin/psql"

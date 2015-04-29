@@ -3,7 +3,7 @@
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 source $DIR/../../conf.sh
 
-DATASETS=(bike forest set1 genhist_set2 power protein)
+DATASETS=(forest) #bike set1 genhist_set2 power protein)
 QUERIES=2500
 
 for dataset in "${DATASETS[@]}" ; do
@@ -16,7 +16,7 @@ for dataset in "${DATASETS[@]}" ; do
   for table in "${TABLES[@]}"; do
     echo "Generating workload for table $table ... "
     # Generate the dv query set (data centered, target volume).
-    python $DIR/query_generator.py                  \
+    $PYTHON $DIR/query_generator.py                  \
      --dbname=$PGDATABASE --port=$PGPORT            \
      --table=$table --queries=$QUERIES              \
      --selectivity=0.01 --mcenter=Data              \
@@ -24,7 +24,7 @@ for dataset in "${DATASETS[@]}" ; do
      --out=$dataset/queries/${table}_dv_0.01.sql &
     DVPID=$!
     # Generate the uv query set (uniform centers, target volume).
-    python $DIR/query_generator.py                  \
+    $PYTHON $DIR/query_generator.py                  \
      --dbname=$PGDATABASE --port=$PGPORT            \
      --table=$table --queries=$QUERIES              \
      --selectivity=0.01 --mcenter=Uniform           \
@@ -32,7 +32,7 @@ for dataset in "${DATASETS[@]}" ; do
      --out=$dataset/queries/${table}_uv_0.01.sql &
     UVPID=$!
     # Generate the dt query set (data centered, target selectivity).
-    python $DIR/query_generator.py                  \
+    $PYTHON $DIR/query_generator.py                  \
      --dbname=$PGDATABASE --port=$PGPORT            \
      --table=$table --queries=$QUERIES              \
      --selectivity=0.01 --mcenter=Data              \
@@ -40,7 +40,7 @@ for dataset in "${DATASETS[@]}" ; do
      --out=$dataset/queries/${table}_dt_0.01.sql &
     DTPID=$!
     # Generate the ut query set (uniform centers, target selectivity).
-    python $DIR/query_generator.py                  \
+    $PYTHON $DIR/query_generator.py                  \
      --dbname=$PGDATABASE --port=$PGPORT            \
      --table=$table --queries=$QUERIES              \
      --selectivity=0.01 --mcenter=Uniform           \
@@ -56,21 +56,21 @@ for dataset in "${DATASETS[@]}" ; do
 done
 
 # Finally, create the scaled datasets and query workloads.
-python $DIR/scaleDatasets.py --dbname=$PGDATABASE --port=$PGPORT
+$PYTHON $DIR/scaleDatasets.py --dbname=$PGDATABASE --port=$PGPORT
 for dataset in "${DATASETS[@]}" ; do
   source $dataset/tables.sh
   for table in "${TABLES[@]}"; do
     cd $dataset/queries
-    python $DIR/scaleExperiments.py                 \
+    $PYTHON $DIR/scaleExperiments.py                 \
       --dbname=$PGDATABASE --port=$PGPORT           \
       --queryfile=${table}_ut_0.01.sql
-    python $DIR/scaleExperiments.py                 \
+    $PYTHON $DIR/scaleExperiments.py                 \
       --dbname=$PGDATABASE --port=$PGPORT           \
       --queryfile=${table}_uv_0.01.sql
-    python $DIR/scaleExperiments.py                 \
+    $PYTHON $DIR/scaleExperiments.py                 \
       --dbname=$PGDATABASE --port=$PGPORT           \
       --queryfile=${table}_dt_0.01.sql
-    python $DIR/scaleExperiments.py                 \
+    $PYTHON $DIR/scaleExperiments.py                 \
       --dbname=$PGDATABASE --port=$PGPORT           \
       --queryfile=${table}_dv_0.01.sql
     cd -

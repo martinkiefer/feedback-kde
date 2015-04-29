@@ -3,14 +3,14 @@
 # Figure out the current directory.
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 # And call the configuration script.
-source $DIR/../../conf.sh
+source $DIR/../../../conf.sh
 
 # Drop all tables.
-echo "DROP TABLE power9;" > /tmp/load.sql
-echo "DROP TABLE power8;" >> /tmp/load.sql
-echo "DROP TABLE power5;" >> /tmp/load.sql
-echo "DROP TABLE power3;" >> /tmp/load.sql
-echo "DROP TABLE power2;" >> /tmp/load.sql
+echo "DROP TABLE IF EXISTS power9;" > /tmp/load.sql
+echo "DROP TABLE IF EXISTS power8;" >> /tmp/load.sql
+echo "DROP TABLE IF EXISTS power5;" >> /tmp/load.sql
+echo "DROP TABLE IF EXISTS power3;" >> /tmp/load.sql
+echo "DROP TABLE IF EXISTS power2;" >> /tmp/load.sql
 
 # Prepare the SQL load script.
 echo "CREATE TABLE power9(" >> /tmp/load.sql
@@ -52,4 +52,4 @@ echo "SELECT c2 AS c1, " >> /tmp/load.sql
 echo "       c5 AS c2 INTO power2 FROM power9;" >> /tmp/load.sql
 
 # Now call the load script.
-psql -p$PGPORT $PGDATABASE -f /tmp/load.sql 
+$PSQL -p$PGPORT $PGDATABASE -f /tmp/load.sql 

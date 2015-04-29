@@ -3,13 +3,13 @@
 # Figure out the current directory.
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 # And call the configuration script.
-source $DIR/../../conf.sh
+source $DIR/../../../conf.sh
 
 # Drop all tables.
-echo "DROP TABLE set1_8;" > /tmp/load.sql
-echo "DROP TABLE set1_5;" >> /tmp/load.sql
-echo "DROP TABLE set1_3;" >> /tmp/load.sql
-echo "DROP TABLE set1_2;" >> /tmp/load.sql
+echo "DROP TABLE IF EXISTS set1_8;" > /tmp/load.sql
+echo "DROP TABLE IF EXISTS set1_5;" >> /tmp/load.sql
+echo "DROP TABLE IF EXISTS set1_3;" >> /tmp/load.sql
+echo "DROP TABLE IF EXISTS set1_2;" >> /tmp/load.sql
 
 # Prepare the SQL load script for set1_8.
 echo "CREATE TABLE set1_8(" >> /tmp/load.sql
@@ -46,4 +46,4 @@ echo "	c2  DOUBLE PRECISION);" >> /tmp/load.sql
 echo "COPY set1_2 FROM '$DIR/raw/gen1_d2.csv' DELIMITER'|';" >> /tmp/load.sql
 
 # Now call the load script.
-psql -p$PGPORT $PGDATABASE -f /tmp/load.sql 
+$PSQL -p$PGPORT $PGDATABASE -f /tmp/load.sql 

@@ -3,14 +3,14 @@
 # Figure out the current directory.
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 # And call the configuration script.
-source $DIR/../../conf.sh
+source $DIR/../../../conf.sh
 
 # Drop all tables.
-echo "DROP TABLE protein10;" > /tmp/load.sql
-echo "DROP TABLE protein8;" >> /tmp/load.sql
-echo "DROP TABLE protein5;" >> /tmp/load.sql
-echo "DROP TABLE protein3;" >> /tmp/load.sql
-echo "DROP TABLE protein2;" >> /tmp/load.sql
+echo "DROP TABLE IF EXISTS protein10;" > /tmp/load.sql
+echo "DROP TABLE IF EXISTS protein8;" >> /tmp/load.sql
+echo "DROP TABLE IF EXISTS protein5;" >> /tmp/load.sql
+echo "DROP TABLE IF EXISTS protein3;" >> /tmp/load.sql
+echo "DROP TABLE IF EXISTS protein2;" >> /tmp/load.sql
 
 # Prepare the SQL load script.
 echo "CREATE TABLE protein10(" >> /tmp/load.sql
@@ -54,4 +54,4 @@ echo "       c7 AS c2 INTO protein2 FROM protein10;" >> /tmp/load.sql
 
 
 # Now call the load script.
-psql -p$PGPORT $PGDATABASE -f /tmp/load.sql 
+$PSQL -p$PGPORT $PGDATABASE -f /tmp/load.sql 

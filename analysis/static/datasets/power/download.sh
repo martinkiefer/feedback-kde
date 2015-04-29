@@ -2,6 +2,7 @@
 
 # Figure out the current directory.
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+source $DIR/../../../conf.sh
 
 # Now check whether the file already exists.
 if [ ! -f $DIR/raw/data.csv ] ; then
@@ -13,7 +14,7 @@ if [ ! -f $DIR/raw/data.csv ] ; then
   # Remove the CSV header.
   tail -n +2 /tmp/household_power_consumption.txt > /tmp/data.csv
   # Transform date and time information.
-  python $DIR/convert.py /tmp/data.csv > $DIR/raw/data.csv
+  $PYTHON $DIR/convert.py /tmp/data.csv > $DIR/raw/data.csv
   # And change the seperation character to |.
   sed -i -e 's/;/|/g' $DIR/raw/data.csv
 fi
