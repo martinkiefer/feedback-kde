@@ -1,17 +1,15 @@
 #/bin/bash
 
-# Postgres specific variables:
-PGPORT=""
+# Folder containing the postgres installation.
+PGHOMEFOLDER=""
+# Folder containing the Postgres databases.
 PGDATAFOLDER=""
+# Name of the test database.
 PGDATABASE=""
-
-#Location of Python2.7 interpreter
+# Port that will be used for postgres.
+PGPORT=""
+#Location of Python2.7 interpreter.
 PYTHON=""
-
-if [ -z "$PGDATAFOLDER" ]; then
-  echo 'Please provide a $PGDATAFOLDER in conf.sh.'
-  exit
-fi
 
 # Set default values.
 if [ -z "$PGPORT" ]; then
@@ -20,5 +18,45 @@ fi
 if [ -z "$PGDATABASE" ]; then
   PGDATABASE=`whoami`
 fi
+if [ -z "$PYTHON" ]; then
+  PYTHON="python"
+fi
 
-PSQL="$PGDATAFOLDER/bin/psql"
+# Check whether the provided postgres folder seems valid.
+if [ -z "$PGHOMEFOLDER" ]; then
+  echo 'Please provide a $PGDATAFOLDER in conf.sh.'
+  exit
+elif [ ! -d "$PGHOMEFOLDER" ]; then
+  echo 'Provided $PGHOMEFOLDER in conf.sh is not a directory.'
+  exit
+fi
+PSQL="$PGHOMEFOLDER/bin/psql"
+if [ ! -e "$PSQL" ]; then
+  echo 'Provided $PGHOMEFOLDER in conf.sh seems invalid (no psql found).'
+  exit
+fi
+
+# Check whether the provided data folder seems valid. 
+if [ -z "$PGDATAFOLDER" ]; then
+  echo 'Please provide a $PGDATAFOLDER in conf.sh.'
+  exit
+elif [ ! -d "$PGDATAFOLDER" ]; then
+  echo 'Provided $PGDATAFOLDER in conf.sh is not a directory.'
+  exit
+elif [ ! -e "$PGDATAFOLDER/PG_VERSION" ]; then
+  echo 'Provided $PGDATAFOLDER in conf.sh seems invalid (no PG_VERSION found).'
+  exit
+fi
+
+# Check whether the provided python interpreter is at least version 2.7
+PY_VERSION_CHECK=`$PYTHON -c "import sys; print 'OK' if sys.hexversion >= 0x02070000 else 'FAIL'"`
+if [ $? -ne 0 ]; then
+   echo "Provided python interpreter inc conf.sh could not be called."
+   exit
+elif [ "$PY_VERSION_CHECK" == "FAIL" ]; then
+   echo "Provided python interpreter in conf.sh is not at least version 2.7."
+   exit
+elif [ "$PY_VERSION_CHECK" != "OK" ]; then
+   echo "Provided python interpreter in conf.sh returned unexpected result."
+   exit
+fi
