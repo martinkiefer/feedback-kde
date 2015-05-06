@@ -3,6 +3,7 @@
 # Postgres specific variables:
 PGPORT=""
 PGDATAFOLDER=""
+PGINSTFOLDER=""
 PGDATABASE=""
 
 #Location of Python2.7 interpreter
@@ -21,4 +22,4 @@ if [ -z "$PGDATABASE" ]; then
   PGDATABASE=`whoami`
 fi
 
-PSQL="$PGDATAFOLDER/bin/psql"
+PSQL="$PGINSTFOLDER/bin/psql"
