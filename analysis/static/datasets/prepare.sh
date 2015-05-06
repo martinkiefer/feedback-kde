@@ -3,7 +3,7 @@
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 source $DIR/../../conf.sh
 
-DATASETS=(forest) #bike set1 genhist_set2 power protein)
+DATASETS=(power protein) #bike set1 genhist_set2 power protein)
 QUERIES=2500
 
 for dataset in "${DATASETS[@]}" ; do

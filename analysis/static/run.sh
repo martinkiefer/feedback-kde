@@ -24,7 +24,7 @@ for dataset in $DIR/datasets/*; do
         query_file=`basename $query`
         echo "  Running query $query_file:"
         # Reinitialize postgres (just to be safe)
-        postgres -D $PGDATAFOLDER -p $PGPORT > postgres.log 2>&1 &
+        $POSTGRES -D $PGDATAFOLDER -p $PGPORT > postgres.log 2>&1 &
         PGPID=$!
         sleep 2
         for i in $(seq 1 $REPETITIONS); do
@@ -32,7 +32,7 @@ for dataset in $DIR/datasets/*; do
 
            # Pick a new experiment (and run batch).
            echo "      KDE batch:"
-           python $DIR/runExperiment.py                        \
+           $PYTHON $DIR/runExperiment.py                        \
               --dbname=$PGDATABASE --port=$PGPORT              \
               --queryfile=$query --log=$LOGFILE                \
               --model=kde_batch --modelsize=$KDE_MODELSIZE     \
@@ -41,35 +41,35 @@ for dataset in $DIR/datasets/*; do
 
            # Run stholes:  
            echo "      STHoles:"
-           python $DIR/replayExperiment.py                     \
+           $PYTHON $DIR/replayExperiment.py                     \
               --dbname=$PGDATABASE --port=$PGPORT              \
               --model=stholes --modelsize=$STHOLES_MODELSIZE   \
               --error=$ERROR --log=$LOGFILE
             
            # Run KDE heuristic: 
            echo "      KDE heuristic:"
-           python $DIR/replayExperiment.py                     \
+           $PYTHON $DIR/replayExperiment.py                     \
               --dbname=$PGDATABASE --port=$PGPORT              \
               --model=kde_heuristic                            \
               --error=$ERROR --log=$LOGFILE
             
            # Run KDE optimal: 
            echo "      KDE optimal:"
-           python $DIR/replayExperiment.py                     \
+           $PYTHON $DIR/replayExperiment.py                     \
               --dbname=$PGDATABASE --port=$PGPORT              \
               --model=kde_optimal                              \
               --error=$ERROR --log=$LOGFILE
             
            # Run KDE adpative: 
            echo "      KDE adaptive:"
-           python $DIR/replayExperiment.py                     \
+           $PYTHON $DIR/replayExperiment.py                     \
               --dbname=$PGDATABASE --port=$PGPORT              \
               --model=kde_adaptive_rmsprop                     \
               --error=$ERROR --log=$LOGFILE
            
            # Run KDE adpative (log-scaled): 
            echo "      KDE adaptive (log-scaled):"
-           python $DIR/replayExperiment.py                     \
+           $PYTHON $DIR/replayExperiment.py                     \
               --dbname=$PGDATABASE --port=$PGPORT              \
               --model=kde_adaptive_rmsprop --logbw             \
               --error=$ERROR --log=$LOGFILE
