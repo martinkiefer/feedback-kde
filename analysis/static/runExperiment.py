@@ -75,31 +75,36 @@ def prepareWorkload(args):
 
 # Helper function to build the estimator model on the given table.
 def analyzeTable(args, table, dimensions):
-  query = ""
-  if args.model != "none":
-    # Trigger reanalyzing the table.
-    sys.stdout.write("\tBuilding estimator ... ")
-    sys.stdout.flush()
-    ts = time.time()
-    query += "ANALYZE %s(" % table
-    for i in range(1, dimensions + 1):
-      if (i>1):
-        query += ", c%i" % i
-      else:
-        query += "c%i" %i
-    query += ");"
+  sys.stdout.write("\tBuilding estimator ... ")
+  sys.stdout.flush()
+  ts = time.time()
+  # Set the statistics target for all columns
+  stat_cnt = 100
+  if args.model == "none":
+    stat_cnt = 1
+  for i in range(1, dimensions + 1):
+    query = "ALTER TABLE %s ALTER COLUMN c%i SET STATISTICS %i;" % (table, i, stat_cnt)
     cur.execute(query)
-    # For KDE, we want to restore the sample to avoid
-    if "kde" in args.model:
-        sample_file = "/tmp/sample_%s.csv" % args.dbname
-        if args.replay_experiment:
-            # Import the sample and make sure the bandwidth is re-optimized.
-            cur.execute("SELECT kde_import_sample('%s', '%s');" % (table, sample_file))
-            cur.execute("SELECT kde_reset_bandwidth('%s');" % table)
-        else:
-            # Export the sample.
-            cur.execute("SELECT kde_dump_sample('%s', '%s');" % (table, sample_file))
-    print "done (took %.2f ms)!" % (1000*(time.time() - ts))
+  # Trigger reanalyzing the table.
+  query = "ANALYZE %s(" % table
+  for i in range(1, dimensions + 1):
+    if (i>1):
+      query += ", c%i" % i
+    else:
+      query += "c%i" %i
+  query += ");"
+  cur.execute(query)
+  # For KDE, we want to restore the sample to avoid
+  if "kde" in args.model:
+    sample_file = "/tmp/sample_%s.csv" % args.dbname
+    if args.replay_experiment:
+      # Import the sample and make sure the bandwidth is re-optimized.
+      cur.execute("SELECT kde_import_sample('%s', '%s');" % (table, sample_file))
+      cur.execute("SELECT kde_reset_bandwidth('%s');" % table)
+    else:
+      # Export the sample.
+      cur.execute("SELECT kde_dump_sample('%s', '%s');" % (table, sample_file))
+  print "done (took %.2f ms)!" % (1000*(time.time() - ts))
 
 # Define and parse the command line arguments:
 parser = argparse.ArgumentParser()
