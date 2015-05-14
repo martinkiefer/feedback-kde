@@ -61,4 +61,6 @@ elif [ "$PY_VERSION_CHECK" != "OK" ]; then
    exit
 fi
 
-PSQL="$PGINSTFOLDER/bin/psql"
+# Define some important Postgres commands
+POSTGRES="$PGHOMEFOLDER/bin/postgres"
+PSQL="$PGHOMEFOLDER/bin/psql"
