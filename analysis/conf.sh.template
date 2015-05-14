@@ -1,12 +1,12 @@
 #/bin/bash
 
-# Folder containing the postgres installation.
+# Folder containing the Postgres installation.
 PGHOMEFOLDER=""
 # Folder containing the Postgres databases.
 PGDATAFOLDER=""
 # Name of the test database.
 PGDATABASE=""
-# Port that will be used for postgres.
+# Port that will be used by Postgres.
 PGPORT=""
 #Location of Python2.7 interpreter.
 PYTHON=""
@@ -60,3 +60,5 @@ elif [ "$PY_VERSION_CHECK" != "OK" ]; then
    echo "Provided python interpreter in conf.sh returned unexpected result."
    exit
 fi
+
+PSQL="$PGINSTFOLDER/bin/psql"

@@ -22,7 +22,7 @@ for dataset in $DIR/datasets/*; do
         query_file=`basename $query`
         echo "  Running for query file $query_file:"
         # Reinitialize postgres (just to be safe)
-        postgres -D $PGDATAFOLDER -p $PGPORT > postgres.log 2>&1 &
+        $POSTGRES -D $PGDATAFOLDER -p $PGPORT > postgres.log 2>&1 &
         PGPID=$!
         sleep 2
         for i in $(seq 1 $REPETITIONS); do
@@ -81,7 +81,7 @@ for dataset in $DIR/datasets/*; do
               --model=postgres --modelsize=$MODELSIZE                   \
               --trainqueries=$TRAINQUERIES --testqueries=$TESTQUERIES   \
               --replay_experiment
-           
+            
            # Run without statistics:
            echo "      No statistics:"
            python $DIR/runExperiment.py                                 \
