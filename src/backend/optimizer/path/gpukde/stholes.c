@@ -1169,7 +1169,14 @@ static int est(
     }
   }
 
-  *selectivity = _est(head, head->root, &ivol) / head->tuples;
+  //If the root uucket contains no tuples we want to return zero, not nan
+  if(head->tuples == 0){
+    *selectivity = 0.0;
+  }
+  else{
+    Selectivity nom =_est(head, head->root, &ivol);
+    *selectivity = nom / head->tuples;
+  }   
   return 1;
 } 
 
