@@ -427,6 +427,7 @@ static kde_float_t _est(const st_head_t* head, st_hole_t* hole,
   
   releaseResources(q_i_b);
   LOG_TIMER("Estimation");
+  Assert(! isnan(est));
   return est;
 }  
 
@@ -603,6 +604,7 @@ static void _drillHoles(st_head_t* head, st_hole_t* parent, st_hole_t* hole) {
         }
       } 
       releaseResources(tmp);
+
       // Shrink the candidate until it does not intersect any children.
       while (true) {
         int changed = 0;
@@ -639,7 +641,7 @@ static void _drillHoles(st_head_t* head, st_hole_t* parent, st_hole_t* hole) {
   }
   
   //This is a shitty corner case, that can occur.
-  if (vBox(head, candidate) <= fabs(head->epsilon*vBox(head, candidate))) {
+  if (vBox(head, candidate) <= fabs(head->epsilon*vBox(head, hole))) {
     goto nohole;
   }
     
@@ -658,9 +660,14 @@ static void _drillHoles(st_head_t* head, st_hole_t* parent, st_hole_t* hole) {
     Assert(type != PARTIAL);
   }
   
-  candidate->tuples = hole->counter * (v(head, candidate)/v_qib);
-  candidate->counter = hole->counter * (v(head, candidate)/v_qib);
-
+  if(v_qib >=  head->epsilon*vBox(head, hole)){ 
+  	candidate->tuples = hole->counter * (v(head, candidate)/v_qib);
+  	candidate->counter = hole->counter * (v(head, candidate)/v_qib);
+  }
+  else {
+  	candidate->tuples = 0;
+  	candidate->counter = 0;
+  }
   // We will now adjust the merge cache of the children that fall into the new
   // candidate hole. In particular, all caches of candidate's children that
   // refer to remaining children of the hole that will be drilled into or to
