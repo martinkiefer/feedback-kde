@@ -31,7 +31,7 @@ for dataset in $DIR/datasets/*; do
 
            # Pick a new experiment and run batch:
            echo "      KDE (batch):"
-           python $DIR/runExperiment.py                                 \
+           $PYTHON $DIR/runExperiment.py                                 \
               --dbname=$PGDATABASE --port=$PGPORT                       \
               --queryfile=$query --log=$LOGFILE                         \
               --model=kde_batch --modelsize=$MODELSIZE                  \
@@ -39,7 +39,7 @@ for dataset in $DIR/datasets/*; do
             
            # Run KDE heuristic: 
            echo "      KDE (heuristic):"
-           python $DIR/runExperiment.py                                 \
+           $PYTHON $DIR/runExperiment.py                                 \
               --dbname=$PGDATABASE --port=$PGPORT                       \
               --queryfile=$query --log=$LOGFILE                         \
               --model=kde_heuristic --modelsize=$MODELSIZE              \
@@ -48,7 +48,7 @@ for dataset in $DIR/datasets/*; do
             
            # Run KDE optimal: 
            echo "      KDE (SCV):"
-           python $DIR/runExperiment.py                                 \
+           $PYTHON $DIR/runExperiment.py                                 \
               --dbname=$PGDATABASE --port=$PGPORT                       \
               --queryfile=$query --log=$LOGFILE                         \
               --model=kde_scv --modelsize=$MODELSIZE                    \
@@ -57,7 +57,7 @@ for dataset in $DIR/datasets/*; do
             
            # Run KDE adpative: 
            echo "      KDE (adaptive):"
-           python $DIR/runExperiment.py                                 \
+           $PYTHON $DIR/runExperiment.py                                 \
               --dbname=$PGDATABASE --port=$PGPORT                       \
               --queryfile=$query --log=$LOGFILE                         \
               --model=kde_adaptive --modelsize=$MODELSIZE --logbw       \
@@ -66,7 +66,7 @@ for dataset in $DIR/datasets/*; do
            
            # Run stholes:  
            echo "      STHoles:"
-           python $DIR/runExperiment.py                                 \
+           $PYTHON $DIR/runExperiment.py                                 \
               --dbname=$PGDATABASE --port=$PGPORT                       \
               --queryfile=$query --log=$LOGFILE                         \
               --model=stholes --modelsize=$MODELSIZE                    \
@@ -75,7 +75,7 @@ for dataset in $DIR/datasets/*; do
 
            # Run with Postgres Histograms:
            echo "      Postgres histograms:"
-           python $DIR/runExperiment.py                                 \
+           $PYTHON $DIR/runExperiment.py                                 \
               --dbname=$PGDATABASE --port=$PGPORT                       \
               --queryfile=$query --log=$LOGFILE                         \
               --model=postgres --modelsize=$MODELSIZE                   \
@@ -84,7 +84,7 @@ for dataset in $DIR/datasets/*; do
             
            # Run without statistics:
            echo "      No statistics:"
-           python $DIR/runExperiment.py                                 \
+           $PYTHON $DIR/runExperiment.py                                 \
               --dbname=$PGDATABASE --port=$PGPORT                       \
               --queryfile=$query --log=$LOGFILE                         \
               --model=none --modelsize=$MODELSIZE                       \
