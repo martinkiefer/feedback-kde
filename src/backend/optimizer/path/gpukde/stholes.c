@@ -233,12 +233,13 @@ static kde_float_t v(const st_head_t* head, st_hole_t* hole) {
   if (hole->v < 0) {
     // No valid cached value, recompute the volume.
     kde_float_t v = vBox(head, hole);
+    kde_float_t vB = v;
     int i = 0;
     for (; i < hole->nr_children; i++) {
       v -= vBox(head, hole->children[i]);
     }
     Assert(v >= -1.0); // This usually means that something went terribly wrong.
-    hole->v = fmax(0.0, v);
+    hole->v = fmax(head->epsilon*vB, v);
   }
   return hole->v;
 }
@@ -428,6 +429,7 @@ static kde_float_t _est(const st_head_t* head, st_hole_t* hole,
   releaseResources(q_i_b);
   LOG_TIMER("Estimation");
   Assert(! isnan(est));
+  Assert(! isinf(est));
   return est;
 }  
 
@@ -582,6 +584,7 @@ static void _drillHoles(st_head_t* head, st_hole_t* parent, st_hole_t* hole) {
   intersectWithLastQuery(head, hole, candidate);
   v_qib = vBox(head, candidate); //*Will be adjusted to the correct value later
   type = getIntersectionType(head, hole, candidate);
+  Assert(! isnan(hole->tuples)); 
   
   // Shrink the candidate hole.
   switch(type) {
@@ -709,7 +712,6 @@ static void _drillHoles(st_head_t* head, st_hole_t* parent, st_hole_t* hole) {
   Assert(_disjunctivenessTest(head, hole));
   
   hole->tuples = fmax(hole->tuples - candidate->tuples, 0.0);
-  
   // Does this bucket still carry information?
   // If not, migrate all children to the parent. Of course, the root bucket can't be removed.
   if (parent != NULL && v(head, hole) <= fabs(head->epsilon*vBox(head,hole))) {
@@ -730,6 +732,7 @@ static void _drillHoles(st_head_t* head, st_hole_t* parent, st_hole_t* hole) {
     releaseResources(hole);
     
     Assert(_disjunctivenessTest(head,parent));
+    Assert(! isnan(hole->tuples)); 
     return;
   }
   head->holes++;
@@ -739,6 +742,7 @@ static void _drillHoles(st_head_t* head, st_hole_t* parent, st_hole_t* hole) {
   for (i=0; i < old_hole_size; i++) {
     _drillHoles(head, hole, hole->children[i]);
   } 
+  Assert(! isnan(hole->tuples)); 
   return;
   
 nohole:
@@ -747,6 +751,7 @@ nohole:
   for (i=0; i < old_hole_size; i++) {
     _drillHoles(head, hole, hole->children[i]);
   }
+  Assert(! isnan(hole->tuples)); 
   return;
 }
 
@@ -940,9 +945,22 @@ static void performSiblingSiblingMerge(
 
   // Update the tuple counts for both the new bucket and the parent.
   kde_float_t v_old = fmax(v(head, bn) - vBox(head, c1) - vBox(head, c2), 0);
-  kde_float_t f_bn = fmax(f_b1 + f_b2 + f_bp * v_old / v_bp, 0);
+  kde_float_t f_bn = 0.0;
+
+  //In very rare cases it might happen that the parrent itself has no volume.
+  //The merge holes routine will take care of this later.
+  //if(v_bp > vBox(head,parent)*head->epsilon){
+      parent->tuples = parent->tuples * (1 - v_old/v_bp);
+      f_bn = fmax(f_b1 + f_b2 + f_bp * v_old / v_bp, 0);
+  //}
+  //else {
+      //The parent has no volume, so it couldn't contribute anything.
+  //    parent->tuples = 0;
+  //    f_bn = fmax(f_b1 + f_b2, 0);
+  //}
+  Assert(! isinf(bn->tuples));
+  Assert(! isinf(parent->tuples));
   bn->tuples = f_bn;
-  parent->tuples = parent->tuples * (1 - v_old/v_bp);
 
   // Move the children of c1 and c2 to the new bucket.
   for (i = 0; i < c1->nr_children; i++) {
@@ -1184,6 +1202,8 @@ static int est(
     Selectivity nom =_est(head, head->root, &ivol);
     *selectivity = nom / head->tuples;
   }   
+  Assert(! isnan(head->tuples)); 
+  Assert(! isnan(*selectivity)); 
   return 1;
 } 
 
