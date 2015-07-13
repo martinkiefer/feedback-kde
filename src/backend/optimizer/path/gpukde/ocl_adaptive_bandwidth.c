@@ -263,6 +263,10 @@ static void ocl_prepareVsgdOnlineLearningStep(ocl_estimator_t* estimator) {
       computePartialGradient, 6, sizeof(cl_mem), &partial_gradient_buffer);
   err |= clSetKernelArg(
       computePartialGradient, 8, sizeof(cl_mem), &null_buffer);
+  err |= clSetKernelArg(
+      computePartialGradient, 9, sizeof(cl_mem), &(estimator->mean_buffer));
+  err |= clSetKernelArg(
+      computePartialGradient, 10, sizeof(cl_mem), &(estimator->variance_buffer));
   Assert(err == CL_SUCCESS);
   
   err = clEnqueueNDRangeKernel(
@@ -652,6 +656,10 @@ static void ocl_initializeRMSProp(
       &result_stride_elements);
   err |= clSetKernelArg(
       descriptor->compute_partial_gradient, 8, sizeof(cl_mem), &nullBuffer);
+  err |= clSetKernelArg(
+      descriptor->compute_partial_gradient, 9, sizeof(cl_mem), &(estimator->mean_buffer));
+  err |= clSetKernelArg(
+      descriptor->compute_partial_gradient, 10, sizeof(cl_mem), &(estimator->variance_buffer));
   Assert(err == CL_SUCCESS);
   
   /*

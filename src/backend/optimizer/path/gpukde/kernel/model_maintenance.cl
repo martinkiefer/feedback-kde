@@ -44,9 +44,11 @@ __kernel void applyGradient(
       }                                                                       \
       for (unsigned int j=0; j<D; ++j) {                                      \
 	T val = data[D*i + j];                                                \
+	T m = mean[j];                                                        \
+	T v = variance[j];                                                    \
 	T h = bandwidth[j];                                                   \
-	T lo = lower_bound_scratch[D*get_local_id(0) + j] - val;              \
-	T hi = upper_bound_scratch[D*get_local_id(0) + j] - val;              \
+	T lo = (lower_bound_scratch[D*get_local_id(0) + j]-m)/v - val;        \
+	T hi = (upper_bound_scratch[D*get_local_id(0) + j]-m)/v - val;        \
 	T factor1  = isinf(lo) ? 0 : lo * exp((T)-1.0 * lo * lo / (2*h*h));   \
 	  factor1 -= isinf(hi) ? 0 : hi * exp((T)-1.0 * hi * hi / (2*h*h));   \
 	T factor2 = erf(hi / (M_SQRT2 * h)) - erf(lo / (M_SQRT2 * h));        \
@@ -84,9 +86,11 @@ __kernel void applyGradient(
       }                                                                       \
       for (unsigned int j=0; j<D; ++j) {                                      \
 	T val = data[D*i + j];                                                \
+	T m = mean[j];                                                        \
+	T v = variance[j];                                                    \
 	T h = bandwidth[j];                                                   \
-	T lo = lower_bound_scratch[D*get_local_id(0) + j] - val;              \
-	T hi = upper_bound_scratch[D*get_local_id(0) + j] - val;              \
+	T lo = (lower_bound_scratch[D*get_local_id(0) + j]-m)/v - val;        \
+	T hi = (upper_bound_scratch[D*get_local_id(0) + j]-m)/v - val;        \
 	T factor1  = isinf(lo) ? 0 : lo * exp((T)-1.0 * lo * lo / (2*exp(h)*exp(h)));   \
 	  factor1 -= isinf(hi) ? 0 : hi * exp((T)-1.0 * hi * hi / (2*exp(h)*exp(h)));   \
 	T factor2 = erf(hi / (M_SQRT2 * exp(h))) - erf(lo / (M_SQRT2 * exp(h)));        \
@@ -119,7 +123,9 @@ __kernel void computeBatchGradientAbsolute(
     __global T* cost_values,
     __global T* gradient,
     unsigned int gradient_stride,
-    unsigned int nrows  /* Number of rows in table */
+    unsigned int nrows,  /* Number of rows in table */
+    __global const T* const mean,
+    __global const T* const variance
   ) {
   // First, we compute the error-independent parts of the gradient.
   BATCH_GRADIENT_COMMON();
@@ -149,7 +155,9 @@ __kernel void computeBatchGradientRelative(
     __global T* cost_values,
     __global T* gradient,
     unsigned int gradient_stride,
-    unsigned int nrows  /* Number of rows in table */
+    unsigned int nrows,  /* Number of rows in table */
+    __global const T* const mean,
+    __global const T* const variance
   ) {
   // First, we compute the error-independent parts of the gradient.
   BATCH_GRADIENT_COMMON();
@@ -179,7 +187,9 @@ __kernel void computeBatchGradientSquaredRelative(
     __global T* cost_values,
     __global T* gradient,
     unsigned int gradient_stride,
-    unsigned int nrows  /* Number of rows in table */
+    unsigned int nrows,  /* Number of rows in table */
+    __global const T* const mean,
+    __global const T* const variance
   ) {
   // First, we compute the error-independent parts of the gradient.
   BATCH_GRADIENT_COMMON();
@@ -209,7 +219,9 @@ __kernel void computeBatchGradientQuadratic(
     __global T* cost_values,
     __global T* gradient,
     unsigned int gradient_stride,
-    unsigned int nrows  /* Number of rows in table */
+    unsigned int nrows,  /* Number of rows in table */
+    __global const T* const mean,
+    __global const T* const variance
   ) {
   // First, we compute the error-independent parts of the gradient.
   BATCH_GRADIENT_COMMON();
@@ -239,7 +251,9 @@ __kernel void computeBatchGradientQ(
     __global T* cost_values,
     __global T* gradient,
     unsigned int gradient_stride,
-    unsigned int nrows  /* Number of rows in table */
+    unsigned int nrows,  /* Number of rows in table */
+    __global const T* const mean,
+    __global const T* const variance
   ) {
   // First, we compute the error-independent parts of the gradient.
   BATCH_GRADIENT_COMMON();

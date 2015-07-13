@@ -363,6 +363,10 @@ static double computeGradient(
       gradient_kernel, 11, sizeof(unsigned int), &stride_elements);
   err |= clSetKernelArg(
       gradient_kernel, 12, sizeof(unsigned int), &(estimator->rows_in_table));
+  err |= clSetKernelArg(
+      gradient_kernel, 13, sizeof(cl_mem), &(estimator->mean_buffer));
+  err |= clSetKernelArg(
+      gradient_kernel, 14, sizeof(cl_mem), &(estimator->variance_buffer));
   Assert(err == CL_SUCCESS);
   
   // Compute the gradient for each observation.

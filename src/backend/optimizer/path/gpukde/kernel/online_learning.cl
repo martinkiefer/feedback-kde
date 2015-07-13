@@ -25,7 +25,9 @@ __kernel void computePartialGradient(
     __local T* scratch,
     __global T* gradient,
     unsigned int gradient_stride,
-    __global T* estimate
+    __global T* estimate,
+    __global const T* const mean,
+    __global const T* const variance
     ) {
   if (get_global_id(0) >= items_in_sample) return;
   // First compute the factors.
@@ -40,8 +42,10 @@ __kernel void computePartialGradient(
 #ifndef LOG_BANDWIDTH
     h = h <= 0 ? 1e-10 : h; // Cap H to positive values.
 #endif
-    T lo = range[2*i] - val;
-    T hi = range[2*i + 1] - val;
+    T m = mean[i];
+    T v = variance[i];
+    T lo = (range[2*i]-m)/v - val;
+    T hi = (range[2*i + 1]-m)/v - val;
 #ifndef LOG_BANDWIDTH
     T factor1 = isinf(lo) ? 0 : lo * exp((T)-1.0 * lo * lo / (2*h*h));
     factor1  -= isinf(hi) ? 0 : hi * exp((T)-1.0 * hi * hi / (2*h*h));

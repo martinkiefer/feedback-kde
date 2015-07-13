@@ -14,15 +14,23 @@ __kernel void epanechnikov_kde(
 	__global const T* const data,
 	__global T* const result,
 	__global const T* const range,
-	__global const T* const bandwidth
+	__global const T* const bandwidth,
+	__global const T* const mean,
+	__global const T* const variance
 ) {
+  __local T m[D];
+  __local T v[D];
+  if (get_local_id(0) < D) {
+    m[get_local_id(0)] = mean[get_local_id(0)];
+    v[get_local_id(0)] = variance[get_local_id(0)];
+  }
   T res = 1.0;
   for (unsigned int i=0; i<D; ++i) {
 		// Fetch all required input data.
 		T val = data[D*get_global_id(0) + i];
 		T h = bandwidth[i];
-		T lo = range[2*i];
-		T up = range[2*i + 1];
+		T lo = (range[2*i]-m[i])/v[i];
+		T up = (range[2*i + 1]-m[i])/v[i];
 		// If the support is completely contained in the query, the result is completely contained.
 		char is_complete = (lo <= (val-h)) && (up >= (val+h));
 		// Adjust the boundaries, so we only integrate over the defined area.
@@ -45,9 +53,13 @@ __kernel void gauss_kde(
 	__global const T* const data,
 	__global T* const result,
 	__global const T* const range,
-	__global const T* const bandwidth
+	__global const T* const bandwidth,
+	__global const T* const mean,
+	__global const T* const variance
 ) {
 	__local T bw[D];
+	__local T m[D];
+	__local T v[D];
   if (get_local_id(0) < D) {
 #ifndef LOG_BANDWIDTH
     T h = bandwidth[get_local_id(0)];
@@ -55,14 +67,16 @@ __kernel void gauss_kde(
     T h = exp(bandwidth[get_local_id(0)]);
 #endif
     bw[get_local_id(0)] = h == 0 ? 0 : 1.0 / (M_SQRT2 * h);
+    m[get_local_id(0)] = mean[get_local_id(0)];
+    v[get_local_id(0)] = variance[get_local_id(0)];
   }
   barrier(CLK_LOCAL_MEM_FENCE);
 	T res = 1.0;
 	for (unsigned int i=0; i<D; ++i) {
 		// Fetch all required input data.
 		T val = data[D*get_global_id(0) + i];
-		T lo = range[2*i] - val;
-		T up = range[2*i + 1] - val;
+		T lo = (range[2*i]-m[i]) / v[i] - val;
+		T up = (range[2*i+1]-m[i]) / v[i] - val;
 		// Now compute the local result.
       T local_result = erf(up * bw[i]) - erf(lo * bw[i]);
       res *= bw[i] == 0 ? (sign(up) - sign(lo)) : local_result;
