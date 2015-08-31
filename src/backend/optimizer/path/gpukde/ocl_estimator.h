@@ -52,10 +52,11 @@ typedef struct ocl_estimator {
   unsigned int rows_in_sample;  // Current number of tuples in the sample.
   size_t sample_buffer_size;    // Size of the sample buffer in bytes.
   cl_mem sample_buffer;         // Buffer to store the data sample.
-  cl_mem mean_buffer;           // Buffer to store the sample mean
-  cl_mem variance_buffer;       // Buffer to store the data sample.
-  kde_float_t* mean_host_buffer;           // Buffer to store the sample mean
-  kde_float_t* variance_host_buffer;       // Buffer to store the data sample.
+  cl_mem mean_buffer;           // Buffer to store the sample mean (dev)
+  cl_mem sdev_buffer;           // Buffer to store the sample standard deviation (dev)
+  kde_float_t* mean_host_buffer;       // Buffer to store the sample mean (host)
+  kde_float_t* sdev_host_buffer;       // Buffer to store the sample standard deviation (host)
+     
   /* Fields for the estimator. */
   cl_mem input_buffer;          // Buffer to store query bounds.
   cl_mem local_results_buffer;  // Buffer to store the local selectivities.
@@ -129,6 +130,18 @@ void ocl_extractSampleTuple(ocl_estimator_t* estimator, Relation rel,
  */
 void ocl_pushEntryToSampleBufer(ocl_estimator_t* estimator, int position,
                                 kde_float_t* data_item);
+
+/*
+ * Normalize data to zero mean / unit variance
+ *
+ */
+void normalize(kde_float_t* sample, unsigned int sample_size, unsigned int dimensionality, kde_float_t* mean, kde_float_t* sdev);
+
+/*
+ * Invert normalization
+ *
+ */
+void invnormalize(kde_float_t* sample, unsigned int sample_size, unsigned int dimensionality, kde_float_t* mean, kde_float_t* sdev);
 
 // Forward declaration for the bandwidth representation.
 extern int kde_bandwidth_representation;

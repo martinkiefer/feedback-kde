@@ -42,7 +42,6 @@ extern int kde_samplesize;
 extern int kde_sample_maintenance_option;
 
 ocl_kernel_type_t global_kernel_type = GAUSS;
-bool scale_to_unit_variance = false;
 
 // Estimator registration.
 ocl_estimator_registry_t* registry = NULL;
@@ -78,8 +77,8 @@ static ocl_estimator_t* allocateEstimator(
       context->context, CL_MEM_READ_WRITE,
       result->nr_of_dimensions * sizeof(kde_float_t), NULL, &err);
   Assert(err == CL_SUCCESS);
-  // Allocate the buffer to store sample variance.
-  result->variance_buffer = clCreateBuffer(
+  // Allocate the buffer to store sample standard deviation.
+  result->sdev_buffer = clCreateBuffer(
       context->context, CL_MEM_READ_WRITE,
       result->nr_of_dimensions * sizeof(kde_float_t), NULL, &err);
   Assert(err == CL_SUCCESS);
@@ -122,7 +121,7 @@ static ocl_estimator_t* allocateEstimator(
   err |= clSetKernelArg(
       result->kde_kernel, 4, sizeof(cl_mem), &(result->mean_buffer));
   err |= clSetKernelArg(
-      result->kde_kernel, 5, sizeof(cl_mem), &(result->variance_buffer));
+      result->kde_kernel, 5, sizeof(cl_mem), &(result->sdev_buffer));
   Assert(err == CL_SUCCESS);
   // Prepare the sum descriptor.
   result->sum_descriptor = prepareSumDescriptor(
@@ -130,9 +129,10 @@ static ocl_estimator_t* allocateEstimator(
       result->result_buffer, 0);
   result->stats = (ocl_stats_t*) calloc(1,sizeof(ocl_stats_t));
 
-  // Delegate to allocate the required buffers for the optimization:
   result->mean_host_buffer = (kde_float_t*) calloc(result->nr_of_dimensions,sizeof(kde_float_t));
-  result->variance_host_buffer = (kde_float_t*) calloc(result->nr_of_dimensions,sizeof(kde_float_t));
+  result->sdev_host_buffer = (kde_float_t*) calloc(result->nr_of_dimensions,sizeof(kde_float_t));
+
+  // Delegate to allocate the required buffers for the optimization:
   ocl_allocateSampleMaintenanceBuffers(result);
   ocl_allocateBandwidthOptimizatztionBuffers(result);
   return result;
@@ -143,9 +143,9 @@ static void freeEstimator(ocl_estimator_t* estimator) {
   cl_int err = CL_SUCCESS;
   if (estimator->sample_buffer) clReleaseMemObject(estimator->sample_buffer);
   if (estimator->mean_host_buffer) free(estimator->mean_host_buffer);
-  if (estimator->variance_host_buffer) free(estimator->variance_host_buffer);
+  if (estimator->sdev_host_buffer) free(estimator->sdev_host_buffer);
   if (estimator->mean_buffer) clReleaseMemObject(estimator->mean_buffer);
-  if (estimator->variance_buffer) clReleaseMemObject(estimator->variance_buffer);
+  if (estimator->sdev_buffer) clReleaseMemObject(estimator->sdev_buffer);
   if (estimator->local_results_buffer) {
     err = clReleaseMemObject(estimator->local_results_buffer);
     Assert(err == CL_SUCCESS);
@@ -247,31 +247,7 @@ static ocl_estimator_t* ocl_buildEstimatorFromCatalogEntry(
     return NULL;
   }
 
-  double* mean_buffer = calloc(
-      sizeof(double),estimator->nr_of_dimensions);
-  read_elements = fread(
-      mean_buffer, sizeof(double) * estimator->nr_of_dimensions,
-      1, file);
 
-  if (read_elements != 1) {
-    fprintf(stderr, "Error reading mean from file %s\n", file_name);
-    fclose(file);
-    pfree(sample_buffer);
-    return NULL;
-  }
-  
-  double* variance_buffer = calloc(
-      sizeof(double),estimator->nr_of_dimensions);
-  read_elements = fread(
-      variance_buffer, sizeof(double) * estimator->nr_of_dimensions,
-      1, file);
-
-  if (read_elements != 1) {
-    fprintf(stderr, "Error reading variance from file %s\n", file_name);
-    fclose(file);
-    pfree(sample_buffer);
-    return NULL;
-  }
   // Read the sample karma.
   double* karma_buffer = palloc(
       sizeof(double) * estimator->rows_in_sample);
@@ -285,6 +261,20 @@ static ocl_estimator_t* ocl_buildEstimatorFromCatalogEntry(
     return NULL;
   }
 
+  double* mean_buffer = calloc(
+      sizeof(double),estimator->nr_of_dimensions);
+  read_elements = fread(
+      mean_buffer, sizeof(double) * estimator->nr_of_dimensions,
+      1, file);
+
+  double* sdev_buffer = calloc(
+      sizeof(double),estimator->nr_of_dimensions);
+  read_elements = fread(
+      sdev_buffer, sizeof(double) * estimator->nr_of_dimensions,
+      1, file);
+
+  normalize(sample_buffer,estimator->rows_in_sample,estimator->nr_of_dimensions,mean_buffer,sdev_buffer);
+
   // Now push sample and sample metrics to the device.
   if (sizeof(kde_float_t) == sizeof(float)) {
     kde_float_t* sample_transfer_buffer = palloc(
@@ -294,7 +284,7 @@ static ocl_estimator_t* ocl_buildEstimatorFromCatalogEntry(
         sizeof(kde_float_t) * estimator->rows_in_sample);
     kde_float_t* mean_transfer_buffer = calloc(
         sizeof(kde_float_t),estimator->nr_of_dimensions);
-    kde_float_t* variance_transfer_buffer = calloc(
+    kde_float_t* sdev_transfer_buffer = calloc(
         sizeof(kde_float_t),estimator->nr_of_dimensions);
 
 
@@ -307,7 +297,7 @@ static ocl_estimator_t* ocl_buildEstimatorFromCatalogEntry(
     }
     for ( i=0; i<estimator->nr_of_dimensions; ++i ) {
       mean_transfer_buffer[i] = mean_buffer[i];
-      variance_transfer_buffer[i] = variance_buffer[i];
+      sdev_transfer_buffer[i] = sdev_buffer[i];
     }
     err |= clEnqueueWriteBuffer(
         context->queue, estimator->sample_buffer, CL_TRUE, 0,
@@ -318,9 +308,9 @@ static ocl_estimator_t* ocl_buildEstimatorFromCatalogEntry(
         ocl_sizeOfSampleItem(estimator),
         mean_transfer_buffer, 0, NULL, NULL);
     err |= clEnqueueWriteBuffer(
-        context->queue, estimator->variance_buffer, CL_TRUE, 0,
+        context->queue, estimator->sdev_buffer, CL_TRUE, 0,
         ocl_sizeOfSampleItem(estimator),
-        variance_transfer_buffer, 0, NULL, NULL);
+        sdev_transfer_buffer, 0, NULL, NULL);
     err |= clEnqueueWriteBuffer(
         context->queue, estimator->sample_optimization->sample_karma_buffer,
         CL_TRUE, 0, sizeof(kde_float_t) * estimator->rows_in_sample,
@@ -329,14 +319,14 @@ static ocl_estimator_t* ocl_buildEstimatorFromCatalogEntry(
     
     pfree(sample_transfer_buffer);
     pfree(karma_transfer_buffer);
-    free(mean_transfer_buffer);
-    free(variance_transfer_buffer);
-    free(estimator->variance_host_buffer);
+    free(estimator->sdev_host_buffer);
     free(estimator->mean_host_buffer);
-    estimator->variance_host_buffer = variance_transfer_buffer;
+    estimator->sdev_host_buffer = sdev_transfer_buffer;
     estimator->mean_host_buffer = mean_transfer_buffer;
+    free(mean_transfer_buffer);
+    free(sdev_transfer_buffer);
     free(mean_buffer);
-    free(variance_buffer);
+    free(sdev_buffer);
   } else if (sizeof(kde_float_t) == sizeof(double)) {
     err |= clEnqueueWriteBuffer(
         context->queue, estimator->sample_buffer, CL_TRUE, 0,
@@ -347,17 +337,17 @@ static ocl_estimator_t* ocl_buildEstimatorFromCatalogEntry(
         ocl_sizeOfSampleItem(estimator),
         mean_buffer, 0, NULL, NULL);
     err |= clEnqueueWriteBuffer(
-        context->queue, estimator->variance_buffer, CL_TRUE, 0,
+        context->queue, estimator->sdev_buffer, CL_TRUE, 0,
         ocl_sizeOfSampleItem(estimator),
-        variance_buffer, 0, NULL, NULL);
+        sdev_buffer, 0, NULL, NULL);
     err |= clEnqueueWriteBuffer(
         context->queue, estimator->sample_optimization->sample_karma_buffer,
         CL_TRUE, 0, sizeof(kde_float_t) * estimator->rows_in_sample,
         karma_buffer, 0, NULL, NULL);
     Assert(err == CL_SUCCESS);
-    free(estimator->variance_host_buffer);
+    free(estimator->sdev_host_buffer);
     free(estimator->mean_host_buffer);
-    estimator->variance_host_buffer = variance_buffer;
+    estimator->sdev_host_buffer = sdev_buffer;
     estimator->mean_host_buffer = mean_buffer;
   }
   pfree(sample_buffer);
@@ -438,22 +428,15 @@ static void ocl_updateEstimatorInCatalog(ocl_estimator_t* estimator) {
           DataDir, estimator->table);
   FILE* sample_file = fopen(sample_file_name, "wb");
   // Now store all buffers to the location.
+  invnormalize(sample_buffer,estimator->rows_in_sample,estimator->nr_of_dimensions,estimator->mean_host_buffer,estimator->sdev_host_buffer);
   if (sizeof(kde_float_t) == sizeof(double)) {
     fwrite(sample_buffer, sizeof(kde_float_t)*estimator->nr_of_dimensions,
            estimator->rows_in_sample, sample_file);
-    fwrite(estimator->mean_host_buffer, sizeof(kde_float_t)*estimator->nr_of_dimensions,
-           1, sample_file);
-    fwrite(estimator->variance_host_buffer, sizeof(kde_float_t)*estimator->nr_of_dimensions,
-           1, sample_file);
     fwrite(karma_buffer, sizeof(kde_float_t),
            estimator->rows_in_sample, sample_file);
   } else {
     double* sample_transfer_buffer = palloc(
         sizeof(double) * estimator->nr_of_dimensions * estimator->rows_in_sample);
-    double* mean_transfer_buffer = palloc(
-        sizeof(double) * estimator->nr_of_dimensions);
-    double* variance_transfer_buffer = palloc(
-        sizeof(double) * estimator->nr_of_dimensions);
     double* karma_transfer_buffer = palloc(
         sizeof(double) * estimator->rows_in_sample);
     for( j=0; j < estimator->rows_in_sample; ++j){
@@ -463,22 +446,12 @@ static void ocl_updateEstimatorInCatalog(ocl_estimator_t* estimator) {
             sample_buffer[j*estimator->nr_of_dimensions+i];
       }
     }  
-    for ( i=0; i<estimator->nr_of_dimensions; ++i ) {
-      mean_transfer_buffer[i] = estimator->mean_host_buffer[i];
-      variance_transfer_buffer[i] = estimator->variance_host_buffer[i];
-    }
     fwrite(sample_transfer_buffer, sizeof(double)*estimator->nr_of_dimensions,
            estimator->rows_in_sample, sample_file);
-    fwrite(mean_transfer_buffer, sizeof(double)*estimator->nr_of_dimensions,
-           1, sample_file);
-    fwrite(variance_transfer_buffer, sizeof(double)*estimator->nr_of_dimensions,
-           1, sample_file);
     fwrite(karma_transfer_buffer, sizeof(double),
            estimator->rows_in_sample, sample_file);
     pfree(sample_transfer_buffer);
     pfree(karma_transfer_buffer);
-    pfree(mean_transfer_buffer);
-    pfree(variance_transfer_buffer);
   }
   fclose(sample_file);
   pfree(sample_buffer);
@@ -811,8 +784,8 @@ unsigned int ocl_maxSampleSize(unsigned int dimensionality) {
   return kde_samplesize;
 }
 
-/** Two pass algorithm for mean andV variance. mean and variance arrays must be initialized to zero. **/
-static void normalize(kde_float_t* sample, unsigned int sample_size, unsigned int dimensionality, kde_float_t* mean, kde_float_t* variance){
+/** Two pass algorithm for mean and standard deviation. mean and sdev arrays must be initialized to zero. **/
+void normalize(kde_float_t* sample, unsigned int sample_size, unsigned int dimensionality, kde_float_t* mean, kde_float_t* sdev){
   int i = 0;
   int d = 0;
   for(i = 0; i < sample_size; i++){
@@ -827,27 +800,37 @@ static void normalize(kde_float_t* sample, unsigned int sample_size, unsigned in
   
   for(i = 0; i < sample_size; i++){
     for(d = 0; d < dimensionality; d++){
-      variance[d] += (sample[i*dimensionality+d]-mean[d])*(sample[i*dimensionality+d]-mean[d]);
+      sdev[d] += (sample[i*dimensionality+d]-mean[d])*(sample[i*dimensionality+d]-mean[d]);
     }
   }
 
   for(d = 0; d < dimensionality; d++){
-    variance[d] /= sample_size-1;
-    if(variance[d] <= 10e-8) variance[d] = 1;
+    sdev[d] = sqrt(sdev[d]/(sample_size-1));
+    if(sdev[d] <= 10e-10) sdev[d] = 1;
   }
 
  //Scale 
   for(i = 0; i < sample_size; i++){
     for(d = 0; d < dimensionality; d++){
-      sample[i*dimensionality+d] = (sample[i*dimensionality+d]-mean[d])/variance[d];
+      sample[i*dimensionality+d] = (sample[i*dimensionality+d]-mean[d])/sdev[d];
     }
   }
 } 
 
+void invnormalize(kde_float_t* sample, unsigned int sample_size, unsigned int dimensionality, kde_float_t* mean, kde_float_t* sdev){
+  int i = 0;
+  int d = 0;
+  for(i = 0; i < sample_size; i++){
+    for(d = 0; d < dimensionality; d++){
+      sample[i*dimensionality+d] = sample[i*dimensionality+d]*sdev[d]+mean[d];
+    }
+  }
+}
+
 void ocl_constructEstimator(
     Relation rel, unsigned int rows_in_table, unsigned int dimensionality,
     AttrNumber* attributes, unsigned int sample_size, HeapTuple* sample) {
-  unsigned int i, j;
+  unsigned int i;
   cl_int err = CL_SUCCESS;
   CREATE_TIMER(); 
   if (dimensionality > 10) {
@@ -905,7 +888,7 @@ void ocl_constructEstimator(
         &(host_buffer[i * estimator->nr_of_dimensions]));
   }
 
-  normalize(host_buffer,sample_size,estimator->nr_of_dimensions,estimator->mean_host_buffer,estimator->variance_host_buffer);
+  normalize(host_buffer,sample_size,estimator->nr_of_dimensions,estimator->mean_host_buffer,estimator->sdev_host_buffer);
   // Allocate a buffer of ones to initialize karma and contribution.
   kde_float_t* zero_buffer = (kde_float_t*) calloc(
       sizeof(kde_float_t),sample_size);
@@ -920,8 +903,8 @@ void ocl_constructEstimator(
       ocl_sizeOfSampleItem(estimator), estimator->mean_host_buffer,
       0, NULL, NULL);
   err |= clEnqueueWriteBuffer(
-      ctxt->queue, estimator->variance_buffer, CL_TRUE, 0,
-      ocl_sizeOfSampleItem(estimator), estimator->variance_host_buffer,
+      ctxt->queue, estimator->sdev_buffer, CL_TRUE, 0,
+      ocl_sizeOfSampleItem(estimator), estimator->sdev_host_buffer,
       0, NULL, NULL);
   err |= clEnqueueWriteBuffer(
       ctxt->queue, estimator->sample_optimization->sample_karma_buffer,
@@ -993,7 +976,7 @@ unsigned int ocl_maxRowsInSample(ocl_estimator_t* estimator) {
 static void scaleSampleEntry(ocl_estimator_t* estimator,kde_float_t* data_item){
   int i = 0;
   for(i = 0; i < estimator->nr_of_dimensions; i++){
-    data_item[i] = (data_item[i]-estimator->mean_host_buffer[i])/estimator->variance_host_buffer[i];
+    data_item[i] = (data_item[i]-estimator->mean_host_buffer[i])/estimator->sdev_host_buffer[i];
   }  
 }
 
@@ -1115,6 +1098,7 @@ Datum ocl_importKDESample(PG_FUNCTION_ARGS) {
     PG_RETURN_BOOL(false);
   }
 
+  normalize(sample_buffer,estimator->rows_in_sample,estimator->nr_of_dimensions,estimator->mean_host_buffer,estimator->sdev_host_buffer);
   // Push the new sample to the estimator.
   ocl_context_t* context = ocl_getContext();
   cl_int err = CL_SUCCESS;
@@ -1167,6 +1151,7 @@ Datum ocl_exportKDESample(PG_FUNCTION_ARGS) {
       estimator->rows_in_sample * ocl_sizeOfSampleItem(estimator),
       sample_buffer, 0, NULL, NULL);
   Assert(err == CL_SUCCESS);
+  invnormalize(sample_buffer,estimator->rows_in_sample,estimator->nr_of_dimensions,estimator->mean_host_buffer,estimator->sdev_host_buffer);
   // Now print all samples.
   int i=0;
   for (; i<estimator->rows_in_sample; ++i) {

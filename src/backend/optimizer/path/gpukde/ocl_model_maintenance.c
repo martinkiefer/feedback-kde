@@ -366,7 +366,7 @@ static double computeGradient(
   err |= clSetKernelArg(
       gradient_kernel, 13, sizeof(cl_mem), &(estimator->mean_buffer));
   err |= clSetKernelArg(
-      gradient_kernel, 14, sizeof(cl_mem), &(estimator->variance_buffer));
+      gradient_kernel, 14, sizeof(cl_mem), &(estimator->sdev_buffer));
   Assert(err == CL_SUCCESS);
   
   // Compute the gradient for each observation.
