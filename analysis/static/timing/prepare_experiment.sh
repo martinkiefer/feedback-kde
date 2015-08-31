@@ -62,8 +62,8 @@ echo "   c1  DOUBLE PRECISION," >> $QUERYFILE
 echo "   c2  DOUBLE PRECISION);" >> $QUERYFILE
 
 # Now fill the tables with ~2.100.000 rows each.
-echo "INSERT INTO time8 SELECT * FROM powernormalized8;" >> $QUERYFILE
-echo "INSERT INTO time8 SELECT * FROM forestnormalized8 LIMIT 100000;" >> $QUERYFILE
+echo "INSERT INTO time8 SELECT * FROM power8;" >> $QUERYFILE
+echo "INSERT INTO time8 SELECT * FROM forest8 LIMIT 100000;" >> $QUERYFILE
 echo "INSERT INTO time7 SELECT c1,c2,c3,c4,c5,c6,c7 FROM time8;" >> $QUERYFILE
 echo "INSERT INTO time6 SELECT c1,c2,c3,c4,c5,c6 FROM time8;" >> $QUERYFILE
 echo "INSERT INTO time5 SELECT c1,c2,c3,c4,c5 FROM time8;" >> $QUERYFILE

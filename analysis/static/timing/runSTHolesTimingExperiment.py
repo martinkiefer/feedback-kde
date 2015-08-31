@@ -59,6 +59,7 @@ trainqueries = args.modelsize
 # Set STHoles specific parameters.
 cur.execute("SET stholes_hole_limit TO %i;" % args.modelsize)
 cur.execute("SET stholes_enable TO true;")
+cur.execute("SET stholes_maintenance TO false;")
 createModel(table, args.dimensions)
 
 # Run the training queries.
