@@ -67,6 +67,7 @@ typedef struct st_head {
 
 st_head_t* current = NULL;
 bool stholes_enable;
+bool stholes_maintenance;
 int stholes_hole_limit;
 
 /** 
@@ -577,6 +578,10 @@ static void _drillHoles(st_head_t* head, st_hole_t* parent, st_hole_t* hole) {
   intersection_t type;
   kde_float_t v_qib;
 
+  if ((! stholes_maintenance) && head->holes >= head->max_holes) {
+    return;
+  } 
+
   if (getIntersectionType(head, head->last_query, hole) == NONE) return;
   st_hole_t* candidate = initializeNewSTHole(head);
   st_hole_t* tmp = initializeNewSTHole(head);
@@ -737,12 +742,13 @@ static void _drillHoles(st_head_t* head, st_hole_t* parent, st_hole_t* hole) {
   }
   head->holes++;
   
-  // Tell the children about the new query.
   old_hole_size = hole->nr_children;
+  // Tell the children about the new query.
   for (i=0; i < old_hole_size; i++) {
     _drillHoles(head, hole, hole->children[i]);
   } 
   Assert(! isnan(hole->tuples)); 
+
   return;
   
 nohole:
@@ -1146,7 +1152,7 @@ void stholes_propagateTuple(Relation rel, const TupleTableSlot* slot) {
  * API method to create a new histogram and remove the old one.
  */
 void stholes_addhistogram(
-    Oid table, AttrNumber* attributes, unsigned int dimensions) {
+  Oid table, AttrNumber* attributes, unsigned int dimensions) {
   if (current != NULL) destroyHistogram(current);
   current = createNewHistogram(table,attributes,dimensions);
   fprintf(stderr, "Created a new stholes histogram\n");

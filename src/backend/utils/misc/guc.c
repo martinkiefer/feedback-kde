@@ -131,6 +131,8 @@ extern char *SSLCipherSuites;
 #ifdef USE_OPENCL
 /* Flag to determine whether we should use the stholes estimator or not */
 extern bool stholes_enable;
+/* Flag to determine whether we should optimize the stholes histogram */
+extern bool stholes_maintenance;
 /* Flag to determine whether we should use the OpenCL KDE estimator or not. */
 extern bool kde_enable;
 extern void assign_kde_enable(bool newval, void *extra);
@@ -1549,6 +1551,16 @@ static struct config_bool ConfigureNamesBool[] =
     },
     &stholes_enable,
     false,
+    NULL, NULL, NULL
+  },
+  {
+    {"stholes_maintenance", PGC_USERSET, DEVELOPER_OPTIONS,
+      gettext_noop("Enable stholes model optimization."),
+      NULL,
+      GUC_NOT_IN_SAMPLE
+    },
+    &stholes_maintenance,
+    true,
     NULL, NULL, NULL
   },
   {
