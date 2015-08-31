@@ -115,7 +115,7 @@ ExecSeqScan(SeqScanState *node)
 	TupleTableSlot * slot = ExecScan((ScanState *) node,
 					(ExecScanAccessMtd) SeqNext,
 					(ExecScanRecheckMtd) SeqRecheck);
-	if(stholes_enabled() && ! TupIsNull(slot)){
+	if(stholes_enabled() && ! TupIsNull(slot) && TTS_HAS_PHYSICAL_TUPLE(slot)){
 	  stholes_propagateTuple(((ScanState *) node)->ss_currentRelation,slot);
 	  Assert(slot->tts_tuple);
 	}  
