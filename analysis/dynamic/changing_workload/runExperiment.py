@@ -51,6 +51,7 @@ def extractError():
 parser = argparse.ArgumentParser()
 parser.add_argument("--dbname", action="store", required=True, help="Database to which the script will connect.")
 parser.add_argument("--dataset", action="store", choices=["mvt", "mvtc_i","mvtc_id"], required=True, help="Which dataset should be run?")
+parser.add_argument("--port", action="store", type=int, default=5432, help="Port of the postmaster.")
 parser.add_argument("--dimensions", action="store", required=True, type=int, help="Dimensionality of the dataset?")
 parser.add_argument("--samplesize", action="store", type=int, default=2400, help="How many rows should the generated model sample?")
 parser.add_argument("--error", action="store", choices=["relative","absolute"], default="relative", help="Which error metric should be optimized / reported?")
@@ -79,7 +80,7 @@ log = args.log
 limit = args.limit
 
 # Open a connection to postgres.
-conn = psycopg2.connect("dbname=%s host=localhost" % dbname)
+conn = psycopg2.connect("dbname=%s host=localhost port=%i" % (dbname,args.port))
 cur = conn.cursor()
 
 # Fetch the base path for the query files.
@@ -146,6 +147,8 @@ if(sample_maintenance == "car"):
 if(sample_maintenance == "prr"):
     cur.execute("SET kde_sample_maintenance TO PRR;")
     cur.execute("SET kde_sample_maintenance_period  TO %s;" % period )    
+if(sample_maintenance == "none"):
+    cur.execute("SET kde_sample_maintenance TO None;")
 
 # Set all required options.
 cur.execute("SET ocl_use_gpu TO false;")
@@ -169,7 +172,7 @@ elif (optimization == "heuristic"):
     cur.execute("SET kde_enable TO true;")
     cur.execute("SET kde_samplesize TO %i;" % samplesize)
 elif (optimization == "stholes"):
-    cur.execute("SET stholes_hole_limit TO 300;")
+    cur.execute("SET stholes_hole_limit TO %i;" % (samplesize / 2))
     cur.execute("SET stholes_enable TO true;")
 cur.execute("SET kde_debug TO false;")
 
@@ -196,6 +199,9 @@ for line in f:
       cur.execute(line) 
     except psycopg2.DatabaseError:
       print "Database error occured. Terminating."
+      print line
+      print finished_queries+1
+
       extractError()
       f.close()
       conn.close()

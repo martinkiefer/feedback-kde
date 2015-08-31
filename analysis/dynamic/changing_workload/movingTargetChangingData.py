@@ -155,6 +155,7 @@ for i in range(1,steps+1):
         current += 1
         if(workloadtype == "insert_delete"):
             output.write(delete_template % (current-history-1))
+            output.write("VACUUM %s;\n" % table)
         tix = 0
         
     #Add a few tuples        

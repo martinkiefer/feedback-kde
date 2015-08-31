@@ -12,7 +12,7 @@ for i in 3 4 5 8 10
 do
   if [ ! -f $BASEDIR/tables/data_mvtc_id_d$i.csv ] 
   then 
-  python $BASEDIR/../movingTargetChangingData.py --table mvtc_id --queryoutput $BASEDIR/queries/mvtc_id_d$i.sql --history 3 --sigma 0.1 \
+  $PYTHON $BASEDIR/../movingTargetChangingData.py --table mvtc_id --queryoutput $BASEDIR/queries/mvtc_id_d$i.sql --history 3 --sigma 0.1 \
     --margin 0.4 --clusters 13 --points 1500 --steps 100 --dimensions $i --queriesperstep 100 --maxprob 0.9 \
     --dataoutput $BASEDIR/tables/data_mvtc_id_d$i.csv --workloadtype insert_delete
   fi
@@ -21,7 +21,7 @@ done
 $BASEDIR/drop-mvtc_id-tables.sh
 
 # PSQL command
-psql -p$PGPORT $PGDATABASE $USER << EOF
+$PSQL -p$PGPORT $PGDATABASE $USER << EOF
 	CREATE TABLE mvtc_id_d3(
 		CL integer,
 		c1 double precision,

@@ -3,7 +3,7 @@ BASEDIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 
 source $BASEDIR/../../../conf.sh
 
-psql -p$PGPORT $PGDATABASE $USER << EOF
+$PSQL -p$PGPORT $PGDATABASE $USER << EOF
 	DROP TABLE mvtc_id_d10;
 	DROP TABLE mvtc_id_d8;
 	DROP TABLE mvtc_id_d5;
