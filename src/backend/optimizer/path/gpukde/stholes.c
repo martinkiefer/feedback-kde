@@ -1280,7 +1280,7 @@ void stholes_process_feedback(PlanState *node) {
     // And report the estimation error.
     ocl_reportErrorToLogFile(
         ((SeqScanState*) node)->ss_currentRelation->rd_id,
-        current->last_selectivity / all_tuples,
+        current->last_selectivity,
         qual_tuples / all_tuples,
         all_tuples);
     // We are done processing the feedback :)
