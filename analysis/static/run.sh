@@ -4,25 +4,23 @@ DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 source $DIR/../conf.sh
 
 # Some general parameters.
-REPETITIONS=10
+REPETITIONS=1
 TRAINQUERIES=100
 TESTQUERIES=300
 MODELSIZE=1024
-LOGFILE=$DIR/result.csv
+LOGFILE=$DIR/../evaluation/quality/result.csv
+DATASETS=(bike forest genhist_set1 power protein)
 
-# Prepare a new result file.
-echo > $LOGFILE
+#echo >> $LOGFILE
 
-for dataset in $DIR/datasets/*; do
-    [ -d "${dataset}" ] || continue # if not a directory, skip
-    dataset_name=`basename $dataset`
-    echo "Running experiments for $dataset_name:"
-    for query in $dataset/queries/*; do
+for dataset in "${DATASETS[@]}"; do
+    echo "Running experiments for $dataset:"
+    for query in $DIR/datasets/$dataset/queries/*; do
         [ -f "${query}" ] || continue
         query_file=`basename $query`
         echo "  Running for query file $query_file:"
         # Reinitialize postgres (just to be safe)
-        $POSTGRES -D $PGDATAFOLDER -p $PGPORT > postgres.log 2>&1 &
+        $POSTGRES -D $PGDATAFOLDER -p $PGPORT >>  postgres.log 2>&1 &
         PGPID=$!
         sleep 2
         for i in $(seq 1 $REPETITIONS); do
@@ -36,7 +34,7 @@ for dataset in $DIR/datasets/*; do
               --queryfile=$query --log=$LOGFILE                         \
               --model=kde_batch --modelsize=$MODELSIZE                  \
               --trainqueries=$TRAINQUERIES --testqueries=$TESTQUERIES
-            
+
            # Run KDE heuristic: 
            echo "      KDE (heuristic):"
            $PYTHON $DIR/runExperiment.py                                 \
@@ -74,22 +72,22 @@ for dataset in $DIR/datasets/*; do
               --replay_experiment
 
            # Run with Postgres Histograms:
-           echo "      Postgres histograms:"
-           $PYTHON $DIR/runExperiment.py                                 \
-              --dbname=$PGDATABASE --port=$PGPORT                       \
-              --queryfile=$query --log=$LOGFILE                         \
-              --model=postgres --modelsize=$MODELSIZE                   \
-              --trainqueries=$TRAINQUERIES --testqueries=$TESTQUERIES   \
-              --replay_experiment
+           #echo "      Postgres histograms:"
+           #$PYTHON $DIR/runExperiment.py                                 \
+           #   --dbname=$PGDATABASE --port=$PGPORT                       \
+           #   --queryfile=$query --log=$LOGFILE                         \
+           #   --model=postgres --modelsize=$MODELSIZE                   \
+           #   --trainqueries=$TRAINQUERIES --testqueries=$TESTQUERIES   \
+           #   --replay_experiment
             
            # Run without statistics:
-           echo "      No statistics:"
-           $PYTHON $DIR/runExperiment.py                                 \
-              --dbname=$PGDATABASE --port=$PGPORT                       \
-              --queryfile=$query --log=$LOGFILE                         \
-              --model=none --modelsize=$MODELSIZE                       \
-              --trainqueries=$TRAINQUERIES --testqueries=$TESTQUERIES   \
-              --replay_experiment
+           #echo "      No statistics:"
+           #$PYTHON $DIR/runExperiment.py                                 \
+           #   --dbname=$PGDATABASE --port=$PGPORT                       \
+           #   --queryfile=$query --log=$LOGFILE                         \
+           #   --model=none --modelsize=$MODELSIZE                       \
+           #   --trainqueries=$TRAINQUERIES --testqueries=$TESTQUERIES   \
+           #   --replay_experiment
            
            ELAPSED=$(($SECONDS - $TS))
            echo "    Repetition finished (took $ELAPSED seconds)!"
