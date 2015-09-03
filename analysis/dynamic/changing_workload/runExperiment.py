@@ -61,7 +61,7 @@ parser.add_argument("--log", action="store", required=True, help="Where to appen
 parser.add_argument("--sample_maintenance", action="store", choices=["prr","car","tkr", "pkr","none"], default="none", help="Desired query based sample maintenance option.")
 parser.add_argument("--threshold", action="store", type=float, default=0.01, help="Negative karma limit causing a point to be resampled.")
 parser.add_argument("--period", action="store", type=int, default=5, help="Queries until we resample the worst sample point.")
-parser.add_argument("--limit", action="store", type=float, default=0.9, help="Decay for karma options.")
+parser.add_argument("--limit", action="store", type=float, default=2.0, help="Limit for karma score.")
 args = parser.parse_args()
 
 # Fetch the arguments.
@@ -197,7 +197,8 @@ f.seek(0)
 for line in f:
     try:
       cur.execute(line) 
-    except psycopg2.DatabaseError:
+    except psycopg2.DatabaseError as e:
+      print str(e)
       print "Database error occured. Terminating."
       print line
       print finished_queries+1
