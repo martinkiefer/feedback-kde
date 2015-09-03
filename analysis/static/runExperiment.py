@@ -132,9 +132,14 @@ cur = conn.cursor()
 
 # Make sure that debug mode is deactivated and that all model traces are removed (unless we want to reuse the model):
 cur.execute("SET kde_debug TO false;")
-cur.execute("SET ocl_use_gpu TO false;")
+cur.execute("SET ocl_use_gpu TO true;")
 cur.execute("SET kde_error_metric TO Quadratic;")
 cur.execute("DELETE FROM pg_kdefeedback;")
+
+#Uncomment to attach gdb
+#cur.execute("select pg_backend_pid();")
+#print cur.fetchone()
+#time.sleep(20)
 
 # Now prepare the workloads:
 (training_workload, testing_workload) = prepareWorkload(args)
@@ -201,7 +206,7 @@ if (args.model != "stholes" and args.model != "kde_adaptive"):
     analyzeTable(args, table, dimensions)
 # Finally, for SCV models, we use the exported sample to compute the optimal bandwidth via SCV
 if (args.model == "kde_scv"):
-    sample_file = "/tmp/sample_%s.csv" % args.dbname
+    sample_file = "/tmp/sample_%s.csvsc" % args.dbname
     sys.stdout.write("\tImporting data sample into R ... ")
     sys.stdout.flush()
     m = robjects.r['read.csv']('%s' % sample_file)
