@@ -10,15 +10,13 @@ QUERIES=50
 DIMENSIONS=(8)
 MODELSIZES=(1024 2048 4096 8192 16384 32768 65536 131072 262144 524288 1048576 2097152)
 
-# Prepare a new result file.
-echo > $DIR/result_dim.csv
+LOGPREFIX=$DIR/../../evaluation/timing/
 
 for dimension in "${DIMENSIONS[@]}"; do
     echo "Running for $dimension dimensions:"
     for modelsize in "${MODELSIZES[@]}"; do
       echo "  Running with modelsize $modelsize:"
       stholes_modelsize=$((modelsize / 2))
-      #postgres -D $PGDATAFOLDER -p $PGPORT >> postgres.log 2>&1 &
       $POSTGRES -D $PGDATAFOLDER -p $PGPORT >>  postgres.log 2>&1 &
       PGPID=$!
       sleep 2
@@ -28,28 +26,28 @@ for dimension in "${DIMENSIONS[@]}"; do
          echo "      KDE Heuristic (CPU):"
          $PYTHON $DIR/runTimingExperiment.py                    \
             --dbname=$PGDATABASE --port=$PGPORT                \
-            --dimensions=$dimension --log=$DIR/result_time.csv \
+            --dimensions=$dimension --log=$LOGPREFIX/result_time.csv \
             --model=kde_heuristic --modelsize=$modelsize       \
             --trainqueries=0 --queries=$QUERIES 
            
          echo "      KDE Adaptive (CPU):"
          $PYTHON $DIR/runTimingExperiment.py                    \
             --dbname=$PGDATABASE --port=$PGPORT                \
-            --dimensions=$dimension --log=$DIR/result_time.csv \
+            --dimensions=$dimension --log=$LOGPREFIX/result_time.csv \
             --model=kde_adaptive --modelsize=$modelsize        \
             --trainqueries=0 --queries=$QUERIES   
             
          echo "      KDE Heuristic (GPU):"
          $PYTHON $DIR/runTimingExperiment.py                    \
             --dbname=$PGDATABASE --port=$PGPORT                \
-            --dimensions=$dimension --log=$DIR/result_time.csv \
+            --dimensions=$dimension --log=$LOGPREFIX/result_time.csv \
             --model=kde_heuristic --modelsize=$modelsize       \
             --trainqueries=0 --queries=$QUERIES --gpu
            
          echo "      KDE Adaptive (GPU):"
          $PYTHON $DIR/runTimingExperiment.py                    \
             --dbname=$PGDATABASE --port=$PGPORT                \
-            --dimensions=$dimension --log=$DIR/result_time.csv \
+            --dimensions=$dimension --log=$LOGPREFIX/result_time.csv \
             --model=kde_adaptive --modelsize=$modelsize        \
             --trainqueries=0 --queries=$QUERIES --gpu       
       done
