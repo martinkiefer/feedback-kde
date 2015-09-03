@@ -1133,14 +1133,6 @@ Datum ocl_exportKDESample(PG_FUNCTION_ARGS) {
              errmsg("no KDE estimator exists for table %i", table_oid)));
     PG_RETURN_BOOL(false);
   }
-  // Try to open the file:
-  FILE* fout = fopen(file_name, "w");
-  if (fout == NULL) {
-    ereport(ERROR,
-            (errcode(ERRCODE_DATATYPE_MISMATCH),
-             errmsg("could not open file %s", file_name)));
-    PG_RETURN_BOOL(false);
-  }
   // Fetch the sample buffer.
   kde_float_t* sample_buffer = malloc(
       estimator->rows_in_sample * ocl_sizeOfSampleItem(estimator));
@@ -1151,9 +1143,43 @@ Datum ocl_exportKDESample(PG_FUNCTION_ARGS) {
       estimator->rows_in_sample * ocl_sizeOfSampleItem(estimator),
       sample_buffer, 0, NULL, NULL);
   Assert(err == CL_SUCCESS);
-  invnormalize(sample_buffer,estimator->rows_in_sample,estimator->nr_of_dimensions,estimator->mean_host_buffer,estimator->sdev_host_buffer);
+
+  // Try to open the file:
+  FILE* fout = fopen(file_name, "w");
+  if (fout == NULL) {
+    ereport(ERROR,
+            (errcode(ERRCODE_DATATYPE_MISMATCH),
+             errmsg("could not open file %s", file_name)));
+    PG_RETURN_BOOL(false);
+  }
   // Now print all samples.
   int i=0;
+  for (; i<estimator->rows_in_sample; ++i) {
+    // Fetch the first data item.
+    kde_float_t elem = sample_buffer[i*estimator->nr_of_dimensions];
+    fprintf(fout, "%le", elem);
+    int j=1;
+    for (; j<estimator->nr_of_dimensions; ++j) {
+      elem = sample_buffer[i*estimator->nr_of_dimensions + j];
+      fprintf(fout, ",%f", elem);
+    }
+    fprintf(fout, "\n");
+  }
+  fclose(fout);
+
+  invnormalize(sample_buffer,estimator->rows_in_sample,estimator->nr_of_dimensions,estimator->mean_host_buffer,estimator->sdev_host_buffer);
+  // Try to open the file:
+  char sfile_name[256];
+  snprintf(sfile_name, sizeof sfile_name, "%s%s", file_name, "sc");
+  fout = fopen(sfile_name, "w");
+  if (fout == NULL) {
+    ereport(ERROR,
+            (errcode(ERRCODE_DATATYPE_MISMATCH),
+             errmsg("could not open file %s", file_name)));
+    PG_RETURN_BOOL(false);
+  }
+  // Now print all samples.
+  i=0;
   for (; i<estimator->rows_in_sample; ++i) {
     // Fetch the first data item.
     kde_float_t elem = sample_buffer[i*estimator->nr_of_dimensions];
