@@ -1,0 +1,20 @@
+diff -ru nlopt-2.4.2/luksan/plis.c nlopt-2.4.2-patched/luksan/plis.c
+--- nlopt-2.4.2/luksan/plis.c	2015-09-04 12:44:14.629040509 +0200
++++ nlopt-2.4.2-patched/luksan/plis.c	2015-09-04 11:35:09.391044967 +0200
+@@ -178,7 +178,7 @@
+     inits = 2;
+     *iterm = 0;
+     iterd = 0;
+-    iters = 2;
++    iters = 10;
+     kters = 3;
+     irest = 0;
+     ires1 = 999;
+@@ -508,6 +508,7 @@
+ 	 case 12: case 13: return NLOPT_MAXEVAL_REACHED;
+ 	 case 100: return NLOPT_MAXTIME_REACHED;
+ 	 case -999: return NLOPT_FORCED_STOP;
++	 case -6: return NLOPT_SUCCESS;
+ 	 default: return NLOPT_FAILURE;
+      }
+ }
