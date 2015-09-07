@@ -3,7 +3,7 @@
 # Postgres specific variables:
 PGPORT=""
 PGDATAFOLDER="$HOME/feedback-kde/experiments"
-PGINSTFOLDER="/usr/local/pgsql"
+PGINSTFOLDER="$HOME/feedback-kde/pgsql"
 PGDATABASE="experiments"
 
 #Location of Python2.7 interpreter
