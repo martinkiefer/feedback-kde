@@ -51,7 +51,7 @@ conn.set_session('read uncommitted', autocommit=True)
 cur = conn.cursor()
 
 # Prepare the table name.
-table = "bikenormalized%i" % args.dimensions
+table = "bike%i" % args.dimensions
 
 # We want to build a full STHoles model, meaning we have to run as many trainqueries as there are holes:
 trainqueries = args.modelsize
