@@ -4,8 +4,8 @@ DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 source $DIR/../../conf.sh
 
 # Some general parameters.
-REPETITIONS=4
-QUERIES=50
+REPETITIONS=1
+QUERIES=100
 
 DIMENSIONS=(8)
 MODELSIZES=(1024 2048 4096 8192 16384 32768 65536 131072 262144 524288 1048576 2097152)
@@ -55,3 +55,5 @@ for dimension in "${DIMENSIONS[@]}"; do
       sleep 5
     done
 done
+
+bash $DIR/run_stholes_timing.sh
