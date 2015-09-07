@@ -72,5 +72,5 @@ echo "INSERT INTO time3 SELECT c1,c2,c3 FROM time8;" >> $QUERYFILE
 echo "INSERT INTO time2 SELECT c1,c2 FROM time8;" >> $QUERYFILE
 
 # Finally, call the load script.
-psql -p$PGPORT $PGDATABASE -f $QUERYFILE
+$PSQL -p$PGPORT $PGDATABASE -f $QUERYFILE
 rm $QUERYFILE
