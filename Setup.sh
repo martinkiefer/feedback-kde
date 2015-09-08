@@ -37,5 +37,3 @@ cp ./analysis/conf.sh.template ./analysis/conf.sh
 bash ./analysis/static/datasets/prepare.sh
 bash ./analysis/static/timing/prepare_experiment.sh
 $PGBIN/pg_ctl -D ./experiments -l logfile stop
-
-#Insert sanity check here.
