@@ -24,6 +24,7 @@ experiments = defaultdict(list)
 # Extract the plot files.
 with open(args.file, 'r') as csvfile:
     reader = csv.reader(csvfile, delimiter=';')
+    reader.next()
     for row in reader:
       if not row: continue
       dim = row[0]
