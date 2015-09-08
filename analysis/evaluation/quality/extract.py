@@ -153,8 +153,6 @@ for dataset, workload, dim in ex:
 
 
 # Generate a plot for all files:
-sf = open("plot.sh", "w")
-
 for d in dimensions:
   # Generate a new gnuplot file.
   gf = open("%s.gnuplot" % d, "w")
@@ -212,5 +210,3 @@ for d in dimensions:
         gf.write("unset yrange\n")
   gf.write("unset multiplot\n")
   gf.close()
-  sf.write("gnuplot %s.gnuplot > %s.pdf\n" % (d, d))
-sf.close()
