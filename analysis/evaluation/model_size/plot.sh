@@ -1,8 +1,9 @@
 #!/bin/bash
 
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
-source $DIR/../conf.sh
+source $DIR/../../conf.sh
 
-$PYTHON $DIR/extract.py --file $DIR/result.csv
+cd $DIR
+$PYTHON extract.py --file result.csv
 
-gnuplot $DIR/plot.gnuplot > $DIR/model.pdf
+gnuplot plot.gnuplot > model.pdf
