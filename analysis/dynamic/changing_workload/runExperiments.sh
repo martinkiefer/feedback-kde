@@ -2,6 +2,7 @@
 
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 source $DIR/../../conf.sh
+cd $DIR
 
 # First, run the forest workload.
 DIMENSIONS=(5 8)

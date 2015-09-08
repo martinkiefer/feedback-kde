@@ -2,6 +2,7 @@
 
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 source $DIR/../../conf.sh
+cd $DIR
 
 # Some general parameters.
 REPETITIONS=1
@@ -10,8 +11,6 @@ QUERIES=100
 DIMENSIONS=(8)
 MODELSIZES=(512 1024 2048 4096 8192 16384 32768 65536 131072 262144 524288 1048576)
 LOGPREFIX=$DIR/../../evaluation/timing/
-
-echo > $DIR/result_stholes.csv
 
 for dimension in "${DIMENSIONS[@]}"; do
     echo "Running for $dimension dimensions:"
