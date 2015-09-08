@@ -34,7 +34,6 @@ with open(args.file, 'r') as csvfile:
              f = open("%s.dat" % (model), "a")
              f.write("%s\t%s\n" % (modelsize, float(error)/queries))
              f.close()
-             print "Model: %s, Sample Size %s, Error %s" % (model,modelsize,error)
           model = row[3]
           modelsize = row[4]
           error = 0
