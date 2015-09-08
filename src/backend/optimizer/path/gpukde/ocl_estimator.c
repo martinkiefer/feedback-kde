@@ -1145,7 +1145,9 @@ Datum ocl_exportKDESample(PG_FUNCTION_ARGS) {
   Assert(err == CL_SUCCESS);
 
   // Try to open the file:
-  FILE* fout = fopen(file_name, "w");
+  char sfile_name[256];
+  snprintf(sfile_name, sizeof sfile_name, "%s%s", file_name, "sc");
+  FILE* fout = fopen(sfile_name, "w");
   if (fout == NULL) {
     ereport(ERROR,
             (errcode(ERRCODE_DATATYPE_MISMATCH),
@@ -1169,9 +1171,7 @@ Datum ocl_exportKDESample(PG_FUNCTION_ARGS) {
 
   invnormalize(sample_buffer,estimator->rows_in_sample,estimator->nr_of_dimensions,estimator->mean_host_buffer,estimator->sdev_host_buffer);
   // Try to open the file:
-  char sfile_name[256];
-  snprintf(sfile_name, sizeof sfile_name, "%s%s", file_name, "sc");
-  fout = fopen(sfile_name, "w");
+  fout = fopen(file_name, "w");
   if (fout == NULL) {
     ereport(ERROR,
             (errcode(ERRCODE_DATATYPE_MISMATCH),
