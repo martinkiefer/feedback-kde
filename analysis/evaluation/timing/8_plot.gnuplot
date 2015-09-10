@@ -1,8 +1,5 @@
 set terminal pdf
 set key above vertical maxrows 2 width -3 samplen 2 box
-set tmargin at screen 0.87
-set rmargin at screen 0.99
-set lmargin at screen 0.075
 set xlabel "Modelsize [Points in sample / Buckets in histogram]"
 set ylabel "Average estimator runtime [ms]" offset 2.4
 set logscale x
