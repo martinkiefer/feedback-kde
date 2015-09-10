@@ -13,7 +13,7 @@ LOGPREFIX=$DIR/../../evaluation/changing_data/
 
 # First, run the workloads without sample tracking. 
 REPETITIONS=0
-OPTIMIZATION=(heuristic stholes)
+OPTIMIZATION=(stholes heuristic)
 
 for i in `seq 0 $REPETITIONS`
 do
@@ -53,11 +53,11 @@ do
 			$PYTHON runExperiment.py	--dbname=$PGDATABASE --port=$PGPORT  --dataset=mvtc_id \
             --dimensions=$dimension --samplesize=$samplesize \
 				--error=$ERROR --optimization=adaptive \
-				--log=$dimension"_adaptive_periodic.log" \
-            --sample_maintenance=tkr --threshold -0.5
+				--log=$dimension"_adaptive_tkr.log" \
+            --sample_maintenance=tkr --threshold=-0.75 --limit=4.0
          kill -9 $PID
         sleep 5
-         cp /tmp/error.log $LOGPREFIX$dimension"_adaptive_periodic_raw.log"
+         cp /tmp/error.log $LOGPREFIX$dimension"_adaptive_tkr_raw.log"
 		done
 	done
 done
