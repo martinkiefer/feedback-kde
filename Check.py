@@ -32,19 +32,21 @@ try:
         cur.execute("SELECT * FROM %s%s LIMIT 1;" % (tab,dim))
 except Exception as e:
     print str(e)
-    print "An error occurred while trying to check if all tables are present. Was CompileInstall.sh not executed properly?"
+    print "An error occurred while trying to check if all tables are present. Was Setup.sh not executed properly?"
     sys.exit(-1)
 print "Done"
 
 
 print "Creating a KDE model on the CPU..."
 try:
-    for tab,dim in itertools.product(tables,dims):
-        cur.execute("SET kde_debug TO false;") 
-        cur.execute("SET ocl_use_gpu TO false;") 
-        cur.execute("SET kde_error_metric TO Quadratic;") 
-        cur.execute("DELETE FROM pg_kdefeedback;")
-        cur.execute("ANALYZE bike3(c1,c2,c3);")
+    cur.execute("SET kde_debug TO false;") 
+    cur.execute("SET ocl_use_gpu TO false;") 
+    cur.execute("SET kde_error_metric TO Quadratic;") 
+    cur.execute("SET kde_enable TO true;")
+    cur.execute("ANALYZE bike3(c1,c2,c3);")
+    print open("logfile").read()
+    if "No suitable OpenCL device found." in open("logfile").read():
+        raise Exception("CPU device context could not be initialized.")
 except Exception as e:
     print str(e)
     print "An error occured while trying to create a KDE model on the CPU. Is your OpenCL setup okay?"
@@ -54,12 +56,13 @@ print "Done"
 
 print "Creating a KDE model on the GPU..."
 try:
-    for tab,dim in itertools.product(tables,dims):
-        cur.execute("SET kde_debug TO false;") 
-        cur.execute("SET ocl_use_gpu TO true;") 
-        cur.execute("SET kde_error_metric TO Quadratic;") 
-        cur.execute("DELETE FROM pg_kdefeedback;")
-        cur.execute("ANALYZE power3(c1,c2,c3);")
+    cur.execute("SET kde_debug TO false;") 
+    cur.execute("SET ocl_use_gpu TO true;") 
+    cur.execute("SET kde_error_metric TO Quadratic;") 
+    cur.execute("SET kde_enable TO true;")
+    cur.execute("ANALYZE power3(c1,c2,c3);")
+    if "No suitable OpenCL device found." in open("logfile").read():
+        raise Exception("GPU device context could not be initialized.")
 except Exception as e:
     print str(e)
     print "An error occured while trying to create a KDE model on the GPU. Is you OpenCL setup okay?"
@@ -77,13 +80,13 @@ try:
            fold = "genhist_set1"
        else:
            fold = tab
-           file = './analysis/static/%s/queries/%s%s_%s_0.01.sql' % (fold,tab,dim,wl)
+           file = './analysis/static/datasets/%s/queries/%s%s_%s_0.01.sql' % (fold,tab,dim,wl)
            num_lines = sum(1 for line in open(file))
            if num_lines != 2500:
                raise Exception("Queryfile %s does not have enough queries. (%s/%s)" % (file,num_lines,2500))    
 except Exception as e:
         print str(e)
-        print "An error occurred while trying to check if all query files were generated. Was the query generation process in CompileInstall.sh interrupted?"
+        print "An error occurred while trying to check if all query files were generated. Was the query generation process in Setup.sh interrupted?"
         sys.exit(-1)
 print "Done"
 
