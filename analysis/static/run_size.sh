@@ -4,7 +4,7 @@ DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 source $DIR/../conf.sh
 
 # Some general parameters.
-REPETITIONS=1
+REPETITIONS=10
 TRAINQUERIES=100
 TESTQUERIES=100
 LOGFILE=$DIR/../evaluation/model_size/result.csv
