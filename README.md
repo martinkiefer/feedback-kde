@@ -96,7 +96,7 @@ All variables are valid for the current session only.
 >   logarithmized representation.
 >   Possible values are: Plain, Log
 
-####  Parameters specific to bandwidth optimization
+### Parameters specific to bandwidth optimization
 
 * kde_collect_feedback (boolean, default: false)
 > Controls whether query feedback is collected. All query feedback is written to the system table pg_kdefeedback. By deleting this table, you can erase collected feedback.
@@ -105,7 +105,7 @@ All variables are valid for the current session only.
 * kde_optimization_feedback_window (integer, default: -1)
 > Controls how many of the most recent queries are used for the bandwidth optimization. If set to -1, all queries wil be used.
 
-####  Parameters specific to adaptive bandwidth optimization
+#### Parameters specific to adaptive bandwidth optimization
 * kde_enable_adaptive_bandwidth (boolean, default: false)
 > Controls wheter the bandwidth should be optimzed adaptively
 > based on incoming queries.
@@ -113,7 +113,7 @@ All variables are valid for the current session only.
 > Controls how large (in queries) the mini-batches are that are
 > used in the adaptive bandwidth optimization.
 
-#### Parameters specific to Karma-based sample maintenance algorithms ####
+### Parameters specific to Karma-based sample maintenance algorithms
 * kde_sample_maintenance_karma_limit (float, default: 4.0)
 > Controls the upper bound on the Karma a tuple in the sample 
 > can aggregate.
@@ -121,10 +121,11 @@ All variables are valid for the current session only.
 > Controls the lower bound on the Karma of tuples in the sample
 > triggering resampling (TKR only).
     
-####  Parameters specific to periodic sample maintenance algorithms ####
+###  Parameters specific to periodic sample maintenance algorithms
 * kde_sample_maintenance_period (integer, default: 1)
 > Controls the number of queries considered a period.
 
+### Building the estimator
 In order to build a KDE-based estimator, you have to set the
 coresponding configuration variables and then issue:
 
