@@ -10,15 +10,16 @@ for dataset in "${DATASETS[@]}" ; do
   # Download, prepare and load the dataset.
   $DIR/$dataset/download.sh
   $DIR/$dataset/load.sh
-  # Now build the queries.
-  mkdir -p $DIR/$dataset/queries
   mkdir -p $DIR/$dataset/data
+  mkdir -p $DIR/$dataset/queries
   source $DIR/$dataset/tables.sh
+  # Now build the queries.
   for table in "${TABLES[@]}"; do
+    # Extract the table so the python script can impor them into sqlite.
     echo "COPY $table TO '$DIR/$dataset/data/$table.csv' DELIMITER '|';" | $PSQL $PGDATABASE
     # Generate the dv query set (data centered, target volume).
     echo "Generating DV workload for table $table ... "
-    $PYTHON $DIR/query_generator2.py                 \
+    $PYTHON $DIR/query_generator.py                 \
      --data=$DIR/$dataset/data/$table.csv --queries=$QUERIES \
      --selectivity=0.01 --mcenter=Data              \
      --mrange=Volume                                \
@@ -26,7 +27,7 @@ for dataset in "${DATASETS[@]}" ; do
     DVPID=$!
     # Generate the uv query set (uniform centers, target volume).
     echo "Generating UV workload for table $table ... "
-    $PYTHON $DIR/query_generator2.py            \
+    $PYTHON $DIR/query_generator.py            \
      --data=$DIR/$dataset/data/$table.csv --queries=$QUERIES \
      --selectivity=0.01 --mcenter=Uniform           \
      --mrange=Volume                                \
@@ -34,7 +35,7 @@ for dataset in "${DATASETS[@]}" ; do
     UVPID=$!
     # Generate the dt query set (data centered, target selectivity).
     echo "Generating DT workload for table $table ... "
-    $PYTHON $DIR/query_generator2.py            \
+    $PYTHON $DIR/query_generator.py            \
      --data=$DIR/$dataset/data/$table.csv --queries=$QUERIES \
      --selectivity=0.01 --mcenter=Data              \
      --mrange=Tuples                                \
@@ -42,7 +43,7 @@ for dataset in "${DATASETS[@]}" ; do
     DTPID=$!
     # Generate the ut query set (uniform centers, target selectivity).
     echo "Generating UT workload for table $table ... "
-    $PYTHON $DIR/query_generator2.py            \
+    $PYTHON $DIR/query_generator.py            \
      --data=$DIR/$dataset/data/$table.csv --queries=$QUERIES \
      --selectivity=0.01 --mcenter=Uniform           \
      --mrange=Tuples                                \
