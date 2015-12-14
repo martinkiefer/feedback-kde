@@ -23,7 +23,7 @@ for dataset in "${DATASETS[@]}" ; do
      --data=$DIR/$dataset/data/$table.csv --queries=$QUERIES \
      --selectivity=0.01 --mcenter=Data                       \
      --mrange=Volume                                         \
-     --out=$DIR/$dataset/queries/${table}_dv_0.01.sql &
+     --out=$DIR/$dataset/queries/${table}_dv_0.01.csv &
     DVPID=$!
     # Generate the uv query set (uniform centers, target volume).
     echo "Generating UV workload for table $table ... "
@@ -31,7 +31,7 @@ for dataset in "${DATASETS[@]}" ; do
      --data=$DIR/$dataset/data/$table.csv --queries=$QUERIES \
      --selectivity=0.01 --mcenter=Uniform                    \
      --mrange=Volume                                         \
-     --out=$DIR/$dataset/queries/${table}_uv_0.01.sql &
+     --out=$DIR/$dataset/queries/${table}_uv_0.01.csv &
     UVPID=$!
     # Generate the dt query set (data centered, target selectivity).
     echo "Generating DT workload for table $table ... "
@@ -39,7 +39,7 @@ for dataset in "${DATASETS[@]}" ; do
      --data=$DIR/$dataset/data/$table.csv --queries=$QUERIES \
      --selectivity=0.01 --mcenter=Data                       \
      --mrange=Tuples                                         \
-     --out=$DIR/$dataset/queries/${table}_dt_0.01.sql &
+     --out=$DIR/$dataset/queries/${table}_dt_0.01.csv &
     DTPID=$!
     # Generate the ut query set (uniform centers, target selectivity).
     echo "Generating UT workload for table $table ... "
@@ -47,18 +47,30 @@ for dataset in "${DATASETS[@]}" ; do
      --data=$DIR/$dataset/data/$table.csv --queries=$QUERIES \
      --selectivity=0.01 --mcenter=Uniform                    \
      --mrange=Tuples                                         \
-     --out=$DIR/$dataset/queries/${table}_ut_0.01.sql &
+     --out=$DIR/$dataset/queries/${table}_ut_0.01.csv &
     UTPID=$!
     # Wait for the query generation:
     wait $DVPID
     wait $UVPID
     wait $DTPID
     wait $UTPID
-    # Now insert the correct table name into the query files.
-    sed -i "s/_d_/$table/g" $DIR/$dataset/queries/${table}_dv_0.01.sql
-    sed -i "s/_d_/$table/g" $DIR/$dataset/queries/${table}_uv_0.01.sql
-    sed -i "s/_d_/$table/g" $DIR/$dataset/queries/${table}_dt_0.01.sql
-    sed -i "s/_d_/$table/g" $DIR/$dataset/queries/${table}_ut_0.01.sql
+    # And convert the CSV into SQL files.
+    $PYTHON $DIR/query_formatter.py                         \
+     --queries=$DIR/$dataset/queries/${table}_dv_0.01.csv   \
+     --table=$table                                         \
+     --out=$DIR/$dataset/queries/${table}_dv_0.01.sql 
+    $PYTHON $DIR/query_formatter.py                         \
+     --queries=$DIR/$dataset/queries/${table}_uv_0.01.csv   \
+     --table=$table                                         \
+     --out=$DIR/$dataset/queries/${table}_uv_0.01.sql 
+    $PYTHON $DIR/query_formatter.py                         \
+     --queries=$DIR/$dataset/queries/${table}_dt_0.01.csv   \
+     --table=$table                                         \
+     --out=$DIR/$dataset/queries/${table}_dt_0.01.sql 
+    $PYTHON $DIR/query_formatter.py                         \
+     --queries=$DIR/$dataset/queries/${table}_ut_0.01.csv   \
+     --table=$table                                         \
+     --out=$DIR/$dataset/queries/${table}_ut_0.01.sql 
   done
 done
 

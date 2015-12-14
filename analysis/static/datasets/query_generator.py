@@ -14,10 +14,17 @@ import time
 from numpy import random
 
 database_accesses = 0
-def run(cur, query, parameters):
+def run(cur, template, parameters):
    global database_accesses
    database_accesses += 1
-   return cur.execute(query, parameters)
+   return cur.execute(template, parameters)
+
+written_queries = 0
+def writeQuery(csvwriter, parameters, selectivity):
+   global written_queries
+   written_queries += 1
+   parameters.append(selectivity)
+   csvwriter.writerow(parameters)
 
 # Classes generating data centers (Data,Uniform,Gauss)
 class DataCenterGenerator:
@@ -66,7 +73,7 @@ def createBoundsList(min_vals, max_vals):
         result.append(y)
     return result
 
-def parseData(c, data_file):
+def parseData(data_file):
    # Open the data file and read the first line.
    data = []   
    with open(data_file, "r") as f:
@@ -75,7 +82,7 @@ def parseData(c, data_file):
          data.append([float(x) for x in row])
    return data
 
-def loadData(data):
+def loadData(cur, data):
    dim = len(data[0])
    # Create the table.
    query = "CREATE TABLE _d_("
@@ -99,14 +106,15 @@ def loadData(data):
    query += ");"
    cur.executemany(query, data)
 
-def printState(workload, output_file_name, target_queries, total_time):
+def printState(output_file_name, target_queries, total_time):
   global database_accesses
+  global written_queries
   # Clear the current line
   sys.stdout.write("\r\33[2K")
   sys.stdout.flush()
   sys.stdout.write("\r\tGenerated %i queries for %s, %i remaining (%.2f queries/s, %.2f database accesses / query)" \
-                      % (len(workload), output_file_name, target_queries - len(workload), \
-                         (len(workload) / float(total_time)), (database_accesses / float(len(workload)))))
+                      % (written_queries, output_file_name, target_queries - written_queries,                       \
+                         (written_queries / float(total_time)), (database_accesses / float(written_queries))))
 
 # Define and parse the command line arguments
 parser = argparse.ArgumentParser()
@@ -126,16 +134,13 @@ target_selectivity = args.selectivity
 target_tolerance = args.tolerance
 sigma = args.sigma
 clusters = args.clusters
-queries = args.queries
 output_file = args.output
 mcenter = args.mcenter
 mrange = args.mrange
 
 output_file_name = os.path.basename(output_file)
 
-conn = sqlite3.connect(":memory:", isolation_level=None) 
-cur = conn.cursor()
-data = parseData(cur, args.data)
+data = parseData(args.data)
 columns = len(data[0])
 rows = len(data)
 
@@ -144,25 +149,32 @@ low = np.amin(data, axis=0)
 high = np.amax(data, axis=0)
 ranges = zip(low, high)
 
-# Now generate the query centers.
+# Initialize the SQLite database.
+conn = sqlite3.connect(":memory:", isolation_level=None)
+cur = conn.cursor()
+loadData(cur, data)
+
+# Build a composite index to accelerate our lookups.
+query = "CREATE INDEX d_idx ON _d_("
+for i in range(0, columns):
+   if i>0:
+      query += ", "
+   query += "c%i" % (i + 1)
+query += ")"
+cur.execute(query)
+conn.commit()
+
+# Build the template to query the database.
+template = "SELECT count(*) FROM _d_ WHERE "
+for i in range(0, columns):
+   if i>0:
+      template += "AND "
+   template += "c%d>? AND c%d<? " % (i + 1, i + 1)
+
+# Prepare the data center generators 
 centers = []
 generator = None
-
-# Check if we need to load the data.
-if (mrange == "Tuples"):
-   loadData(data)
-   # Build an composite index.
-   query = "CREATE INDEX d_idx ON _d_("
-   for i in range(0, columns):
-      if i>0:
-         query += ", "
-      query += "c%i" % (i + 1)
-   query += ")"
-   cur.execute(query)
-   conn.commit()
-
 if (mcenter == "Data"):
-   # Load the data.
    generator = DataCenterGenerator(data)
 elif (mcenter == "Uniform"):
    generator = UniformDataCenterGenerator(low, high, columns)
@@ -171,58 +183,56 @@ elif (mcenter == "Gauss"):
 else:
    print("Not yet implemented")
 
-workload = []
-    # Build the query template.
-template = "SELECT count(*) FROM _d_ WHERE "
-for i in range(0, columns):
-    if i>0:
-        template += "AND "
-    template += "c%d>? AND c%d<? " % (i + 1, i + 1)
-        
-if (mrange == "Volume"): 
-    bounds = []
-    edge = 1
-    vol = 1
-    for r in ranges:
-        vol *= (r[1] - r[0])
-        edge *= math.pow((r[1] - r[0]), 1.0/columns)
-    edge *= math.pow(target_selectivity, 1.0/columns)
+with open(args.output, "w") as csvfile:
+   writer = csv.writer(csvfile, delimiter='|')
 
-    i = 0
-    while (len(workload) < queries):
-        r = random.random_sample(columns)
-        c = generator.getNextCenter()
-        workload.append(createBoundsList(c - 0.5 * edge * r, c + 0.5 * edge * r))
-       
-elif (mrange == "Tuples"):    
-    last_len = 0
-    start_time = time.time()
-    last_print_time = time.time()
+   # Build volume queries.        
+   if (mrange == "Volume"): 
+      bounds = []
+      edge = 1
+      vol = 1
+      for r in ranges:
+         vol *= (r[1] - r[0])
+         edge *= math.pow((r[1] - r[0]), 1.0/columns)
+      edge *= math.pow(target_selectivity, 1.0/columns)
+      while (written_queries < args.queries):
+         r = random.random_sample(columns)
+         c = generator.getNextCenter()
+         # Identify the selectivity of this query.
+         parameters = createBoundsList(c - 0.5 * edge * r, c + 0.5 * edge * r)
+         run(cur, template, parameters)
+         selectivity = cur.fetchone()[0] / float(rows)
+         writeQuery(writer, parameters, selectivity)
+   
+   # Build tuple queries.
+   elif (mrange == "Tuples"):    
+      start_time = time.time()
+      last_print_time = time.time()
 
-    while (len(workload) < queries):
-        c = generator.getNextCenter()
+      while (written_queries < args.queries):
+         c = generator.getNextCenter()
 
-        # Figure out how much space we have until we hit the boundary.
-        ranges = 1.1 * np.minimum(c - low, high - c)
+         # Figure out how much space we have until we hit the boundary.
+         ranges = 1.1 * np.minimum(c - low, high - c)
 
-        # Now count how many points fall in this region.
-        run(cur, template, createBoundsList(c - ranges, c + ranges))
-        selectivity = cur.fetchone()[0] / float(rows)
+         # Now count how many points fall in this region.
+         run(cur, template, createBoundsList(c - ranges, c + ranges))
+         selectivity = cur.fetchone()[0] / float(rows)
 
-        # If the query region is too small, abort directyl. 
-        if (selectivity < (target_selectivity - 0.5 * target_tolerance)):
+         # If the query region is too small, abort directyl. 
+         if (selectivity < (target_selectivity - 0.5 * target_tolerance)):
             continue
 	
-        lower_bound = 0 
-        lower_bound_factor = 0 
-        upper_bound = selectivity
-        upper_bound_factor = 1 
-        test_factor = 1
-        if (selectivity < (target_selectivity + 0.5*target_tolerance) and selectivity > (target_selectivity - 0.5*target_tolerance)):
-            workload.append(createBoundsList(c - (ranges*test_factor), c + (ranges*test_factor)))  
+         lower_bound = 0 
+         lower_bound_factor = 0 
+         upper_bound = selectivity
+         upper_bound_factor = 1 
+         test_factor = 1
+         if (selectivity < (target_selectivity + 0.5*target_tolerance) and selectivity > (target_selectivity - 0.5*target_tolerance)):
+            writeQuery(writer, createBoundsList(c - (ranges * test_factor), c + (ranges * test_factor)), selectivity)
             continue
-        # Run a binary search to find the optimal query region.
-        while (upper_bound - lower_bound > target_tolerance and (upper_bound_factor - lower_bound_factor) > 0.001 ):
+         # Run a binary search to find the optimal query region.
+         while (upper_bound - lower_bound > target_tolerance and (upper_bound_factor - lower_bound_factor) > 0.001 ):
             test_factor = 0.5 * (lower_bound_factor + upper_bound_factor)
             run(cur, template, createBoundsList(c - (ranges*test_factor), c + (ranges*test_factor)))
             selectivity = cur.fetchone()[0] / float(rows)
@@ -235,24 +245,14 @@ elif (mrange == "Tuples"):
             else:
                 lower_bound = selectivity
                 lower_bound_factor = test_factor
-        if (selectivity < (target_selectivity + 0.5*target_tolerance) and selectivity > (target_selectivity - 0.5*target_tolerance)):
-            workload.append(createBoundsList(c-(ranges*test_factor),c+(ranges*test_factor)))
-        if (len(workload) > 0 and time.time() - last_print_time >= 1):
+         if (selectivity < (target_selectivity + 0.5*target_tolerance) and selectivity > (target_selectivity - 0.5*target_tolerance)):
+            writeQuery(writer, createBoundsList(c - (ranges * test_factor), c + (ranges * test_factor)), selectivity)
+         if (written_queries > 0 and time.time() - last_print_time >= 1):
             # Print the current status every second:
-            printState(workload, output_file_name, queries, time.time() - start_time)
+            printState(output_file_name, args.queries, time.time() - start_time)
             sys.stdout.flush()
             last_print_time = time.time()
-    printState(workload, output_file_name, queries, time.time() - start_time)
-    sys.stdout.write("\n") 
-
-# Prepare writing out the result to disk.
-template = template.replace("?", "%f")
-template += ";\n"
-
-f = open(output_file, "w")
-# Write out the resulting workload.
-for query in workload:
-    f.write(template % tuple(query))
-f.close()
+      printState(output_file_name, args.queries, time.time() - start_time)
+      sys.stdout.write("\n") 
 
 conn.close()
