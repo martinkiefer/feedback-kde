@@ -13,20 +13,18 @@ import time
 
 from numpy import random
 
-total_queries = 0
+database_accesses = 0
 def run(cur, query, parameters):
-   global total_queries
-   total_queries += 1
+   global database_accesses
+   database_accesses += 1
    return cur.execute(query, parameters)
 
 # Classes generating data centers (Data,Uniform,Gauss)
 class DataCenterGenerator:
-    def __init__(self, cur, rows):
+    def __init__(self, data):
         # Fetch the dataset into memory.
-        self.data = []
-        for row in cur.execute("SELECT * FROM d;"):
-           self.data.append(list(row))
-        self.rows = rows
+        self.data = data
+        self.rows = len(data)
 
     def getNextCenter(self):
         return self.data[random.randint(0, self.rows)]
@@ -75,24 +73,24 @@ def parseData(c, data_file):
       reader = csv.reader(f, delimiter='|')
       for row in reader:
          data.append([float(x) for x in row])
-   return data      
+   return data
 
 def loadData(data):
    dim = len(data[0])
    # Create the table.
-   query = "CREATE TABLE d("
+   query = "CREATE TABLE _d_("
    for i in range(dim):
       if (i > 0):
          query += ", "
-      query += "c%i FLOAT" % i
+      query += "c%i FLOAT" % (i + 1)
    query += ");"
    cur.execute(query)
    # Run the bulk insert.
-   query = "INSERT INTO d("
+   query = "INSERT INTO _d_("
    for i in range(dim):
       if (i > 0):
          query += ", "
-      query += "c%i" % i
+      query += "c%i" % (i + 1)
    query += ") VALUES ("
    for i in range(dim):
       if (i > 0):
@@ -100,9 +98,16 @@ def loadData(data):
       query += "?"
    query += ");"
    cur.executemany(query, data)
-   cur.execute("SELECT count(*) FROM d;")
-   return dim
- 
+
+def printState(workload, output_file_name, target_queries, total_time):
+  global database_accesses
+  # Clear the current line
+  sys.stdout.write("\r\33[2K")
+  sys.stdout.flush()
+  sys.stdout.write("\r\tGenerated %i queries for %s, %i remaining (%.2f queries/s, %.2f database accesses / query)" \
+                      % (len(workload), output_file_name, target_queries - len(workload), \
+                         (len(workload) / float(total_time)), (database_accesses / float(len(workload)))))
+
 # Define and parse the command line arguments
 parser = argparse.ArgumentParser()
 parser.add_argument("--data", action="store", required=True, help="CSV File containing the input data.")
@@ -144,21 +149,21 @@ centers = []
 generator = None
 
 # Check if we need to load the data.
-if (mcenter == "Data" or mrange == "Tuples"):
+if (mrange == "Tuples"):
    loadData(data)
    # Build an composite index.
-   query = "CREATE INDEX d_idx ON d("
+   query = "CREATE INDEX d_idx ON _d_("
    for i in range(0, columns):
       if i>0:
          query += ", "
-      query += "c%i" % i
+      query += "c%i" % (i + 1)
    query += ")"
    cur.execute(query)
    conn.commit()
 
 if (mcenter == "Data"):
    # Load the data.
-   generator = DataCenterGenerator(conn.cursor(), rows)
+   generator = DataCenterGenerator(data)
 elif (mcenter == "Uniform"):
    generator = UniformDataCenterGenerator(low, high, columns)
 elif (mcenter == "Gauss"):
@@ -168,11 +173,11 @@ else:
 
 workload = []
     # Build the query template.
-template = "SELECT count(*) FROM d WHERE "
+template = "SELECT count(*) FROM _d_ WHERE "
 for i in range(0, columns):
     if i>0:
         template += "AND "
-    template += "c%d>? AND c%d<? " % (i, i)
+    template += "c%d>? AND c%d<? " % (i + 1, i + 1)
         
 if (mrange == "Volume"): 
     bounds = []
@@ -190,7 +195,6 @@ if (mrange == "Volume"):
         workload.append(createBoundsList(c - 0.5 * edge * r, c + 0.5 * edge * r))
        
 elif (mrange == "Tuples"):    
-
     last_len = 0
     start_time = time.time()
     last_print_time = time.time()
@@ -231,21 +235,15 @@ elif (mrange == "Tuples"):
             else:
                 lower_bound = selectivity
                 lower_bound_factor = test_factor
-        if (selectivity < (target_selectivity + 0.5*target_tolerance) and selectivity > (target_selectivity - 0.5*target_tolerance)):           
-            workload.append(createBoundsList(c-(ranges*test_factor),c+(ranges*test_factor)))  
-        if (time.time() - last_print_time >= 1):
-            # Print the current status every second: 
-            for i in range(0,140):
-                 sys.stdout.write(" ")
-            sys.stdout.write("\r") # Clear the line
-            sys.stdout.write("\tGenerated %i queries for %s, %i remaining (%.2f queries/s, %.2f database accesses / query)\r" \
-                                  % (len(workload), output_file_name, queries - len(workload), \
-                                     (len(workload) / float(time.time() - start_time)), \
-                                     (total_queries / float(len(workload)))))
+        if (selectivity < (target_selectivity + 0.5*target_tolerance) and selectivity > (target_selectivity - 0.5*target_tolerance)):
+            workload.append(createBoundsList(c-(ranges*test_factor),c+(ranges*test_factor)))
+        if (len(workload) > 0 and time.time() - last_print_time >= 1):
+            # Print the current status every second:
+            printState(workload, output_file_name, queries, time.time() - start_time)
             sys.stdout.flush()
             last_print_time = time.time()
-            last_len = len(workload)
-    sys.stdout.write("\n")    
+    printState(workload, output_file_name, queries, time.time() - start_time)
+    sys.stdout.write("\n") 
 
 # Prepare writing out the result to disk.
 template = template.replace("?", "%f")
