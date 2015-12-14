@@ -6,6 +6,11 @@ selectivity of multidimensional range queries on real-valued
 attributes. The estimator relies on query feedback to fine-tune the
 model.
 
+Further information about the estimator model (as well as a detailed
+evaluation) can be found in our SIGMOD 2015 paper [Self-Tuning, 
+GPU-Accelerated Kernel Density Models for Multidimensional Selectivity
+Estimation](http://dl.acm.org/citation.cfm?id=2749438).
+
 The estimator uses OpenCL to provide an parallel implementation
 that allows accelerated computations on both multi-core CPUs and
 graphics cards.
