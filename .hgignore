@@ -31,12 +31,15 @@ pgsql.sln
 pgsql.sln.cache
 config.log
 config.status
+nlopt*
 src/backend/catalog/postgres.bki
 src/backend/catalog/postgres.description
-src/backend/utils/fmgroids.h
-src/backend/utils/fmgrtab.c
 src/backend/parser/gram.c
 src/backend/parser/gram.h
+src/backend/replication/repl_gram.c
+src/backend/replication/repl_scanner.c
+src/backend/utils/fmgroids.h
+src/backend/utils/fmgrtab.c
 src/interfaces/ecpg/preproc/preproc.c
 src/interfaces/ecpg/preproc/preproc.h
 src/pl/plpgsql/src/pl_gram.c
