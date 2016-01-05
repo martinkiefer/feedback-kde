@@ -18,7 +18,7 @@ graphics cards.
 ## Prerequisites                                                               
 In order to activate this feature, you will need two things:
 
-1. An OpenCL-compatible device and a respective driver SDK. Here are some pointers where you can find one for your device:
+1. An OpenCL-compatible device (e.g. a graphics card or any reasonably modern CPU) and a respective driver SDK. Here are some pointers where you can find one for your device:
     * NVIDIA 
 
         Install both the latest graphics driver and the CUDA SDK from:
