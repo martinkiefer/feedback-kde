@@ -3,10 +3,11 @@
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 source $DIR/../../conf.sh
 
-DATASETS=(bike genhist_set1 power protein forest)
+DATASETS=(forest bike protein power genhist_set1 genhist_set2 tpch)
 QUERIES=2500
 
 for dataset in "${DATASETS[@]}" ; do
+  echo "Running for dataset $dataset"
   # Download, prepare and load the dataset.
   $DIR/$dataset/download.sh
   $DIR/$dataset/load.sh
