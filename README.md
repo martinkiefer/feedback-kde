@@ -6,6 +6,11 @@ selectivity of multidimensional range queries on real-valued
 attributes. The estimator relies on query feedback to fine-tune the
 model.
 
+Further information about the estimator model (as well as a detailed
+evaluation) can be found in our SIGMOD 2015 paper [Self-Tuning, 
+GPU-Accelerated Kernel Density Models for Multidimensional Selectivity
+Estimation](http://dl.acm.org/citation.cfm?id=2749438).
+
 The estimator uses OpenCL to provide an parallel implementation
 that allows accelerated computations on both multi-core CPUs and
 graphics cards.
@@ -13,7 +18,7 @@ graphics cards.
 ## Prerequisites                                                               
 In order to activate this feature, you will need two things:
 
-1. An OpenCL-compatible device and a respective driver SDK. Here are some pointers where you can find one for your device:
+1. An OpenCL-compatible device (e.g. a graphics card or any reasonably modern CPU) and a respective driver SDK. Here are some pointers where you can find one for your device:
     * NVIDIA 
 
         Install both the latest graphics driver and the CUDA SDK from:
