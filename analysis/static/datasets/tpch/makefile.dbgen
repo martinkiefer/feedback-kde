@@ -1,0 +1,92 @@
+################
+## CHANGE NAME OF ANSI COMPILER HERE
+################
+CC      =gcc
+# Current values for DATABASE are: INFORMIX, DB2, TDAT (Teradata)
+#                                  SQLSERVER, SYBASE, ORACLE, VECTORWISE
+#                                  POSTGRES
+# Current values for MACHINE are:  ATT, DOS, HP, IBM, ICL, MVS, 
+#                                  SGI, SUN, U2200, VMS, LINUX
+# Windows machines build using the win_vs/ directory. If you use a Windows based
+# GCC, no need to declare MACHINE, as the code handles the _WIN32 define correctly
+# Current values for WORKLOAD are:  TPCH
+DATABASE=	POSTGRES
+MACHINE =	LINUX
+#
+
+CFLAGS	= -O3 -DDBNAME=\"dss\" -D$(MACHINE) -D$(DATABASE) \
+	-DRNG_TEST -DPATH_SEP=\'/\' -D_FILE_OFFSET_BITS=64 -iquoteinclude
+LDFLAGS = -O
+# The OBJ,EXE and LIB macros will need to be changed for compilation under
+#  Windows NT
+OBJ     = .o
+EXE     =
+LIBS    = -lm
+#
+# NO CHANGES SHOULD BE NECESSARY BELOW THIS LINE
+###############
+VERSION=2
+RELEASE=13
+PATCH=0
+BUILD=`grep BUILD release.h | cut -f3 -d' '`
+NEW_BUILD=`expr ${BUILD} + 1`
+TREE_ROOT=/tmp/tree
+OBJDIR=obj
+SRCDIR=src
+VPATH=src:obj
+
+# We can build two executables from this
+TARGET_DBGEN = dbgen$(EXE)
+TARGET_QGEN = qgen$(EXE)
+
+# Look for c files in each directory. 
+# Qgen shares a lot with DBGEN, so we have to account for that
+OBJ_DBGEN= $(addprefix $(OBJDIR)/, $(patsubst $(SRCDIR)/dbgen/%.c, %.o, $(wildcard $(SRCDIR)/dbgen/*.c)))
+OBJ_QGEN= $(addprefix $(OBJDIR)/, $(patsubst $(SRCDIR)/qgen/%.c, %.o, $(wildcard $(SRCDIR)/qgen/*.c)))
+OBJ_QGEN+=$(filter-out $(OBJDIR)/driver$(OBJ), $(OBJ_DBGEN))
+
+# We ship some other files around
+SETS = dists.dss 
+DOC=README HISTORY PORTING.NOTES
+DDL  = dss.ddl dss.ri
+
+# case is *important* in TEST_RES
+TEST_RES = O.res L.res c.res s.res P.res S.res n.res r.res
+#
+FQD=queries/1.sql queries/2.sql queries/3.sql queries/4.sql queries/5.sql queries/6.sql queries/7.sql \
+	queries/8.sql queries/9.sql queries/10.sql queries/11.sql queries/12.sql queries/13.sql \
+	queries/14.sql queries/15.sql queries/16.sql queries/17.sql queries/18.sql queries/19.sql queries/20.sql \
+	queries/21.sql queries/22.sql
+VARIANTS= variants/8a.sql variants/12a.sql variants/13a.sql variants/14a.sql variants/15a.sql 
+ANS   = answers/q1.out answers/q2.out answers/q3.out answers/q4.out answers/q5.out answers/q6.out answers/q7.out answers/q8.out \
+	answers/q9.out answers/q10.out answers/q11.out answers/q12.out answers/q13.out answers/q14.out answers/q15.out \
+	answers/q16.out answers/q17.out answers/q18.out answers/q19.out answers/q20.out answers/q21.out answers/q22.out
+QSRC  = $(FQD) $(VARIANTS) $(ANS)
+TREE_DOC=tree.readme tree.changes appendix.readme appendix.version answers.readme queries.readme variants.readme
+REFERENCE=reference/[tcR]*
+REFERENCE_DATA=referenceData/[13]*
+SCRIPTS= check55.sh column_split.sh dop.sh gen_tasks.sh last_row.sh load_balance.sh new55.sh check_dirs.sh
+
+#
+all: directories $(TARGET_DBGEN) $(TARGET_QGEN)
+
+directories:
+	mkdir -p $(OBJDIR)
+
+# Build dbgen
+$(OBJDIR)/%.o: $(SRCDIR)/dbgen/%.c
+	$(CC) $(CFLAGS) $(LDFLAGS) -c $< -o $@ 
+$(TARGET_DBGEN): $(OBJ_DBGEN) $(SETS) 
+	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $(OBJ_DBGEN) $(LIBS)
+# Build qgen
+$(OBJDIR)/%.o: $(SRCDIR)/qgen/%.c
+	$(CC) $(CFLAGS) $(LDFLAGS) -c $< -o $@ 
+$(TARGET_QGEN): $(OBJ_QGEN)
+	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $(OBJ_QGEN) $(LIBS)
+
+.PHONY: clean
+clean:
+	rm -f $(OBJDIR)/*.o
+	rm -f $(TARGET_DBGEN)
+	rm -f $(TARGET_QGEN)
+	rm -f *.tbl
