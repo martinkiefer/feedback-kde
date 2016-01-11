@@ -42,7 +42,7 @@ echo "       c16 AS c8 INTO bike8 FROM bike16;" >> /tmp/load.sql
 
 # Prepare the SQL load script for bike3.
 echo "SELECT c1 AS c1, " >> /tmp/load.sql
-echo "       c3 AS c2," >> /tmp/load.sql
+echo "       c10 AS c2," >> /tmp/load.sql
 echo "       c14 AS c3 INTO bike3 FROm bike16;" >> /tmp/load.sql
 
 # Now call the load script.
