@@ -3,7 +3,7 @@
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 source $DIR/../../conf.sh
 
-DATASETS=(forest bike protein power genhist_set1 genhist_set2 tpch)
+DATASETS=(bike forest genhist_set1 genhist_set2 power protein tpch)
 QUERIES=2500
 
 for dataset in "${DATASETS[@]}" ; do
@@ -22,34 +22,35 @@ for dataset in "${DATASETS[@]}" ; do
     echo "Generating DV workload for table $table ... "
     $PYTHON $DIR/query_generator.py                          \
      --data=$DIR/$dataset/data/$table.csv --queries=$QUERIES \
-     --selectivity=0.01 --mcenter=Data                       \
-     --mrange=Volume                                         \
+     --selectivity=0.01 --tolerance=0.01                     \
+     --mcenter=Data --mrange=Volume                          \
      --out=$DIR/$dataset/queries/${table}_dv_0.01.csv &
     DVPID=$!
     # Generate the uv query set (uniform centers, target volume).
     echo "Generating UV workload for table $table ... "
     $PYTHON $DIR/query_generator.py                          \
      --data=$DIR/$dataset/data/$table.csv --queries=$QUERIES \
-     --selectivity=0.01 --mcenter=Uniform                    \
-     --mrange=Volume                                         \
+     --selectivity=0.01 --tolerance=0.01                     \
+     --mcenter=Uniform --mrange=Volume                       \
      --out=$DIR/$dataset/queries/${table}_uv_0.01.csv &
     UVPID=$!
-    # Generate the dt query set (data centered, target selectivity).
+    ## Generate the dt query set (data centered, target selectivity).
     echo "Generating DT workload for table $table ... "
     $PYTHON $DIR/query_generator.py                          \
      --data=$DIR/$dataset/data/$table.csv --queries=$QUERIES \
-     --selectivity=0.01 --mcenter=Data                       \
-     --mrange=Tuples                                         \
+     --selectivity=0.01 --tolerance=0.01                     \
+     --mcenter=Data --mrange=Tuples                          \
      --out=$DIR/$dataset/queries/${table}_dt_0.01.csv &
     DTPID=$!
     # Generate the ut query set (uniform centers, target selectivity).
     echo "Generating UT workload for table $table ... "
     $PYTHON $DIR/query_generator.py                          \
      --data=$DIR/$dataset/data/$table.csv --queries=$QUERIES \
-     --selectivity=0.01 --mcenter=Uniform                    \
-     --mrange=Tuples                                         \
+     --selectivity=0.01 --tolerance=0.01                     \
+     --mcenter=Uniform --mrange=Tuples                       \
      --out=$DIR/$dataset/queries/${table}_ut_0.01.csv &
     UTPID=$!
+    
     # Wait for the query generation:
     wait $DVPID
     wait $UVPID

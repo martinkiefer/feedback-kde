@@ -7,11 +7,13 @@ import itertools
 import math
 import numpy as np
 import os
+import scipy
 import sqlite3
 import sys
 import time
 
 from numpy import random
+from scipy import stats 
 
 database_accesses = 0
 def run(cur, template, parameters):
@@ -119,7 +121,7 @@ def printState(output_file_name, target_queries, total_time):
 # Define and parse the command line arguments
 parser = argparse.ArgumentParser()
 parser.add_argument("--data", action="store", required=True, help="CSV File containing the input data.")
-parser.add_argument("--selectivity", action="store", required=True, type=float, help="Target selectivity for the created query workload.")
+parser.add_argument("--selectivity", action="store", default=0.01, type=float, help="Target selectivity for the created query workload.")
 parser.add_argument("--mcenter", action="store", choices=["Data","Uniform","Gauss"],required=True, help="Mechanism choosing the center of range queries")
 parser.add_argument("--mrange", action="store", choices=["Volume","Tuples"],required=False, help="Mechanism determining the width of the range queries")
 parser.add_argument("--clusters", action="store", type=int,default=100,help="Number of clusters for gaussian center mechanism")
@@ -203,11 +205,15 @@ with open(args.output, "w") as csvfile:
          run(cur, template, parameters)
          selectivity = cur.fetchone()[0] / float(rows)
          writeQuery(writer, parameters, selectivity)
-   
+  
    # Build tuple queries.
    elif (mrange == "Tuples"):    
       start_time = time.time()
       last_print_time = time.time()
+
+      # Build an acceptance distribution.
+      acc = scipy.stats.norm(loc = target_selectivity, scale = 0.5*target_tolerance)
+      acc_norm = 1.0
 
       while (written_queries < args.queries):
          c = generator.getNextCenter()
@@ -219,34 +225,36 @@ with open(args.output, "w") as csvfile:
          run(cur, template, createBoundsList(c - ranges, c + ranges))
          selectivity = cur.fetchone()[0] / float(rows)
 
-         # If the query region is too small, abort directyl. 
-         if (selectivity < (target_selectivity - 0.5 * target_tolerance)):
+         # Make a check whether we directly accept the query.
+         if (random.random() < (acc_norm * acc.pdf(selectivity))):
+            writeQuery(writer, createBoundsList(c - ranges, c + ranges), selectivity)
             continue
-	
+         
+         # If the query region is too small for a binary search, abort.
+         if (selectivity < target_selectivity):
+            continue
+
+         # Now start the binary search for the optimal query region.
          lower_bound = 0 
          lower_bound_factor = 0 
          upper_bound = selectivity
          upper_bound_factor = 1 
          test_factor = 1
-         if (selectivity < (target_selectivity + 0.5*target_tolerance) and selectivity > (target_selectivity - 0.5*target_tolerance)):
-            writeQuery(writer, createBoundsList(c - (ranges * test_factor), c + (ranges * test_factor)), selectivity)
-            continue
-         # Run a binary search to find the optimal query region.
-         while (upper_bound - lower_bound > target_tolerance and (upper_bound_factor - lower_bound_factor) > 0.001 ):
+         while lower_bound_factor < upper_bound_factor: 
             test_factor = 0.5 * (lower_bound_factor + upper_bound_factor)
             run(cur, template, createBoundsList(c - (ranges*test_factor), c + (ranges*test_factor)))
             selectivity = cur.fetchone()[0] / float(rows)
-            
-            if (selectivity < (target_selectivity + 0.5*target_tolerance) and selectivity > (target_selectivity - 0.5*target_tolerance)):
-                break;
+
+            # Check if we accept this query.
+            if (random.random() < (acc_norm * acc.pdf(selectivity))):
+               writeQuery(writer, createBoundsList(c - (ranges * test_factor), c + (ranges * test_factor)), selectivity)
+               break
             elif (selectivity > target_selectivity):
-                upper_bound = selectivity 
-                upper_bound_factor = test_factor
+               upper_bound = selectivity 
+               upper_bound_factor = test_factor
             else:
-                lower_bound = selectivity
-                lower_bound_factor = test_factor
-         if (selectivity < (target_selectivity + 0.5*target_tolerance) and selectivity > (target_selectivity - 0.5*target_tolerance)):
-            writeQuery(writer, createBoundsList(c - (ranges * test_factor), c + (ranges * test_factor)), selectivity)
+               lower_bound = selectivity
+               lower_bound_factor = test_factor
          if (written_queries > 0 and time.time() - last_print_time >= 1):
             # Print the current status every second:
             printState(output_file_name, args.queries, time.time() - start_time)
