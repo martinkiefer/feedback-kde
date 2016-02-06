@@ -14,6 +14,7 @@ parser.add_argument("--points", action="store", type=int, default=1000000, help=
 parser.add_argument("--dim", action="store", type=int, required=True, help="Dimensionality of the dataset.")
 parser.add_argument("--noise", action="store", type=float, default=0.1, help="Fraction of noise in the datasaet.")
 parser.add_argument("--clusters", action="store", type=int, default=100, help="Total number of clusters in the dataset.")
+parser.add_argument("--cluster_width", action="store", type=float, default=0.1, help="Total number of clusters in the dataset.")
 parser.add_argument("--outfile", action="store", required=True, help="Name of the output file.")
 args = parser.parse_args()
 
@@ -24,8 +25,8 @@ points_in_noise = args.points - args.clusters * points_per_cluster
 
 # Now generate the clusters.
 points = []
-min_cluster_width = 0#0.02
-max_cluster_width = 0.8
+min_cluster_width = args.cluster_width 
+max_cluster_width = min_cluster_width
 created_clusters = 0
 while (created_clusters < args.clusters):
    p1 = numpy.random.uniform(size = args.dim)
