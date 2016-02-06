@@ -34,7 +34,7 @@ for dataset in "${DATASETS[@]}" ; do
      --mcenter=Uniform --mrange=Volume                       \
      --out=$DIR/$dataset/queries/${table}_uv_0.01.csv &
     UVPID=$!
-    ## Generate the dt query set (data centered, target selectivity).
+    # Generate the dt query set (data centered, target selectivity).
     echo "Generating DT workload for table $table ... "
     $PYTHON $DIR/query_generator.py                          \
      --data=$DIR/$dataset/data/$table.csv --queries=$QUERIES \
@@ -50,12 +50,20 @@ for dataset in "${DATASETS[@]}" ; do
      --mcenter=Uniform --mrange=Tuples                       \
      --out=$DIR/$dataset/queries/${table}_ut_0.01.csv &
     UTPID=$!
-    
+    # Generate a workload with varying selectivities between 2 and 20 percent.
+    echo "Generating RND workload for table $table ... "
+    $PYTHON $DIR/query_generator.py                          \
+     --data=$DIR/$dataset/data/$table.csv --queries=$QUERIES \
+     --selectivity=0.11 --tolerance=0.09                     \
+     --mcenter=Data --mrange=Tuples                       \
+     --out=$DIR/$dataset/queries/${table}_rnd_0.01.csv &
+    RNDPID=$!
     # Wait for the query generation:
     wait $DVPID
     wait $UVPID
     wait $DTPID
     wait $UTPID
+    wait $RNDPID
     # And convert the CSV into SQL files.
     $PYTHON $DIR/query_formatter.py                         \
      --queries=$DIR/$dataset/queries/${table}_dv_0.01.csv   \
@@ -73,10 +81,14 @@ for dataset in "${DATASETS[@]}" ; do
      --queries=$DIR/$dataset/queries/${table}_ut_0.01.csv   \
      --table=$table                                         \
      --out=$DIR/$dataset/queries/${table}_ut_0.01.sql 
+    $PYTHON $DIR/query_formatter.py                         \
+     --queries=$DIR/$dataset/queries/${table}_rnd_0.01.csv  \
+     --table=$table                                         \
+     --out=$DIR/$dataset/queries/${table}_rnd_0.01.sql 
   done
 done
 
-# Finally, create the scaled datasets and query workloads.
+## Finally, create the scaled datasets and query workloads.
 #$PYTHON $DIR/scaleDatasets.py --dbname=$PGDATABASE --port=$PGPORT
 #for dataset in "${DATASETS[@]}" ; do
 #  source $dataset/tables.sh
