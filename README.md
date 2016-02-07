@@ -11,7 +11,7 @@ evaluation) can be found in our SIGMOD 2015 paper [Self-Tuning,
 GPU-Accelerated Kernel Density Models for Multidimensional Selectivity
 Estimation](http://dl.acm.org/citation.cfm?id=2749438).
 
-The estimator uses OpenCL to provide an parallel implementation
+The estimator uses OpenCL to provide a parallel implementation
 that allows accelerated computations on both multi-core CPUs and
 graphics cards.
                             
