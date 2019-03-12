@@ -99,10 +99,10 @@ __kernel void get_karma_threshold_bitmap(
   unsigned char result = 0;
   T local_karma = karma[get_global_id(0)];
   hit[get_local_id(0)] = (local_karma < threshold) << (get_local_id(0) % 8);
-  
+
+  __local T n[D];
+  __local T d[D];
   if(actual_selectivity == 0.0){
-    __local T n[D];
-    __local T d[D];
     
     //Calculate the ingredients for the formula
     if(get_local_id(0) < D){
