@@ -1,4 +1,4 @@
-#Self-Tuning Kernel Density Estimators
+# Self-Tuning Kernel Density Estimators
 
 This repository contains a modified version of Postgres (9.3.1) that
 uses self-optimizing Kernel Density Estimators to compute the 
