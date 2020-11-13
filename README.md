@@ -18,7 +18,9 @@ graphics cards.
 ## Prerequisites                                                               
 In order to activate this feature, you will need two things:
 
-1. An OpenCL-compatible device (e.g. a graphics card or any reasonably modern CPU) and a respective driver SDK. Here are some pointers where you can find one for your device:
+1. A Linux-based operating system. While the code may compile using OSX as well, the Apple OpenCL SDK is buggy and will lead to incorrect results.
+
+2. An OpenCL-compatible device (e.g. a graphics card or any reasonably modern CPU) and a respective driver SDK. Here are some pointers where you can find one for your device:
     * NVIDIA 
 
         Install both the latest graphics driver and the CUDA SDK from:
@@ -39,7 +41,7 @@ In order to activate this feature, you will need two things:
                           
         * https://software.intel.com/en-us/articles/opencl-drivers
 
-1. The NLOpt library (http://ab-initio.mit.edu/wiki/index.php/NLopt)
+3. The NLOpt library (http://ab-initio.mit.edu/wiki/index.php/NLopt)
                             
 ## Configuration & Installation. 
 You need to `./configure` Postgres with the new `--with-opencl` flag. This
